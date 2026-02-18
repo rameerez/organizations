@@ -39,9 +39,6 @@ current_user.is_organization_owner?     # => true
 current_user.is_organization_admin?     # => true (owners inherit admin permissions)
 ```
 
-> [!NOTE]
-> This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
-
 ## Installation
 
 Add to your Gemfile:
@@ -91,6 +88,9 @@ mount Organizations::Engine => '/'
 ```
 
 Done. Your app now has full organizations / teams support.
+
+> [!NOTE]
+> This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
 
 ## Quick start
 
@@ -150,6 +150,33 @@ class ProjectsController < ApplicationController
   before_action :require_organization_admin!, only: [:create, :destroy]
 end
 ```
+
+## Limit seats per plan (with `pricing_plans`)
+
+If you're using [`pricing_plans`](https://github.com/rameerez/pricing_plans), you can limit how many members an organization can have based on their subscription:
+
+```ruby
+# config/initializers/pricing_plans.rb
+plan :hobby do
+  limits :organization_members, to: 3
+end
+
+plan :growth do
+  limits :organization_members, to: 25
+end
+```
+
+Then add `limited_by_pricing_plans` to the memberships association in your Organization model:
+
+```ruby
+class Organization < ApplicationRecord
+  has_many :memberships, limited_by_pricing_plans: { limit_key: :organization_members }
+end
+```
+
+That's it. When a Hobby org tries to add a 4th member → blocked. Upgrade to Growth → works.
+
+The `pricing_plans` gem auto-detects the Organization as the plan owner and validates on Membership creation. You can hook into `pricing_plans.limit_warning` and `pricing_plans.limit_blocked` events to show upgrade prompts.
 
 ## Why this gem exists
 
@@ -879,7 +906,7 @@ plan :pro do
 end
 ```
 
-The `organizations` gem checks `pricing_plans` limits before allowing new invitations.
+The `organizations` gem checks `pricing_plans` limits before allowing new invitations and before accepting invitations. The check uses `pricing_plans`'s row-level locking to prevent race conditions where multiple invitations could exceed the member limit.
 
 ### Integrates with your gem ecosystem
 
@@ -1102,10 +1129,299 @@ invitations
 | User removed from current org | Auto-switches to next available org |
 | User has no organizations | Redirects to configurable path (or allowed if `require_organization: false`) |
 | User signs up, no org yet | `current_organization` returns `nil`, `belongs_to_any_organization?` returns `false` |
-| Last admin tries to leave | Must transfer ownership first |
-| Invitation accepted twice (race condition) | Gracefully returns existing membership |
+| Last owner tries to leave | Raises `CannotLeaveAsLastOwner`, must transfer ownership first |
+| Two admins leave simultaneously | Row-level lock prevents both from leaving if one would be last |
+| Invitation accepted twice (race condition) | Row-level lock, second request returns existing membership |
+| Two admins invite same email | Unique constraint, second returns existing invitation |
 | Invitation for existing member | Returns error, doesn't duplicate |
 | Expired invitation resent | New token generated, expiry reset |
+| Ownership transfer to removed user | Transaction lock, verifies membership exists before transfer |
+| Concurrent role changes on same user | Row-level lock on membership row |
+| Session points to org user was removed from | `current_organization` verifies membership, clears stale session |
+| Duplicate org slug on creation | Unique constraint, retries with suffix (acme-corp-2) |
+| Token collision on invitation | Unique constraint, regenerates token |
+
+## Performance notes
+
+The gem is designed to avoid N+1 queries when used correctly. Here's what you need to know.
+
+### Eager loading for listings
+
+When iterating over memberships or invitations, use `includes` to avoid N+1:
+
+```ruby
+# Listing members — GOOD
+org.memberships.includes(:user).each do |membership|
+  membership.user.name  # No N+1
+end
+
+# Listing members — BAD (N+1 on user)
+org.memberships.each do |membership|
+  membership.user.name  # Queries DB for each user
+end
+
+# Listing invitations — GOOD
+org.invitations.includes(:invited_by).each do |invitation|
+  invitation.invited_by.name  # No N+1
+end
+```
+
+### Permission checks are in-memory
+
+Permission checks **never hit the database**. They read the role from the already-loaded membership and check against a pre-computed permission hash:
+
+```ruby
+# This does NOT query the DB
+user.has_organization_permission_to?(:invite_members)
+
+# Safe to call in loops
+org.memberships.includes(:user).each do |m|
+  m.has_permission_to?(:invite_members)  # No DB query, just hash lookup
+end
+```
+
+### Role checks with explicit org
+
+When checking roles against a specific organization, the gem is smart about reusing loaded data:
+
+```ruby
+# If memberships are already loaded, this won't query again
+user.organizations.includes(:memberships).each do |org|
+  user.is_admin_of?(org)  # Reuses loaded membership
+end
+
+# But if you call it in isolation, it queries the DB
+user.is_admin_of?(some_org)  # Single query to find membership
+```
+
+### Organization switcher optimization
+
+The `organization_switcher_data` helper is optimized for navbar use:
+
+```ruby
+# Internally, it:
+# 1. Selects only id, name, slug (not full objects)
+# 2. Memoizes within the request
+# 3. Returns a lightweight hash, not ActiveRecord objects
+
+organization_switcher_data
+# => { current: { id: "...", name: "Acme", slug: "acme" }, others: [...] }
+```
+
+### Counter caches for member counts
+
+If you display member counts frequently (pricing pages, org listings), consider adding a counter cache:
+
+```ruby
+# In a migration
+add_column :organizations, :memberships_count, :integer, default: 0, null: false
+
+# Reset existing counts
+Organization.find_each do |org|
+  Organization.reset_counters(org.id, :memberships)
+end
+```
+
+The gem automatically uses the counter cache if present:
+
+```ruby
+org.member_count
+# Uses memberships_count column if it exists
+# Falls back to COUNT(*) query otherwise
+```
+
+### Existence checks use SQL
+
+Boolean checks use efficient SQL `EXISTS` queries:
+
+```ruby
+user.belongs_to_any_organization?     # SELECT 1 FROM memberships WHERE ... LIMIT 1
+user.has_pending_organization_invitations?  # SELECT 1 FROM invitations WHERE ... LIMIT 1
+org.has_any_members?                  # SELECT 1 FROM memberships WHERE ... LIMIT 1
+```
+
+### Scoped associations use JOINs
+
+Methods like `org.admins` and `user.owned_organizations` use proper SQL JOINs:
+
+```ruby
+org.admins
+# SELECT users.* FROM users
+# INNER JOIN memberships ON memberships.user_id = users.id
+# WHERE memberships.organization_id = ? AND memberships.role IN ('admin', 'owner')
+
+user.owned_organizations
+# SELECT organizations.* FROM organizations
+# INNER JOIN memberships ON memberships.organization_id = organizations.id
+# WHERE memberships.user_id = ? AND memberships.role = 'owner'
+```
+
+### Current organization memoization
+
+`current_organization` is memoized within each request:
+
+```ruby
+# In your controller, these all return the same cached object
+current_organization  # Queries DB (first call)
+current_organization  # Returns cached (subsequent calls)
+current_organization  # Returns cached
+```
+
+### Bulk operations
+
+For bulk invitations (coming in roadmap), the gem will support skipping per-record callbacks:
+
+```ruby
+# Future API
+org.bulk_invite!(emails, skip_callbacks: true)
+# Fires on_bulk_invited once instead of on_member_invited N times
+```
+
+## Data integrity
+
+The gem handles concurrent access and race conditions to ensure data consistency.
+
+### Unique constraints
+
+These constraints prevent duplicate data at the database level:
+
+| Constraint | Purpose |
+|------------|---------|
+| `memberships [user_id, organization_id]` | User can only have one membership per org |
+| `invitations [organization_id, email] WHERE accepted_at IS NULL` | Only one pending invitation per email per org |
+| `invitations [token]` | Invitation tokens are globally unique |
+| `organizations [slug]` | Organization slugs are globally unique |
+
+### Row-level locking
+
+The gem uses `SELECT ... FOR UPDATE` (row-level locks) to prevent race conditions:
+
+**Invitation acceptance:**
+```ruby
+# Two users clicking "Accept" on same invitation simultaneously
+invitation.accept!
+
+# Internally:
+# 1. Lock invitation row
+# 2. Check accepted_at is nil
+# 3. Create membership
+# 4. Set accepted_at
+# 5. Release lock
+# Second request sees accepted_at is set, returns existing membership
+```
+
+**Ownership transfer:**
+```ruby
+org.transfer_ownership_to!(new_owner)
+
+# Internally:
+# 1. Lock organization row
+# 2. Lock old owner's membership
+# 3. Lock new owner's membership
+# 4. Verify new owner is a member
+# 5. Demote old owner to admin
+# 6. Promote new owner to owner
+# 7. Release locks
+```
+
+**Last admin/owner protection:**
+```ruby
+user.leave_organization!(org)
+
+# Internally:
+# 1. Lock organization row
+# 2. Count remaining owners/admins
+# 3. If last owner, raise CannotLeaveAsLastOwner
+# 4. If allowed, destroy membership
+# 5. Release lock
+```
+
+**Role changes:**
+```ruby
+membership.promote_to!(:admin)
+
+# Internally:
+# 1. Lock membership row
+# 2. Update role
+# 3. Release lock
+```
+
+### Transaction boundaries
+
+Multi-step operations are wrapped in transactions:
+
+```ruby
+# Organization creation (atomic)
+user.create_organization!("Acme")
+# Transaction: create org → create owner membership → set as current org
+
+# Invitation acceptance (atomic)
+invitation.accept!
+# Transaction: lock invitation → create membership → update accepted_at
+
+# Ownership transfer (atomic)
+org.transfer_ownership_to!(user)
+# Transaction: lock rows → demote old owner → promote new owner
+```
+
+### Graceful handling of constraint violations
+
+When unique constraints are violated, the gem handles it gracefully:
+
+```ruby
+# Inviting an already-invited email
+current_user.send_organization_invite_to!("already@invited.com")
+# => Returns existing pending invitation (doesn't raise)
+
+# Accepting an already-accepted invitation
+invitation.accept!
+# => Returns existing membership (doesn't raise)
+
+# Adding an existing member
+org.add_member!(existing_user)
+# => Returns existing membership (doesn't raise)
+
+# Creating org with duplicate slug
+user.create_organization!("Acme Corp")  # slug: acme-corp exists
+# => Creates with suffix: acme-corp-2 (via slugifiable gem)
+```
+
+### Session integrity
+
+When a user is removed from their current organization:
+
+```ruby
+# User's session points to org_id = 123
+# Admin removes user from org 123
+
+# On user's next request:
+current_organization
+# 1. Finds org 123
+# 2. Verifies user has membership in org 123
+# 3. Membership doesn't exist → clears session, returns nil
+# 4. require_organization! redirects to on_no_organization handler
+```
+
+This prevents users from accessing organizations they've been removed from, even if their session still references that org.
+
+### Database indexes
+
+The gem creates these indexes automatically:
+
+```sql
+-- Fast membership lookups
+CREATE UNIQUE INDEX index_memberships_on_user_and_org ON memberships (user_id, organization_id);
+CREATE INDEX index_memberships_on_organization_id ON memberships (organization_id);
+CREATE INDEX index_memberships_on_role ON memberships (role);
+
+-- Fast invitation lookups
+CREATE UNIQUE INDEX index_invitations_on_token ON invitations (token);
+CREATE INDEX index_invitations_on_email ON invitations (email);
+CREATE UNIQUE INDEX index_invitations_pending ON invitations (organization_id, email) WHERE accepted_at IS NULL;
+
+-- Fast org lookups
+CREATE UNIQUE INDEX index_organizations_on_slug ON organizations (slug);
+```
 
 ## Migration from 1:1 relationships
 
