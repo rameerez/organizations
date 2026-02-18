@@ -1,0 +1,34 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+/vendor/
+/vendor/bundle/
+/vendor/cache/
+/vendor/assets/
+.bundle/
+/yarn-error.log
+/node_modules/
+/.ruby-lsp/
+/.solargraph.yml
+
+# For gems, ignore all lockfiles (root and appraisal) to allow flexible dependency resolution
+# But commit the Appraisal Gemfiles themselves (not the .lock files)
+Gemfile.lock
+gemfiles/*.lock
+
+.aux/
+.docs/
+
+.vscode/
+.cursor/
+.claude/
+
+TODO
+
+dist/
+.claude/

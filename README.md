@@ -1,4 +1,4 @@
-# 🏢 `organizations` – Add organizations with members to your Rails SaaS
+# 🏢 `organizations` – Add organizations with members and invitations to your Rails SaaS
 
 [![Gem Version](https://badge.fury.io/rb/organizations.svg)](https://badge.fury.io/rb/organizations) [![Build Status](https://github.com/rameerez/organizations/workflows/Tests/badge.svg)](https://github.com/rameerez/organizations/actions)
 

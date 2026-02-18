@@ -1,0 +1,70 @@
+# frozen_string_literal: true
+
+class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %>
+  def change
+    primary_key_type, foreign_key_type = primary_and_foreign_key_types
+
+    # Organizations table
+    create_table :organizations, id: primary_key_type do |t|
+      t.string :name, null: false
+      t.string :slug, null: false
+      t.send(json_column_type, :metadata, null: false, default: json_column_default)
+
+      t.timestamps
+    end
+
+    add_index :organizations, :slug, unique: true
+
+    # Memberships join table (User ↔ Organization)
+    create_table :memberships, id: primary_key_type do |t|
+      t.references :user, null: false, type: foreign_key_type, foreign_key: true
+      t.references :organization, null: false, type: foreign_key_type, foreign_key: true
+      t.string :role, null: false, default: "member"
+      t.send(json_column_type, :metadata, null: false, default: json_column_default)
+
+      t.timestamps
+    end
+
+    add_index :memberships, [:user_id, :organization_id], unique: true
+    add_index :memberships, :role
+
+    # Invitations table
+    create_table :organization_invitations, id: primary_key_type do |t|
+      t.references :organization, null: false, type: foreign_key_type, foreign_key: true
+      t.references :invited_by, null: false, type: foreign_key_type, foreign_key: { to_table: :users }
+      t.string :email, null: false
+      t.string :token, null: false
+      t.string :role, null: false, default: "member"
+      t.datetime :accepted_at
+      t.datetime :expires_at
+
+      t.timestamps
+    end
+
+    add_index :organization_invitations, :token, unique: true
+    add_index :organization_invitations, [:organization_id, :email]
+  end
+
+  private
+
+  def primary_and_foreign_key_types
+    config = Rails.configuration.generators
+    setting = config.options[config.orm][:primary_key_type]
+    primary_key_type = setting || :primary_key
+    foreign_key_type = setting || :bigint
+    [primary_key_type, foreign_key_type]
+  end
+
+  def json_column_type
+    return :jsonb if connection.adapter_name.downcase.include?('postgresql')
+    :json
+  end
+
+  # MySQL 8+ doesn't allow default values on JSON columns.
+  # Returns an empty hash default for SQLite/PostgreSQL, nil for MySQL.
+  # Models handle nil metadata gracefully by defaulting to {} in their accessors.
+  def json_column_default
+    return nil if connection.adapter_name.downcase.include?('mysql')
+    {}
+  end
+end
