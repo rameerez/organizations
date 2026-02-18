@@ -1,13 +1,17 @@
-# `organizations` – Team management for Rails apps
+# 🏢 `organizations` – Add organizations with members and invites to your Rails SaaS
 
 [![Gem Version](https://badge.fury.io/rb/organizations.svg)](https://badge.fury.io/rb/organizations) [![Build Status](https://github.com/rameerez/organizations/workflows/Tests/badge.svg)](https://github.com/rameerez/organizations/actions)
 
 > [!TIP]
 > **🚀 Ship your next Rails app 10x faster!** I've built **[RailsFast](https://railsfast.com/?ref=organizations)**, a production-ready Rails boilerplate template that comes with everything you need to launch a software business in days, not weeks. Go [check it out](https://railsfast.com/?ref=organizations)!
 
-`organizations` adds complete organizations / teams management to any Rails app. Memberships, invitations, roles, permissions – everything you need to turn a single-user app into a multi-tenant B2B SaaS.
+`organizations` adds organizations with members to any Rails app. It handles team invites, user memberships, roles, and permissions.
 
-> **Terminology:** This gem uses "organization" but the concept is the same as "team", "workspace", or "account". Use whichever term fits your product.
+[TODO: invitation / member management gif]
+
+It's everything you need to turn a `User`-based app into a multi-tenant, `Organization`-based B2B SaaS (users belong in organizations, and organizations share resources and billing, etc.)
+
+It's super easy:
 
 ```ruby
 class User < ApplicationRecord
@@ -15,24 +19,36 @@ class User < ApplicationRecord
 end
 ```
 
-That's it. Your users can now create organizations, invite teammates, and jump between accounts.
+That's it. Your users can now create organizations, invite teammates, and jump between accounts:
 
 ```ruby
 current_user.create_organization!("Acme Corp")
 current_user.send_organization_invite_to!("teammate@acme.com")
+```
 
-current_user.organization.name          # => "Acme Corp"
+Then you could switch to the new org like this:
+
+```ruby
+switch_to_organization!(@org)
+```
+
+And check your roles / permissions in relation to that organization like this:
+
+```ruby
 current_user.is_organization_owner?     # => true
 current_user.is_organization_admin?     # => true (owners inherit admin permissions)
 ```
+
+> [!NOTE]
+> This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
+
+## Why this gem exists
 
 Organizations / teams are tough to do alone. Wiring up accounts, roles, and invites by hand is a pain you only want to go through once. If you don't implement organizations / teams on day one, adding them later becomes a major refactor — the kind that touches every model, controller, and permission in your app. Even experienced Rails developers have built accounts / teams poorly multiple times before getting it right.
 
 No more asking yourself "should I just roll my own?" No more stitching together `acts_as_tenant` + `rolify` + `devise_invitable` + `pundit` and writing 500 lines of glue code. No more paying $250/year for a boilerplate template just because it has organizations / teams built in. The `organizations` gem gives you everything in a single `bundle add`.
 
-## Why this gem exists
-
-Every B2B Rails app eventually needs organizations / teams. Yet there's no standalone gem that provides the complete package:
+Every B2B Rails app eventually needs organizations / teams. Yet there's no standalone gem that allows you to just flip a switch and add organizations to your app.
 
 | What you need | What exists today |
 |---------------|-------------------|
