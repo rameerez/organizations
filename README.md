@@ -1,4 +1,4 @@
-# 🏢 `organizations` – Add organizations with members and invites to your Rails SaaS
+# 🏢 `organizations` – Add organizations with members to your Rails SaaS
 
 [![Gem Version](https://badge.fury.io/rb/organizations.svg)](https://badge.fury.io/rb/organizations) [![Build Status](https://github.com/rameerez/organizations/workflows/Tests/badge.svg)](https://github.com/rameerez/organizations/actions)
 
@@ -42,39 +42,6 @@ current_user.is_organization_admin?     # => true (owners inherit admin permissi
 > [!NOTE]
 > This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
 
-## Why this gem exists
-
-Organizations / teams are tough to do alone. Wiring up accounts, roles, and invites by hand is a pain you only want to go through once. If you don't implement organizations / teams on day one, adding them later becomes a major refactor — the kind that touches every model, controller, and permission in your app. Even experienced Rails developers have built accounts / teams poorly multiple times before getting it right.
-
-No more asking yourself "should I just roll my own?" No more stitching together `acts_as_tenant` + `rolify` + `devise_invitable` + `pundit` and writing 500 lines of glue code. No more paying $250/year for a boilerplate template just because it has organizations / teams built in. The `organizations` gem gives you everything in a single `bundle add`.
-
-Every B2B Rails app eventually needs organizations / teams. Yet there's no standalone gem that allows you to just flip a switch and add organizations to your app.
-
-| What you need | What exists today |
-|---------------|-------------------|
-| Organization model | ✅ Easy, just scaffold it |
-| Membership (User ↔ Organization join table) | ❌ Write it yourself |
-| Invite users to a *specific* organization | ❌ `devise_invitable` invites to the *app*, not to an org |
-| Roles scoped to each organization | ❌ `rolify` stores roles globally, not per-org |
-| Let users jump between organizations | ❌ Write it yourself |
-| **All of the above, integrated** | ❌ **Pay $250+ for a boilerplate** |
-
-The day will come when you need to associate your users in organizations — and it will be the refactor from your worst nightmares. Rails does not make your life easy when you want to work this way, with multiple tenants. The typical Rails developer stitches together `acts_as_tenant` + `rolify` + `devise_invitable` + `pundit` and writes 500-1,000 lines of glue code that feels brittle compared to the usual simplicity of Rails. That takes 1-2 months. Some developers have estimated 200+ hours of work. Or you pay $250+/year for a boilerplate template where organizations / teams is the headline feature.
-
-Laravel has Jetstream with a `--teams` flag. Django has `django-organizations`. Rails has had nothing — until now.
-
-| Framework | Organizations / Teams Solution | Cost |
-|-----------|-------------------------------|------|
-| Laravel | Jetstream `--teams` | Free |
-| Django | django-organizations | Free |
-| Rails | `organizations` gem | Free |
-
-`organizations` gives you the complete `User → Membership → Organization` pattern with scoped invitations, hierarchical roles, and the ability to switch between organizations – all in a single, well-tested gem that works with your existing Devise setup. What previously took 1.5 months now takes 3 days.
-
-> **Note:** This gem handles organization membership and org-level permissions (who can invite members, who can manage billing). For per-record authorization ("can user X edit document Y"), use [Pundit](https://github.com/varvet/pundit) or [CanCanCan](https://github.com/CanCanCommunity/cancancan) alongside this gem.
-
-Check out my other gems: [`api_keys`](https://github.com/rameerez/api_keys) for API key management · [`pricing_plans`](https://github.com/rameerez/pricing_plans) for SaaS entitlements · [`usage_credits`](https://github.com/rameerez/usage_credits) for usage-based billing · [`allgood`](https://github.com/rameerez/allgood) for health checks
-
 ## Installation
 
 Add to your Gemfile:
@@ -83,7 +50,8 @@ Add to your Gemfile:
 gem "organizations"
 ```
 
-The gem depends on [`slugifiable`](https://github.com/rameerez/slugifiable) for URL-friendly slugs (auto-included). For beautiful invitation emails, optionally add [`goodmail`](https://github.com/rameerez/goodmail).
+> [!NOTE]
+> The `organizations` gem depends on [`slugifiable`](https://github.com/rameerez/slugifiable) for URL-friendly organization slugs (auto-included). For beautiful invitation emails, optionally add [`goodmail`](https://github.com/rameerez/goodmail).
 
 Then:
 
@@ -183,6 +151,38 @@ class ProjectsController < ApplicationController
 end
 ```
 
+## Why this gem exists
+
+Organizations / teams are tough to do alone. Wiring up accounts, roles, and invites by hand is a pain you only want to go through once. If you don't implement organizations / teams on day one, adding them later becomes a major refactor — the kind that touches every model, controller, and permission in your app. Even experienced Rails developers have built accounts / teams poorly multiple times before getting it right.
+
+No more asking yourself "should I just roll my own?" No more stitching together `acts_as_tenant` + `rolify` + `devise_invitable` + `pundit` and writing 500 lines of glue code. No more paying $250/year for a boilerplate template just because it has organizations / teams built in. The `organizations` gem gives you everything in a single `bundle add`.
+
+Every B2B Rails app eventually needs organizations / teams. Yet there's no standalone gem that allows you to just flip a switch and add organizations to your app.
+
+| What you need | What exists today |
+|---------------|-------------------|
+| Organization model | ✅ Easy, just scaffold it |
+| Membership (User ↔ Organization join table) | ❌ Write it yourself |
+| Invite users to a *specific* organization | ❌ `devise_invitable` invites to the *app*, not to an org |
+| Roles scoped to each organization | ❌ `rolify` stores roles globally, not per-org |
+| Let users jump between organizations | ❌ Write it yourself |
+| **All of the above, integrated** | ❌ **Pay $250+ for a boilerplate** |
+
+The day will come when you need to associate your users in organizations — and it will be the refactor from your worst nightmares. Rails does not make your life easy when you want to work this way, with multiple tenants. The typical Rails developer stitches together `acts_as_tenant` + `rolify` + `devise_invitable` + `pundit` and writes 500-1,000 lines of glue code that feels brittle compared to the usual simplicity of Rails. That takes 1-2 months. Some developers have estimated 200+ hours of work. Or you pay $250+/year for a boilerplate template where organizations / teams is the headline feature.
+
+Laravel has Jetstream with a `--teams` flag. Django has `django-organizations`. Rails has had nothing — until now.
+
+| Framework | Organizations / Teams Solution | Cost |
+|-----------|-------------------------------|------|
+| Laravel | Jetstream `--teams` | Free |
+| Django | django-organizations | Free |
+| Rails | `organizations` gem | Free |
+
+`organizations` gives you the complete `User → Membership → Organization` pattern with scoped invitations, hierarchical roles, and the ability to switch between organizations – all in a single, well-tested gem that works with your existing Devise setup. What previously took 1.5 months now takes 3 days.
+
+> ![NOTE]
+> This gem handles organization membership and org-level permissions (who can invite members, who can manage billing). For per-record authorization ("can user X edit document Y"), use [Pundit](https://github.com/varvet/pundit) or [CanCanCan](https://github.com/CanCanCommunity/cancancan) alongside this gem.
+
 ## The complete API
 
 ### User methods
@@ -191,16 +191,16 @@ When you add `has_organizations` to your User model, you get:
 
 ```ruby
 # Associations
-user.organizations              # All organizations user belongs to
-user.memberships                # All memberships (with roles)
-user.owned_organizations        # Organizations where user is owner
-user.pending_organization_invitations  # Invitations waiting to be accepted
+user.organizations                      # All organizations user belongs to
+user.memberships                        # All memberships (with roles)
+user.owned_organizations                # Organizations where user is owner
+user.pending_organization_invitations   # Invitations waiting to be accepted
 
 # Current organization context
-user.organization               # Alias for current_organization (most common use)
-user.current_organization       # Active org for this session
-user.current_membership         # Membership in active org
-user.current_organization_role  # Role in current org => :admin
+user.organization                       # Alias for current_organization (most common use)
+user.current_organization               # Active org for this session
+user.current_membership                 # Membership in active org
+user.current_organization_role          # Role in current org => :admin
 
 # Quick boolean checks
 user.belongs_to_any_organization?           # "Does user belong to any org?"
@@ -211,18 +211,18 @@ user.has_organization_permission_to?(:invite_members)   # => true/false
 user.has_organization_role?(:admin)                     # => true/false
 
 # Role shortcuts (in current organization)
-user.is_organization_owner?     # Same as has_organization_role?(:owner)
-user.is_organization_admin?     # Same as has_organization_role?(:admin)
-user.is_organization_member?    # Same as has_organization_role?(:member)
-user.is_organization_viewer?    # Same as has_organization_role?(:viewer)
+user.is_organization_owner?             # Same as has_organization_role?(:owner)
+user.is_organization_admin?             # Same as has_organization_role?(:admin)
+user.is_organization_member?            # Same as has_organization_role?(:member)
+user.is_organization_viewer?            # Same as has_organization_role?(:viewer)
 
 # Role checks (explicit organization)
-user.is_owner_of?(org)          # "Is user an owner of this org?"
-user.is_admin_of?(org)          # "Is user an admin of this org?"
-user.is_member_of?(org)         # "Is user a member of this org?"
-user.is_viewer_of?(org)         # "Is user a viewer of this org?"
-user.is_at_least?(:admin, in: org)  # "Is user at least an admin in this org?"
-user.role_in(org)               # => :admin
+user.is_owner_of?(org)                  # "Is user an owner of this org?"
+user.is_admin_of?(org)                  # "Is user an admin of this org?"
+user.is_member_of?(org)                 # "Is user a member of this org?"
+user.is_viewer_of?(org)                 # "Is user a viewer of this org?"
+user.is_at_least?(:admin, in: org)      # "Is user at least an admin in this org?"
+user.role_in(org)                       # => :admin
 
 # Actions
 user.create_organization!("Acme")            # Positional arg
