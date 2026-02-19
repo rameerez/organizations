@@ -37,3 +37,4 @@ dist/
 test/dummy/log/
 test/dummy/tmp/
 test/dummy/storage/*.sqlite3*
+test/dummy/app/assets/builds/
