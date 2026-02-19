@@ -38,5 +38,4 @@ Gem::Specification.new do |spec|
   spec.add_dependency "railties", ">= 7.1.0", "< 9.0"
   spec.add_dependency "activerecord", ">= 7.1.0", "< 9.0"
   spec.add_dependency "activesupport", ">= 7.1.0", "< 9.0"
-  spec.add_dependency "slugifiable", ">= 0.1.0"
 end

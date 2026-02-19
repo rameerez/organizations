@@ -48,7 +48,7 @@ gem "organizations"
 ```
 
 > [!NOTE]
-> The `organizations` gem depends on [`slugifiable`](https://github.com/rameerez/slugifiable) for URL-friendly organization slugs (auto-included). For beautiful invitation emails, optionally add [`goodmail`](https://github.com/rameerez/goodmail).
+> For beautiful invitation emails, optionally add [`goodmail`](https://github.com/rameerez/goodmail).
 
 Then:
 
@@ -458,10 +458,10 @@ The helper returns:
 
 ```ruby
 {
-  current: { id: "...", name: "Acme Corp", slug: "acme-corp" },
+  current: { id: "...", name: "Acme Corp" },
   others: [
-    { id: "...", name: "Personal", slug: "personal" },
-    { id: "...", name: "StartupCo", slug: "startupco" }
+    { id: "...", name: "Personal" },
+    { id: "...", name: "StartupCo" }
   ],
   switch_path: ->(org_id) { "/organizations/switch/#{org_id}" }
 }
@@ -1026,7 +1026,6 @@ The gem works with Rails fixtures:
 # test/fixtures/organizations.yml
 acme:
   name: Acme Corp
-  slug: acme-corp
 
 # test/fixtures/memberships.yml
 john_at_acme:
@@ -1117,13 +1116,12 @@ The gem creates three tables:
 organizations
   - id (primary key, auto-detects UUID or integer from your app)
   - name (string, required)
-  - slug (string, unique, indexed) -- auto-generated via slugifiable gem
   - metadata (jsonb, default: {})
   - created_at
   - updated_at
 ```
 
-> **Note:** The gem automatically detects your app's primary key type (UUID or integer) and uses it for all tables. Slugs are auto-generated from the organization name using the [`slugifiable`](https://github.com/rameerez/slugifiable) gem.
+> **Note:** The gem automatically detects your app's primary key type (UUID or integer) and uses it for all tables.
 
 ### memberships
 
@@ -1181,7 +1179,6 @@ organization_invitations
 | Ownership transfer to removed user | Transaction lock, verifies membership exists before transfer |
 | Concurrent role changes on same user | Row-level lock on membership row |
 | Session points to org user was removed from | `current_organization` verifies membership, clears stale session |
-| Duplicate org slug on creation | Unique constraint, retries with suffix (acme-corp-2) |
 | Token collision on invitation | Unique constraint, regenerates token |
 
 ## Performance notes
@@ -1243,12 +1240,12 @@ The `organization_switcher_data` helper is optimized for navbar use:
 
 ```ruby
 # Internally, it:
-# 1. Selects only id, name, slug (not full objects)
+# 1. Selects only id, name (not full objects)
 # 2. Memoizes within the request
 # 3. Returns a lightweight hash, not ActiveRecord objects
 
 organization_switcher_data
-# => { current: { id: "...", name: "Acme", slug: "acme" }, others: [...] }
+# => { current: { id: "...", name: "Acme" }, others: [...] }
 ```
 
 ### Counter caches for member counts
@@ -1333,7 +1330,6 @@ These constraints prevent duplicate data at the database level:
 | `memberships [user_id, organization_id]` | User can only have one membership per org |
 | `invitations [organization_id, email] WHERE accepted_at IS NULL` | Only one pending invitation per email per org |
 | `invitations [token]` | Invitation tokens are globally unique |
-| `organizations [slug]` | Organization slugs are globally unique |
 
 ### Row-level locking
 
@@ -1423,10 +1419,6 @@ invitation.accept!
 # Adding an existing member
 org.add_member!(existing_user)
 # => Returns existing membership (doesn't raise)
-
-# Creating org with duplicate slug
-user.create_organization!("Acme Corp")  # slug: acme-corp exists
-# => Creates with suffix: acme-corp-2 (via slugifiable gem)
 ```
 
 ### Session integrity
@@ -1461,9 +1453,6 @@ CREATE INDEX index_memberships_on_role ON memberships (role);
 CREATE UNIQUE INDEX index_invitations_on_token ON organization_invitations (token);
 CREATE INDEX index_invitations_on_email ON organization_invitations (email);
 CREATE UNIQUE INDEX index_invitations_pending ON organization_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL;
-
--- Fast org lookups
-CREATE UNIQUE INDEX index_organizations_on_slug ON organizations (slug);
 ```
 
 ## Migration from 1:1 relationships

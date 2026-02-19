@@ -46,11 +46,5 @@ module Organizations
         org.transfer_ownership_to!(admin)
       end
     end
-
-    test "organization uses slugifiable for name-based slugs" do
-      org = Organizations::Organization.create!(name: "Acme Corp")
-
-      assert_equal "acme-corp", org.slug
-    end
   end
 end

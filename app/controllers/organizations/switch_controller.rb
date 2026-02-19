@@ -19,7 +19,7 @@ module Organizations
 
         respond_to do |format|
           format.html { redirect_to after_switch_path, notice: "Switched to #{org.name}" }
-          format.json { render json: { organization: { id: org.id, name: org.name, slug: org.slug } } }
+          format.json { render json: { organization: { id: org.id, name: org.name } } }
         end
       else
         respond_to do |format|

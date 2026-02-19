@@ -150,7 +150,6 @@ module Organizations
         {
           id: org.id,
           name: org.name,
-          slug: org.slug,
           member_count: counts[org.id] || 0,
           role: membership.role,
           created_at: org.created_at,
@@ -168,7 +167,6 @@ module Organizations
       {
         id: org.id,
         name: org.name,
-        slug: org.slug,
         member_count: org.member_count,
         role: membership&.role,
         created_at: org.created_at,

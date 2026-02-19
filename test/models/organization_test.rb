@@ -118,49 +118,6 @@ module Organizations
       assert_includes org.errors[:name], "can't be blank"
     end
 
-    test "requires slug" do
-      # before_validation auto-computes slug from name, so we need to
-      # bypass that by creating a record and then blanking the slug
-      org = Organization.new(name: nil, slug: nil)
-      assert_not org.valid?
-      assert_includes org.errors[:slug], "can't be blank"
-    end
-
-    test "enforces slug uniqueness case-insensitively" do
-      Organization.create!(name: "First Org")
-
-      duplicate = Organization.new(name: "Something Else")
-      duplicate.slug = "first-org"
-      assert_not duplicate.valid?
-      assert_includes duplicate.errors[:slug], "has already been taken"
-    end
-
-    # =========================================================================
-    # Slug Generation
-    # =========================================================================
-
-    test "generates slug from name on create" do
-      org = Organization.create!(name: "Acme Corporation")
-      assert_equal "acme-corporation", org.slug
-    end
-
-    test "duplicate names get unique slugs with suffix" do
-      org1 = Organization.create!(name: "Test Company")
-      org2 = Organization.create!(name: "Test Company")
-
-      assert_equal "test-company", org1.slug
-      assert org2.slug.start_with?("test-company-")
-      assert_not_equal org1.slug, org2.slug
-    end
-
-    test "slug does not change when name changes" do
-      org = Organization.create!(name: "Original Name")
-      original_slug = org.slug
-
-      org.update!(name: "Updated Name")
-      assert_equal original_slug, org.slug
-    end
-
     # =========================================================================
     # Scopes
     # =========================================================================
