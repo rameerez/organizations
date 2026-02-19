@@ -29,7 +29,7 @@ module Organizations
       assert data.key?(:switch_path)
     end
 
-    test "organization_switcher_data current contains id, name, slug, role, and role_label" do
+    test "organization_switcher_data current contains id, name, role, and role_label" do
       org, owner = create_org_with_owner!(name: "Acme Corp")
       self.current_user = owner
       self.current_organization = org
@@ -39,7 +39,6 @@ module Organizations
 
       assert_equal org.id, current[:id]
       assert_equal "Acme Corp", current[:name]
-      assert_equal "acme-corp", current[:slug]
       assert_equal :owner, current[:role]
       assert_equal "Owner", current[:role_label]
       assert current[:current]
@@ -82,7 +81,6 @@ module Organizations
       data = organization_switcher_data
       assert_nil data[:current][:id]
       assert_nil data[:current][:name]
-      assert_nil data[:current][:slug]
       assert_empty data[:others]
     end
 

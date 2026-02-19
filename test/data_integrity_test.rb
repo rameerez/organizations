@@ -144,25 +144,6 @@ module Organizations
       assert_includes inv2.errors[:token], "has already been taken"
     end
 
-    # -- organizations [slug] --
-
-    test "unique constraint: organization slugs are globally unique" do
-      Organizations::Organization.create!(name: "Unique Corp")
-
-      org2 = Organizations::Organization.new(name: "Unique Corp", slug: "unique-corp")
-      assert_not org2.valid?
-      assert_includes org2.errors[:slug], "has already been taken"
-    end
-
-    test "unique constraint: slugifiable handles duplicate names with auto-suffix" do
-      org1 = Organizations::Organization.create!(name: "Acme Corp")
-      org2 = Organizations::Organization.create!(name: "Acme Corp")
-
-      assert_equal "acme-corp", org1.slug
-      assert_not_equal org1.slug, org2.slug
-      assert org2.slug.start_with?("acme-corp")
-    end
-
     # =========================================================================
     # Row-Level Locking
     # =========================================================================
@@ -476,15 +457,6 @@ module Organizations
       # Calling again returns existing
       same_membership = org.add_member!(user, role: :member)
       assert_equal membership.id, same_membership.id
-    end
-
-    test "graceful handling: duplicate slug gets auto-suffix via slugifiable" do
-      org1 = Organizations::Organization.create!(name: "Acme Corp")
-      org2 = Organizations::Organization.create!(name: "Acme Corp")
-
-      assert_equal "acme-corp", org1.slug
-      assert_not_equal org1.slug, org2.slug
-      assert org2.persisted?
     end
 
     # =========================================================================
@@ -939,24 +911,6 @@ module Organizations
         assert inv.persisted?
         assert_not_equal colliding_token, inv.token
       end
-    end
-
-    # =========================================================================
-    # Duplicate Slug Handling
-    # =========================================================================
-
-    test "duplicate slug: multiple orgs with same name get distinct slugs" do
-      orgs = 3.times.map { Organizations::Organization.create!(name: "Same Name") }
-
-      slugs = orgs.map(&:slug)
-      assert_equal slugs.uniq.size, slugs.size, "Expected all slugs to be unique, got: #{slugs.inspect}"
-    end
-
-    test "duplicate slug: slug remains URL-safe after deduplication" do
-      Organizations::Organization.create!(name: "Test Org")
-      org2 = Organizations::Organization.create!(name: "Test Org")
-
-      assert_match(/\A[a-z0-9\-]+\z/, org2.slug)
     end
 
     # =========================================================================

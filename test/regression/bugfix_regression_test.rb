@@ -513,24 +513,6 @@ module Organizations
       assert_match(/non-member/i, error.message)
     end
 
-    # Regression: Round 4, High #6
-    # Slug collision should retry with a suffix when a duplicate slug
-    # is generated. The Organization model should handle
-    # ActiveRecord::RecordNotUnique on slug by appending a random suffix.
-    test "slug collision retry produces unique slug" do
-      # Create first org with a known slug
-      org1 = Organizations::Organization.create!(name: "Slug Test")
-      slug1 = org1.slug
-
-      # Create second org with same name -- slug should be different
-      org2 = Organizations::Organization.create!(name: "Slug Test")
-      slug2 = org2.slug
-
-      refute_equal slug1, slug2,
-        "Two organizations with the same name should have different slugs"
-      assert org2.persisted?
-    end
-
     # =========================================================================
     # Additional cross-cutting regression tests
     # =========================================================================

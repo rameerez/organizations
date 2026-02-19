@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "slugifiable/model"
-
 module Organizations
   # Organization model representing a team, workspace, or account.
   # Users belong to organizations through memberships with specific roles.
@@ -19,11 +17,6 @@ module Organizations
   #
   class Organization < ActiveRecord::Base
     self.table_name = "organizations"
-    include Slugifiable::Model
-
-    # Keep slug semantics aligned with README and slugifiable defaults:
-    # organization names become URL-friendly slugs, with collision handling.
-    generate_slug_based_on :name
 
     # Error raised when trying to perform invalid operations on organization
     class CannotRemoveOwner < Organizations::Error; end
@@ -53,14 +46,6 @@ module Organizations
     # === Validations ===
 
     validates :name, presence: true
-    validates :slug, presence: true, uniqueness: { case_sensitive: false }
-
-    # === Callbacks ===
-
-    # slugifiable persists slugs in after_create by default, but this gem keeps
-    # organizations.slug as NOT NULL and validates presence. We therefore compute
-    # a slug before validation when needed.
-    before_validation :ensure_slug_present, on: :create, if: -> { slug.blank? && name.present? }
 
     # === Scopes ===
 
@@ -384,10 +369,6 @@ module Organizations
     end
 
     private
-
-    def ensure_slug_present
-      self.slug = compute_slug if slug.blank?
-    end
 
     # Defense in depth for organization-centric API usage.
     # The user-level API already checks this, but direct calls to `org.send_invite_to!`

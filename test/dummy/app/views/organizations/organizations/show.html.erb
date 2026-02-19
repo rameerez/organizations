@@ -12,8 +12,6 @@
       <%= @organization.name %>
     </h1>
     <p class="mt-2 text-sm text-gray-500">
-      Slug: <code class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-700"><%= @organization.slug %></code>
-      <span class="mx-2 text-gray-300">•</span>
       Created <%= time_ago_in_words(@organization.created_at) %> ago
     </p>
   </div>

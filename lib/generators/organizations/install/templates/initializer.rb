@@ -71,13 +71,4 @@ Organizations.configure do |config|
   # Default: :current_organization_id
   # config.session_key = :current_organization_id
 
-  # ============================================================================
-  # URL SLUGS
-  # ============================================================================
-
-  # Organizations use slugifiable for URL-friendly slugs.
-  # Slugs are auto-generated from the organization name.
-  # Example: "Acme Corp" → "acme-corp"
-  #
-  # To customize slug generation, configure slugifiable separately.
 end

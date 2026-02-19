@@ -8,13 +8,10 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     # Organizations table
     create_table :organizations, id: primary_key_type do |t|
       t.string :name, null: false
-      t.string :slug, null: false
       t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
 
       t.timestamps
     end
-
-    add_index :organizations, :slug, unique: true
 
     # Memberships join table (User ↔ Organization)
     create_table :memberships, id: primary_key_type do |t|

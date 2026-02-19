@@ -44,11 +44,9 @@ ActiveRecord::Schema.define do
 
   create_table :organizations, force: :cascade do |t|
     t.string :name, null: false
-    t.string :slug, null: false
     t.text :metadata, default: "{}"
     t.timestamps
   end
-  add_index :organizations, :slug, unique: true
 
   create_table :memberships, force: :cascade do |t|
     t.references :user, null: false, foreign_key: true

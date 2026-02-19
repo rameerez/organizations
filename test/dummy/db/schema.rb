@@ -46,11 +46,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_02_19_000002) do
 
   create_table "organizations", force: :cascade do |t|
     t.string "name", null: false
-    t.string "slug", null: false
     t.json "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["slug"], name: "index_organizations_on_slug", unique: true
   end
 
   create_table "users", force: :cascade do |t|

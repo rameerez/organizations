@@ -24,7 +24,7 @@ module Organizations
     # === Organization Switcher ===
 
     # Returns optimized data for building an organization switcher
-    # Only selects needed columns (id, name, slug) for performance
+    # Only selects needed columns (id, name) for performance
     # Memoized within the request
     #
     # @return [Hash] Hash with :current, :others, and :switch_path
@@ -32,10 +32,10 @@ module Organizations
     # @example
     #   organization_switcher_data
     #   # => {
-    #   #   current: { id: "...", name: "Acme Corp", slug: "acme-corp" },
+    #   #   current: { id: "...", name: "Acme Corp" },
     #   #   others: [
-    #   #     { id: "...", name: "Personal", slug: "personal" },
-    #   #     { id: "...", name: "StartupCo", slug: "startupco" }
+    #   #     { id: "...", name: "Personal" },
+    #   #     { id: "...", name: "StartupCo" }
     #   #   ],
     #   #   switch_path: ->(org_id) { "/organizations/switch/#{org_id}" }
     #   # }
@@ -259,7 +259,7 @@ module Organizations
                         .includes(:organization)
                         .joins(:organization)
                         .select("memberships.id, memberships.organization_id, memberships.role, " \
-                                "organizations.id AS org_id, organizations.name AS org_name, organizations.slug AS org_slug")
+                                "organizations.id AS org_id, organizations.name AS org_name")
 
       current_data = nil
       others = []
@@ -268,7 +268,6 @@ module Organizations
         org_data = {
           id: m.organization_id,
           name: m.org_name,
-          slug: m.org_slug,
           role: m.role.to_sym,
           role_label: organization_role_label(m.role)
         }
@@ -281,7 +280,7 @@ module Organizations
       end
 
       # If no current org was found in memberships, user might not be a member anymore
-      current_data ||= { id: nil, name: nil, slug: nil, role: nil, current: true }
+      current_data ||= { id: nil, name: nil, role: nil, current: true }
 
       {
         current: current_data,
@@ -292,7 +291,7 @@ module Organizations
 
     def empty_switcher_data
       {
-        current: { id: nil, name: nil, slug: nil, role: nil, current: true },
+        current: { id: nil, name: nil, role: nil, current: true },
         others: [],
         switch_path: build_switch_path_lambda
       }
