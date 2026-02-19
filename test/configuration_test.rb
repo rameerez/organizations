@@ -32,20 +32,20 @@ module Organizations
 
     # ── Auto-creation defaults ───────────────────────────────────────
 
-    test "create_personal_organization defaults to true" do
-      assert_equal true, Organizations.configuration.create_personal_organization
+    test "create_personal_organization defaults to false" do
+      assert_equal false, Organizations.configuration.create_personal_organization
     end
 
     test "personal_organization_name defaults to 'Personal'" do
       assert_equal "Personal", Organizations.configuration.personal_organization_name
     end
 
-    test "create_personal_organization can be set to false" do
+    test "create_personal_organization can be set to true" do
       Organizations.configure do |config|
-        config.create_personal_organization = false
+        config.create_personal_organization = true
       end
 
-      assert_equal false, Organizations.configuration.create_personal_organization
+      assert_equal true, Organizations.configuration.create_personal_organization
     end
 
     test "personal_organization_name can be a string" do
@@ -145,16 +145,16 @@ module Organizations
 
     # ── Onboarding defaults ──────────────────────────────────────────
 
-    test "require_organization defaults to true" do
-      assert_equal true, Organizations.configuration.require_organization
+    test "require_organization defaults to false" do
+      assert_equal false, Organizations.configuration.require_organization
     end
 
-    test "require_organization can be set to false" do
+    test "require_organization can be set to true" do
       Organizations.configure do |config|
-        config.require_organization = false
+        config.require_organization = true
       end
 
-      assert_equal false, Organizations.configuration.require_organization
+      assert_equal true, Organizations.configuration.require_organization
     end
 
     # ── Redirect defaults ────────────────────────────────────────────
@@ -484,12 +484,12 @@ module Organizations
       config = Organizations.configuration
       assert_equal :current_user, config.current_user_method
       assert_equal :authenticate_user!, config.authenticate_user_method
-      assert_equal true, config.create_personal_organization
+      assert_equal false, config.create_personal_organization
       assert_equal "Personal", config.personal_organization_name
       assert_equal 7.days, config.invitation_expiry
       assert_equal "Organizations::InvitationMailer", config.invitation_mailer
       assert_nil config.max_organizations_per_user
-      assert_equal true, config.require_organization
+      assert_equal false, config.require_organization
       assert_equal "/organizations/new", config.no_organization_path
     end
 
