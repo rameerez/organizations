@@ -19,7 +19,7 @@ Organizations.configure do |config|
   # === Handlers ===
   # Called when authorization fails
   config.on_unauthorized do |context|
-    redirect_to main_app.root_path, alert: "You don't have permission to do that."
+    redirect_to "/", alert: "You don't have permission to do that."
   end
 
   # Called when no organization is set
