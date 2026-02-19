@@ -62,3 +62,6 @@ end
 
 # For pretty printing objects in the demo app -- adds the `ap` method we use in the views
 gem "awesome_print"
+
+# For generating realistic demo user names
+gem "faker"

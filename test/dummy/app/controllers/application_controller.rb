@@ -49,9 +49,18 @@ class ApplicationController < ActionController::Base
   private
 
   def create_default_demo_user
-    short_id = Digest::SHA256.hexdigest(session.id.to_s)[0, 6]
-    user = User.find_or_create_by(email: "demo-#{short_id}@example.com") do |u|
-      u.name = "Demo User #{short_id.upcase}"
+    # Generate a realistic-looking name and email using Faker
+    # Seed with session ID for consistency within the same session
+    seed = Digest::SHA256.hexdigest(session.id.to_s)[0, 8].to_i(16)
+    Faker::Config.random = Random.new(seed)
+
+    first_name = Faker::Name.first_name
+    last_name = Faker::Name.last_name
+    full_name = "#{first_name} #{last_name}"
+    email = "#{first_name.downcase}.#{last_name.downcase}@example.com"
+
+    user = User.find_or_create_by(email: email) do |u|
+      u.name = full_name
     end
     session[:demo_user_id] = user.id
     user
