@@ -6,17 +6,9 @@ module Organizations
   class Engine < ::Rails::Engine
     isolate_namespace Organizations
 
-    # Autoload paths
-    config.autoload_paths << File.expand_path("models", __dir__)
-    config.autoload_paths << File.expand_path("models/concerns", __dir__)
-
-    initializer "organizations.autoload", before: :set_autoload_paths do |app|
-      app.config.autoload_paths << root.join("lib")
-      app.config.autoload_paths << root.join("lib/organizations/models")
-      app.config.autoload_paths << root.join("lib/organizations/models/concerns")
-    end
-
     # Load models when ActiveRecord is ready
+    # Note: We use explicit requires instead of autoload_paths because the models
+    # are namespaced under Organizations:: but live in lib/organizations/models/
     initializer "organizations.active_record" do
       ActiveSupport.on_load(:active_record) do
         require "organizations/models/organization"
