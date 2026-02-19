@@ -32,63 +32,63 @@ module Organizations
 
     # ── Auto-creation defaults ───────────────────────────────────────
 
-    test "create_personal_organization defaults to false" do
-      assert_equal false, Organizations.configuration.create_personal_organization
+    test "always_create_personal_organization_for_each_user defaults to false" do
+      assert_equal false, Organizations.configuration.always_create_personal_organization_for_each_user
     end
 
-    test "personal_organization_name defaults to 'Personal'" do
-      assert_equal "Personal", Organizations.configuration.personal_organization_name
+    test "default_organization_name defaults to 'Personal'" do
+      assert_equal "Personal", Organizations.configuration.default_organization_name
     end
 
-    test "create_personal_organization can be set to true" do
+    test "always_create_personal_organization_for_each_user can be set to true" do
       Organizations.configure do |config|
-        config.create_personal_organization = true
+        config.always_create_personal_organization_for_each_user = true
       end
 
-      assert_equal true, Organizations.configuration.create_personal_organization
+      assert_equal true, Organizations.configuration.always_create_personal_organization_for_each_user
     end
 
-    test "personal_organization_name can be a string" do
+    test "default_organization_name can be a string" do
       Organizations.configure do |config|
-        config.personal_organization_name = "My Workspace"
+        config.default_organization_name = "My Workspace"
       end
 
-      assert_equal "My Workspace", Organizations.configuration.personal_organization_name
+      assert_equal "My Workspace", Organizations.configuration.default_organization_name
     end
 
-    test "personal_organization_name can be a proc" do
+    test "default_organization_name can be a proc" do
       Organizations.configure do |config|
-        config.personal_organization_name = ->(user) { "#{user.name}'s Workspace" }
+        config.default_organization_name = ->(user) { "#{user.name}'s Workspace" }
       end
 
-      assert_instance_of Proc, Organizations.configuration.personal_organization_name
+      assert_instance_of Proc, Organizations.configuration.default_organization_name
     end
 
-    # ── resolve_personal_organization_name ────────────────────────────
+    # ── resolve_default_organization_name ────────────────────────────
 
-    test "resolve_personal_organization_name returns string directly" do
+    test "resolve_default_organization_name returns string directly" do
       Organizations.configure do |config|
-        config.personal_organization_name = "Team Space"
-      end
-
-      user = create_user!(name: "Alice")
-      assert_equal "Team Space", Organizations.configuration.resolve_personal_organization_name(user)
-    end
-
-    test "resolve_personal_organization_name calls proc with user" do
-      Organizations.configure do |config|
-        config.personal_organization_name = ->(user) { "#{user.name}'s Workspace" }
+        config.default_organization_name = "Team Space"
       end
 
       user = create_user!(name: "Alice")
-      assert_equal "Alice's Workspace", Organizations.configuration.resolve_personal_organization_name(user)
+      assert_equal "Team Space", Organizations.configuration.resolve_default_organization_name(user)
     end
 
-    test "resolve_personal_organization_name falls back to Personal for unknown types" do
+    test "resolve_default_organization_name calls proc with user" do
+      Organizations.configure do |config|
+        config.default_organization_name = ->(user) { "#{user.name}'s Workspace" }
+      end
+
+      user = create_user!(name: "Alice")
+      assert_equal "Alice's Workspace", Organizations.configuration.resolve_default_organization_name(user)
+    end
+
+    test "resolve_default_organization_name falls back to Personal for unknown types" do
       config = Configuration.new
-      config.personal_organization_name = 42
+      config.default_organization_name = 42
 
-      assert_equal "Personal", config.resolve_personal_organization_name(nil)
+      assert_equal "Personal", config.resolve_default_organization_name(nil)
     end
 
     # ── Invitation defaults ──────────────────────────────────────────
@@ -145,30 +145,30 @@ module Organizations
 
     # ── Onboarding defaults ──────────────────────────────────────────
 
-    test "require_organization defaults to false" do
-      assert_equal false, Organizations.configuration.require_organization
+    test "always_require_users_to_belong_to_one_organization defaults to false" do
+      assert_equal false, Organizations.configuration.always_require_users_to_belong_to_one_organization
     end
 
-    test "require_organization can be set to true" do
+    test "always_require_users_to_belong_to_one_organization can be set to true" do
       Organizations.configure do |config|
-        config.require_organization = true
+        config.always_require_users_to_belong_to_one_organization = true
       end
 
-      assert_equal true, Organizations.configuration.require_organization
+      assert_equal true, Organizations.configuration.always_require_users_to_belong_to_one_organization
     end
 
     # ── Redirect defaults ────────────────────────────────────────────
 
-    test "no_organization_path defaults to /organizations/new" do
-      assert_equal "/organizations/new", Organizations.configuration.no_organization_path
+    test "redirect_path_when_no_organization defaults to /organizations/new" do
+      assert_equal "/organizations/new", Organizations.configuration.redirect_path_when_no_organization
     end
 
-    test "no_organization_path can be customized" do
+    test "redirect_path_when_no_organization can be customized" do
       Organizations.configure do |config|
-        config.no_organization_path = "/onboarding"
+        config.redirect_path_when_no_organization = "/onboarding"
       end
 
-      assert_equal "/onboarding", Organizations.configuration.no_organization_path
+      assert_equal "/onboarding", Organizations.configuration.redirect_path_when_no_organization
     end
 
     # ── Session/Switching defaults ───────────────────────────────────
@@ -448,20 +448,20 @@ module Organizations
     test "configure allows setting multiple options at once" do
       Organizations.configure do |config|
         config.current_user_method = :signed_in_user
-        config.create_personal_organization = false
+        config.always_create_personal_organization_for_each_user = false
         config.invitation_expiry = 30.days
         config.max_organizations_per_user = 10
-        config.require_organization = false
-        config.no_organization_path = "/setup"
+        config.always_require_users_to_belong_to_one_organization = false
+        config.redirect_path_when_no_organization = "/setup"
       end
 
       config = Organizations.configuration
       assert_equal :signed_in_user, config.current_user_method
-      assert_equal false, config.create_personal_organization
+      assert_equal false, config.always_create_personal_organization_for_each_user
       assert_equal 30.days, config.invitation_expiry
       assert_equal 10, config.max_organizations_per_user
-      assert_equal false, config.require_organization
-      assert_equal "/setup", config.no_organization_path
+      assert_equal false, config.always_require_users_to_belong_to_one_organization
+      assert_equal "/setup", config.redirect_path_when_no_organization
     end
 
     # ── reset_configuration! ─────────────────────────────────────────
@@ -470,13 +470,13 @@ module Organizations
       Organizations.configure do |config|
         config.current_user_method = :signed_in_user
         config.authenticate_user_method = :require_login!
-        config.create_personal_organization = false
-        config.personal_organization_name = "Custom"
+        config.always_create_personal_organization_for_each_user = false
+        config.default_organization_name = "Custom"
         config.invitation_expiry = 30.days
         config.invitation_mailer = "CustomMailer"
         config.max_organizations_per_user = 5
-        config.require_organization = false
-        config.no_organization_path = "/custom"
+        config.always_require_users_to_belong_to_one_organization = false
+        config.redirect_path_when_no_organization = "/custom"
       end
 
       Organizations.reset_configuration!
@@ -484,13 +484,13 @@ module Organizations
       config = Organizations.configuration
       assert_equal :current_user, config.current_user_method
       assert_equal :authenticate_user!, config.authenticate_user_method
-      assert_equal false, config.create_personal_organization
-      assert_equal "Personal", config.personal_organization_name
+      assert_equal false, config.always_create_personal_organization_for_each_user
+      assert_equal "Personal", config.default_organization_name
       assert_equal 7.days, config.invitation_expiry
       assert_equal "Organizations::InvitationMailer", config.invitation_mailer
       assert_nil config.max_organizations_per_user
-      assert_equal false, config.require_organization
-      assert_equal "/organizations/new", config.no_organization_path
+      assert_equal false, config.always_require_users_to_belong_to_one_organization
+      assert_equal "/organizations/new", config.redirect_path_when_no_organization
     end
 
     test "reset_configuration! clears custom roles" do

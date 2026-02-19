@@ -468,7 +468,7 @@ module Organizations
         org, _owner = create_org_with_owner!(name: "Deletable Org")
 
         # Disable personal org creation so the member doesn't become an owner
-        Organizations.configure { |c| c.create_personal_organization = false }
+        Organizations.configure { |c| c.always_create_personal_organization_for_each_user = false }
         # Re-set the class-level setting so has_organizations picks it up
         User.organization_settings = User.organization_settings.merge(create_personal_org: false).freeze
 

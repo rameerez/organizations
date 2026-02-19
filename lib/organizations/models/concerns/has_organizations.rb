@@ -96,8 +96,8 @@ module Organizations
             config = Organizations.configuration
             current_settings = {
               max_organizations: options.fetch(:max_organizations, config&.max_organizations_per_user),
-              create_personal_org: options.fetch(:create_personal_org, config&.create_personal_organization),
-              require_organization: options.fetch(:require_organization, config&.require_organization)
+              create_personal_org: options.fetch(:create_personal_org, config&.always_create_personal_organization_for_each_user),
+              require_organization: options.fetch(:require_organization, config&.always_require_users_to_belong_to_one_organization)
             }
 
             # Apply DSL block if provided
@@ -489,7 +489,7 @@ module Organizations
           private
 
           def create_personal_organization_if_configured
-            org_name = Organizations.configuration.resolve_personal_organization_name(self)
+            org_name = Organizations.configuration.resolve_default_organization_name(self)
             create_organization!(org_name)
           rescue StandardError => e
             # Log but don't fail user creation

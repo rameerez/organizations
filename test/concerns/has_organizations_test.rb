@@ -834,7 +834,7 @@ module Organizations
 
     test "personal org uses configured name" do
       Organizations.configure do |config|
-        config.personal_organization_name = ->(u) { "#{u.name}'s Workspace" }
+        config.default_organization_name = ->(u) { "#{u.name}'s Workspace" }
       end
       User.organization_settings = { max_organizations: nil, create_personal_org: true, require_organization: false }.freeze
 

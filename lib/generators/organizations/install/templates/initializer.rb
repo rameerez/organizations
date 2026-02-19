@@ -9,7 +9,7 @@ Organizations.configure do |config|
   # The organization will be named after the user (e.g., "John's Organization").
   # Set to true if you want every user to have their own organization on signup.
   # Default: false (invite-to-join flow)
-  # config.create_personal_organization = false
+  # config.always_create_personal_organization_for_each_user = false
 
   # ============================================================================
   # ORGANIZATION REQUIREMENTS
@@ -19,7 +19,7 @@ Organizations.configure do |config|
   # When true, users cannot leave their last organization.
   # Set to true if users should always have an organization.
   # Default: false (users can exist without any organization)
-  # config.require_organization = false
+  # config.always_require_users_to_belong_to_one_organization = false
 
   # ============================================================================
   # INVITATIONS

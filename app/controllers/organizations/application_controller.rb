@@ -163,7 +163,7 @@ module Organizations
         instance_exec(context, &config.no_organization_handler)
       else
         respond_to do |format|
-          format.html { redirect_to config.no_organization_path, alert: "Please select or create an organization." }
+          format.html { redirect_to config.redirect_path_when_no_organization, alert: "Please select or create an organization." }
           format.json { render json: { error: "Organization required" }, status: :forbidden }
         end
       end

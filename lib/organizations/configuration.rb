@@ -8,7 +8,7 @@ module Organizations
   #
   # @example Basic configuration
   #   Organizations.configure do |config|
-  #     config.create_personal_organization = true
+  #     config.always_create_personal_organization_for_each_user = true
   #     config.invitation_expiry = 7.days
   #   end
   #
@@ -34,11 +34,11 @@ module Organizations
 
     # === Auto-creation ===
     # Create personal organization on user signup
-    attr_accessor :create_personal_organization
+    attr_accessor :always_create_personal_organization_for_each_user
 
     # Name for auto-created organizations
     # Can be a String or a Proc/Lambda: ->(user) { "#{user.name}'s Workspace" }
-    attr_accessor :personal_organization_name
+    attr_accessor :default_organization_name
 
     # === Invitations ===
     # How long invitations are valid
@@ -55,9 +55,9 @@ module Organizations
     attr_accessor :max_organizations_per_user
 
     # === Onboarding ===
-    # Allow users to exist without any organization membership
-    # Set to false for flows where users sign up first, then create/join org later
-    attr_accessor :require_organization
+    # Require users to always belong to at least one organization
+    # Set to true to prevent users from leaving their last organization
+    attr_accessor :always_require_users_to_belong_to_one_organization
 
     # === Session/Switching ===
     # Session key for storing current organization ID
@@ -65,7 +65,7 @@ module Organizations
 
     # === Redirects ===
     # Where to redirect when user has no organization
-    attr_accessor :no_organization_path
+    attr_accessor :redirect_path_when_no_organization
 
     # === Engine configuration ===
     attr_accessor :parent_controller
@@ -93,8 +93,8 @@ module Organizations
       @authenticate_user_method = :authenticate_user!
 
       # Auto-creation defaults
-      @create_personal_organization = false
-      @personal_organization_name = "Personal"
+      @always_create_personal_organization_for_each_user = false
+      @default_organization_name = "Personal"
 
       # Invitation defaults
       @invitation_expiry = 7.days
@@ -105,13 +105,13 @@ module Organizations
       @max_organizations_per_user = nil
 
       # Onboarding
-      @require_organization = false
+      @always_require_users_to_belong_to_one_organization = false
 
       # Session/switching
       @session_key = :current_organization_id
 
       # Redirects
-      @no_organization_path = "/organizations/new"
+      @redirect_path_when_no_organization = "/organizations/new"
 
       # Engine
       @parent_controller = "::ApplicationController"
@@ -228,15 +228,15 @@ module Organizations
       end
     end
 
-    # Resolve the personal organization name for a user
+    # Resolve the default organization name for a user
     # @param user [Object] The user object
     # @return [String] The organization name
-    def resolve_personal_organization_name(user)
-      case @personal_organization_name
+    def resolve_default_organization_name(user)
+      case @default_organization_name
       when Proc
-        @personal_organization_name.call(user)
+        @default_organization_name.call(user)
       when String
-        @personal_organization_name
+        @default_organization_name
       else
         "Personal"
       end

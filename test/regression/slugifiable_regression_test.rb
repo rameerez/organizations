@@ -39,7 +39,7 @@ module Organizations
       # The scope must be called on the fully namespaced class.
       test "R5: Organizations::Organization.with_member scope returns correct orgs" do
         # Disable personal org creation to control memberships exactly
-        Organizations.configure { |c| c.create_personal_organization = false }
+        Organizations.configure { |c| c.always_create_personal_organization_for_each_user = false }
         User.organization_settings = User.organization_settings.merge(create_personal_org: false).freeze
 
         user = create_user!(email: "member@example.com")
@@ -69,7 +69,7 @@ module Organizations
       # with_member returns empty when user has no memberships.
       test "R5: with_member returns empty relation for user with no memberships" do
         # Disable personal org creation so user truly has no memberships
-        Organizations.configure { |c| c.create_personal_organization = false }
+        Organizations.configure { |c| c.always_create_personal_organization_for_each_user = false }
         User.organization_settings = User.organization_settings.merge(create_personal_org: false).freeze
 
         user = create_user!(email: "loner@example.com")
@@ -84,7 +84,7 @@ module Organizations
       # with_member does not return duplicate orgs for a user.
       test "R5: with_member returns no duplicates" do
         # Disable personal org creation to control memberships exactly
-        Organizations.configure { |c| c.create_personal_organization = false }
+        Organizations.configure { |c| c.always_create_personal_organization_for_each_user = false }
         User.organization_settings = User.organization_settings.merge(create_personal_org: false).freeze
 
         user = create_user!(email: "unique@example.com")
@@ -727,7 +727,7 @@ module Organizations
         user = create_user!(email: "lifecycle@example.com")
 
         # Disable auto-creation of personal org
-        Organizations.configure { |c| c.create_personal_organization = false }
+        Organizations.configure { |c| c.always_create_personal_organization_for_each_user = false }
         User.organization_settings = User.organization_settings.merge(create_personal_org: false).freeze
 
         org = Organizations::Organization.create!(name: "Lifecycle Org")

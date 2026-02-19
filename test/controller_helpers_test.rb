@@ -129,7 +129,7 @@ module Organizations
 
     test "current_organization returns nil when user has no orgs" do
       user = create_user!
-      Organizations.configuration.create_personal_organization = false
+      Organizations.configuration.always_create_personal_organization_for_each_user = false
       @controller.test_current_user = user
 
       assert_nil @controller.current_organization
@@ -911,9 +911,9 @@ module Organizations
       assert_equal org, @controller.current_organization
     end
 
-    test "no_organization_path configuration is respected for default handler" do
+    test "redirect_path_when_no_organization configuration is respected for default handler" do
       Organizations.configure do |config|
-        config.no_organization_path = "/setup"
+        config.redirect_path_when_no_organization = "/setup"
       end
 
       @controller.test_current_user = create_user!

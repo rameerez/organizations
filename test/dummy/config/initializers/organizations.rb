@@ -7,10 +7,10 @@ Organizations.configure do |config|
 
   # === Auto-creation ===
   # Don't auto-create orgs - users must create or be invited (default behavior)
-  # config.create_personal_organization = false
+  # config.always_create_personal_organization_for_each_user = false
 
-  # Name for auto-created organizations (only used if create_personal_organization is true)
-  config.personal_organization_name = ->(user) { "My Organization" }
+  # Name for auto-created organizations (only used if always_create_personal_organization_for_each_user is true)
+  config.default_organization_name = ->(user) { "My Organization" }
 
   # === Invitations ===
   # How long invitations are valid

@@ -82,7 +82,7 @@ module Organizations
     #
     # @example
     #   Organizations.configure do |config|
-    #     config.create_personal_organization = true
+    #     config.always_create_personal_organization_for_each_user = true
     #     config.invitation_expiry = 7.days
     #   end
     #

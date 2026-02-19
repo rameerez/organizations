@@ -282,7 +282,7 @@ module Organizations
       # Default behavior
       respond_to do |format|
         format.html do
-          path = config.no_organization_path
+          path = config.redirect_path_when_no_organization
           redirect_to path, alert: "Please select or create an organization."
         end
         format.json { render json: { error: "Organization required" }, status: :forbidden }

@@ -721,7 +721,7 @@ POST /invitations/:token/accept → Organizations::InvitationsController#accept
 By default, users do **not** get an auto-created organization on signup (invite-to-join flow). You can enable this if you want:
 
 ```ruby
-# When create_personal_organization is enabled:
+# When always_create_personal_organization_for_each_user is enabled:
 # 1. Organization created with name from config
 # 2. User becomes owner of that organization
 # 3. current_organization set to this new org
@@ -732,15 +732,15 @@ By default, users do **not** get an auto-created organization on signup (invite-
 ```ruby
 Organizations.configure do |config|
   # Enable auto-creation (disabled by default)
-  config.create_personal_organization = true
+  config.always_create_personal_organization_for_each_user = true
 
   # Customize the name
-  config.personal_organization_name = ->(user) { "#{user.email.split('@').first}'s Workspace" }
+  config.default_organization_name = ->(user) { "#{user.email.split('@').first}'s Workspace" }
   # Default: "Personal"
 end
 ```
 
-By default (`create_personal_organization = false`), users must explicitly create or be invited to an organization.
+By default (`always_create_personal_organization_for_each_user = false`), users must explicitly create or be invited to an organization.
 
 ### Users without organizations (default behavior)
 
@@ -812,10 +812,10 @@ Organizations.configure do |config|
 
   # === Auto-creation ===
   # Create personal organization on user signup (default: false)
-  config.create_personal_organization = false
+  config.always_create_personal_organization_for_each_user = false
 
   # Name for auto-created organizations
-  config.personal_organization_name = ->(user) { "Personal" }
+  config.default_organization_name = ->(user) { "Personal" }
 
   # === Invitations ===
   # How long invitations are valid
@@ -831,11 +831,11 @@ Organizations.configure do |config|
   # === Onboarding ===
   # Require users to belong to at least one organization
   # Set to true if users should always have an organization
-  config.require_organization = false  # Default
+  config.always_require_users_to_belong_to_one_organization = false  # Default
 
   # === Redirects ===
   # Where to redirect when user has no organization
-  config.no_organization_path = "/organizations/new"
+  config.redirect_path_when_no_organization = "/organizations/new"
 
   # === Handlers ===
   # Called when authorization fails
@@ -845,7 +845,7 @@ Organizations.configure do |config|
 
   # Called when no organization is set
   config.on_no_organization do |context|
-    redirect_to config.no_organization_path
+    redirect_to config.redirect_path_when_no_organization
   end
 
   # === Roles & Permissions ===
@@ -1170,7 +1170,7 @@ organization_invitations
 | Scenario | Behavior |
 |----------|----------|
 | User removed from current org | Auto-switches to next available org |
-| User has no organizations | Redirects to configurable path (or allowed if `require_organization: false`) |
+| User has no organizations | Redirects to configurable path (or allowed if `always_require_users_to_belong_to_one_organization: false`) |
 | User signs up, no org yet | `current_organization` returns `nil`, `belongs_to_any_organization?` returns `false` |
 | Last owner tries to leave | Raises `CannotLeaveAsLastOwner`, must transfer ownership first |
 | Two admins leave simultaneously | Row-level lock prevents both from leaving if one would be last |

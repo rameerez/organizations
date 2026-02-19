@@ -171,7 +171,7 @@ module Organizations
     test "create_organization! sets current organization context" do
       # Disable personal org creation so we control the flow
       Organizations.configure do |config|
-        config.create_personal_organization = false
+        config.always_create_personal_organization_for_each_user = false
       end
 
       user = User.create!(email: "creator-#{SecureRandom.hex(4)}@example.com", name: "Creator")
@@ -755,7 +755,7 @@ module Organizations
     # membership in the new org without requiring a page refresh.
     test "create_organization! makes current_membership available immediately" do
       Organizations.configure do |config|
-        config.create_personal_organization = false
+        config.always_create_personal_organization_for_each_user = false
       end
 
       user = User.create!(email: "immediate-#{SecureRandom.hex(4)}@example.com", name: "Immediate")
