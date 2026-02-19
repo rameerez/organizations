@@ -1,0 +1,149 @@
+<%# Danger Zone partial - only visible to owners %>
+<% if current_user.has_organization_permission_to?(:transfer_ownership) %>
+  <%
+    other_members = current_organization.memberships
+      .includes(:user)
+      .where.not(user_id: current_user.id)
+      .where.not(role: 'owner')
+  %>
+  <div class="bg-white rounded-xl shadow-sm border-2 border-red-200 overflow-hidden">
+    <div class="px-6 py-4 bg-red-50 border-b border-red-200">
+      <h2 class="text-base font-semibold text-red-900 flex items-center gap-2">
+        <%= heroicon "exclamation-triangle", variant: :solid, options: { class: "h-5 w-5 text-red-500" } %>
+        Danger Zone
+      </h2>
+      <p class="text-xs text-red-700 mt-1">Only <span class="font-medium">owners</span> can see this panel. These are destructive actions.</p>
+    </div>
+
+    <div class="divide-y divide-red-100">
+      <%# Transfer Ownership %>
+      <div class="p-6" data-controller="confirm-modal" data-confirm-modal-phrase-value="<%= current_organization.name %>">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-900">Transfer Ownership</h3>
+            <p class="text-sm text-gray-500 mt-1">Transfer this organization to another member. You will become an admin.</p>
+          </div>
+          <% if other_members.any? %>
+            <button type="button"
+              data-action="confirm-modal#open"
+              class="flex-shrink-0 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-red-600 ring-1 ring-inset ring-red-300 hover:bg-red-50">
+              Transfer
+            </button>
+
+            <%# Transfer Modal %>
+            <div data-confirm-modal-target="modal"
+              data-action="click->confirm-modal#closeOnBackdrop keydown@window->confirm-modal#closeOnEscape"
+              class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div class="bg-white rounded-xl shadow-2xl max-w-md w-full">
+                <div class="px-6 py-4 border-b border-gray-200">
+                  <h3 class="text-lg font-semibold text-gray-900">Transfer Ownership</h3>
+                  <p class="text-sm text-gray-500 mt-1">You will become an admin. This cannot be undone.</p>
+                </div>
+                <div class="p-6 space-y-4">
+                  <div>
+                    <label class="block text-sm text-gray-700 mb-1">
+                      Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= current_organization.name %></code> to confirm:
+                    </label>
+                    <input type="text"
+                      data-confirm-modal-target="input"
+                      data-action="input->confirm-modal#validate"
+                      placeholder="Type organization name..."
+                      autocomplete="off"
+                      class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm">
+                  </div>
+
+                  <div class="space-y-2">
+                    <p class="text-xs font-medium text-gray-500">Select new owner:</p>
+                    <% other_members.each do |membership| %>
+                      <%= form_with url: organizations.transfer_ownership_membership_path(membership), method: :post, data: { confirm_modal_target: "form", action: "submit->confirm-modal#submit" } do %>
+                        <button type="submit"
+                          disabled
+                          data-confirm-modal-target="confirmButton"
+                          class="w-full text-left px-3 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-red-50 hover:text-red-700 rounded-lg flex items-center gap-2 border border-gray-200 hover:border-red-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-700 disabled:hover:border-gray-200">
+                          <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs font-medium text-gray-600">
+                            <%= membership.user.email.first.upcase %>
+                          </span>
+                          <span class="truncate font-medium"><%= membership.user.email %></span>
+                          <span class="ml-auto text-xs text-gray-400"><%= membership.role.capitalize %></span>
+                        </button>
+                      <% end %>
+                    <% end %>
+                  </div>
+                </div>
+                <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+                  <button type="button" data-action="confirm-modal#close" class="text-sm font-medium text-gray-600 hover:text-gray-900">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          <% else %>
+            <span class="flex-shrink-0 text-sm text-gray-400 italic">No other members</span>
+          <% end %>
+        </div>
+      </div>
+
+      <%# Delete Organization %>
+      <div class="p-6" data-controller="confirm-modal" data-confirm-modal-phrase-value="<%= current_organization.name %>">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-900">Delete Organization</h3>
+            <p class="text-sm text-gray-500 mt-1">Permanently delete this organization and all its data.</p>
+          </div>
+          <button type="button"
+            data-action="confirm-modal#open"
+            class="flex-shrink-0 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+            Delete
+          </button>
+        </div>
+
+        <%# Delete Modal %>
+        <div data-confirm-modal-target="modal"
+          data-action="click->confirm-modal#closeOnBackdrop keydown@window->confirm-modal#closeOnEscape"
+          class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div class="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-gray-200">
+              <h3 class="text-lg font-semibold text-gray-900">Delete Organization</h3>
+              <p class="text-sm text-gray-500 mt-1">This action cannot be undone. All data will be permanently deleted.</p>
+            </div>
+            <div class="p-6 space-y-4">
+              <div>
+                <label class="block text-sm text-gray-700 mb-1">
+                  Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= current_organization.name %></code> to confirm:
+                </label>
+                <input type="text"
+                  data-confirm-modal-target="input"
+                  data-action="input->confirm-modal#validate"
+                  placeholder="Type organization name..."
+                  autocomplete="off"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm">
+              </div>
+
+              <%= form_with url: organizations.organization_path(current_organization), method: :delete, data: { confirm_modal_target: "form", action: "submit->confirm-modal#submit" } do %>
+                <button type="submit"
+                  disabled
+                  data-confirm-modal-target="confirmButton"
+                  class="w-full inline-flex justify-center items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                  <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
+                  Delete Organization Forever
+                </button>
+              <% end %>
+            </div>
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+              <button type="button" data-action="confirm-modal#close" class="text-sm font-medium text-gray-600 hover:text-gray-900">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+<% else %>
+  <div class="bg-red-50 rounded-xl border-2 border-dashed border-red-200 p-6">
+    <%= heroicon "exclamation-triangle", variant: :solid, options: { class: "mx-auto h-10 w-10 text-red-300" } %>
+    <h3 class="mt-3 text-sm font-semibold text-red-900 text-center">Danger Zone</h3>
+    <p class="mt-2 text-xs text-red-700 text-center">This panel is <strong>hidden</strong> because you're viewing as a <strong><%= current_user.current_organization_role %></strong>.</p>
+    <p class="mt-2 text-xs text-red-600 text-center">Only <strong>owners</strong> can delete organizations or transfer ownership.</p>
+  </div>
+<% end %>
