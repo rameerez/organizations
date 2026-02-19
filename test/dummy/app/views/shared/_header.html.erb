@@ -120,6 +120,7 @@
           <div class="mb-2">
             <p class="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">Switch Demo User</p>
             <% all_users = User.order(:created_at) %>
+            <% invited_emails = Organizations::Invitation.pending.pluck(:email) - all_users.pluck(:email) %>
             <div class="space-y-0.5 mt-1 max-h-48 overflow-y-auto">
               <% all_users.each do |user| %>
                 <% if user.id == current_user.id %>
@@ -140,6 +141,19 @@
                     </span>
                     <span class="text-sm text-gray-700 truncate"><%= user.email %></span>
                   <% end %>
+                <% end %>
+              <% end %>
+              <%# Invited users who don't have accounts yet %>
+              <% invited_emails.each do |email| %>
+                <%= button_to main_app.switch_user_path(email: email),
+                  method: :post,
+                  data: { turbo: false },
+                  class: "w-full flex items-center gap-x-2 px-3 py-1.5 rounded-lg hover:bg-amber-50 text-left" do %>
+                  <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-amber-600 font-medium text-xs">
+                    <%= email.first.upcase %>
+                  </span>
+                  <span class="text-sm text-amber-700 truncate"><%= email %></span>
+                  <span class="text-xs text-amber-500 ml-auto">invited</span>
                 <% end %>
               <% end %>
             </div>

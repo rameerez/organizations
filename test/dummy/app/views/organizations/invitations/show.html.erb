@@ -57,7 +57,7 @@
           <% if @user_is_logged_in && @user_email_matches %>
             <%= button_to accept_invitation_path(@invitation.token),
               method: :post,
-              class: "w-full inline-flex items-center justify-center gap-3 rounded-xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg hover:bg-emerald-500 hover:shadow-xl transition-all" do %>
+              class: "w-full inline-flex items-center justify-center gap-3 rounded-xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg hover:bg-emerald-500 hover:shadow-xl transition-all cursor-pointer" do %>
               <%= heroicon "check-circle", variant: :solid, options: { class: "h-6 w-6" } %>
               Accept & Join Team
             <% end %>

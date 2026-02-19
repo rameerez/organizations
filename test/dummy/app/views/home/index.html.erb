@@ -7,10 +7,6 @@
         <h1 class="text-3xl font-bold text-gray-900"><%= current_organization.name %></h1>
         <p class="mt-2 text-gray-500">Welcome to your simulated organization. This demo lets you explore all features of the <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">organizations</code> gem.</p>
       </div>
-      <div class="flex-shrink-0 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        <p class="text-xs font-medium text-amber-800">You're viewing as</p>
-        <p class="text-sm font-bold text-amber-900"><%= current_user.current_organization_role&.capitalize || "Guest" %></p>
-      </div>
     </div>
   </div>
 
@@ -57,7 +53,7 @@
           <p class="text-2xl font-bold text-gray-900"><%= current_user.current_organization_role&.capitalize || "N/A" %></p>
         </div>
       </div>
-      <p class="mt-3 text-xs text-gray-400">Determines which panels you can see below</p>
+      <p class="mt-3 text-xs text-gray-400">Determines which panels and actions you can use</p>
     </div>
   </div>
 
@@ -138,7 +134,7 @@
                     class: "inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors",
                     title: "Demo: Switch to this user to see the UI from their perspective" do %>
                     <%= heroicon "arrow-path", variant: :solid, options: { class: "h-3.5 w-3.5" } %>
-                    Become
+                    Impersonate
                   <% end %>
                 <% end %>
               </div>
@@ -148,7 +144,7 @@
 
         <div class="px-6 py-3 bg-gray-50 border-t border-gray-100">
           <p class="text-xs text-gray-500">
-            <strong>Try it:</strong> Click "Become" to switch users and see how the UI changes based on their role permissions.
+            <strong>Try it:</strong> Click "Impersonate" to switch users and see how the UI changes based on their role permissions.
           </p>
         </div>
 
@@ -179,7 +175,7 @@
                     method: :post,
                     data: { turbo: false },
                     class: "text-sm font-medium text-gray-600 hover:text-gray-900 cursor-pointer" do %>
-                    Become & Accept →
+                    Impersonate & Accept →
                   <% end %>
                 </div>
               <% end %>
@@ -227,7 +223,7 @@
       <% end %>
 
       <%# Danger Zone - Owner only %>
-      <%= render "shared/danger_zone" %>
+      <%= render "shared/danger_zone", organization: current_organization %>
 
     </div>
   </div>
