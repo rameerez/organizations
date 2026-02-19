@@ -48,19 +48,18 @@ class ApplicationController < ActionController::Base
 
   private
 
-  DEMO_FIRST_NAMES = %w[Emma Liam Olivia Noah Ava Elijah Sophia James Isabella William Mia Benjamin Charlotte Lucas Amelia Henry Harper Ethan Evelyn Alexander].freeze
-  DEMO_LAST_NAMES = %w[Smith Johnson Williams Brown Jones Garcia Miller Davis Rodriguez Martinez Hernandez Lopez Wilson Anderson Thomas Taylor Moore Jackson Martin Lee].freeze
-
   def create_default_demo_user
-    # Generate a realistic-looking name from predefined lists
+    # Generate a realistic-looking name and email using Faker
     # Seed with session ID for consistency within the same session
-    seed = Digest::SHA256.hexdigest(session.id.to_s)[0, 8].to_i(16)
-    rng = Random.new(seed)
+    require 'faker' unless defined?(::Faker)
 
-    first_name = DEMO_FIRST_NAMES[rng.rand(DEMO_FIRST_NAMES.length)]
-    last_name = DEMO_LAST_NAMES[rng.rand(DEMO_LAST_NAMES.length)]
+    seed = Digest::SHA256.hexdigest(session.id.to_s)[0, 8].to_i(16)
+    ::Faker::Config.random = Random.new(seed)
+
+    first_name = ::Faker::Name.first_name
+    last_name = ::Faker::Name.last_name
     full_name = "#{first_name} #{last_name}"
-    email = "#{first_name.downcase}.#{last_name.downcase}@example.com"
+    email = ::Faker::Internet.email(name: full_name, domain: 'example.com')
 
     user = User.find_or_create_by(email: email) do |u|
       u.name = full_name
