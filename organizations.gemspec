@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["rameerez"]
   spec.email = ["rubygems@rameerez.com"]
 
-  spec.summary = "Add organizations with members, roles, and invitations to your Rails app"
-  spec.description = "Add organizations with members to any Rails app. The complete User → Membership → Organization pattern with scoped invitations, hierarchical roles (owner, admin, member, viewer), permissions, and organization switching. Turn a User-based app into a multi-tenant B2B SaaS in minutes. What previously took 1-2 months now takes a single `bundle add`."
+  spec.summary = "Add organizations to any Rails app (with members, roles, and invitations)"
+  spec.description = "Add organizations to any Rails app (with members, roles, and invitations). This gem implements the complete User → Membership → Organization pattern with scoped invitations, hierarchical roles (owner, admin, member, viewer), permissions, and organization switching. Turn a User-based app into a multi-tenant, Organization-based B2B SaaS in minutes."
   spec.homepage = "https://github.com/rameerez/organizations"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
