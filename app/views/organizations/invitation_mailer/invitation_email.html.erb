@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're invited to join <%= @organization.name %></title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      text-align: center;
+      padding: 20px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .content {
+      padding: 30px 0;
+    }
+    .button {
+      display: inline-block;
+      background-color: #4F46E5;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-weight: 600;
+      margin: 20px 0;
+    }
+    .button:hover {
+      background-color: #4338CA;
+    }
+    .footer {
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+      font-size: 14px;
+      color: #666;
+    }
+    .role-badge {
+      display: inline-block;
+      background-color: #E0E7FF;
+      color: #4338CA;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>You're invited!</h1>
+  </div>
+
+  <div class="content">
+    <p>Hi there,</p>
+
+    <p>
+      <% if @inviter %>
+        <strong><%= @inviter.respond_to?(:name) && @inviter.name.present? ? @inviter.name : @inviter.email %></strong>
+        has invited you to join <strong><%= @organization.name %></strong>.
+      <% else %>
+        You've been invited to join <strong><%= @organization.name %></strong>.
+      <% end %>
+    </p>
+
+    <p>
+      You'll be joining as:
+      <span class="role-badge"><%= @invitation.role.to_s.capitalize %></span>
+    </p>
+
+    <p style="text-align: center;">
+      <a href="<%= @accept_url %>" class="button">Accept Invitation</a>
+    </p>
+
+    <p>
+      Or copy and paste this link into your browser:<br>
+      <a href="<%= @accept_url %>"><%= @accept_url %></a>
+    </p>
+
+    <% if @invitation.expires_at %>
+    <p style="color: #666; font-size: 14px;">
+      This invitation will expire on <%= @invitation.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>.
+    </p>
+    <% end %>
+  </div>
+
+  <div class="footer">
+    <p>
+      If you weren't expecting this invitation, you can safely ignore this email.
+    </p>
+  </div>
+</body>
+</html>

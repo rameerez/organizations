@@ -1,0 +1,18 @@
+You're invited to join <%= @organization.name %>!
+
+Hi there,
+
+<% if @inviter %><%= @inviter.respond_to?(:name) && @inviter.name.present? ? @inviter.name : @inviter.email %> has invited you to join <%= @organization.name %>.<% else %>You've been invited to join <%= @organization.name %>.<% end %>
+
+You'll be joining as: <%= @invitation.role.to_s.capitalize %>
+
+Accept your invitation here:
+<%= @accept_url %>
+
+<% if @invitation.expires_at %>
+This invitation will expire on <%= @invitation.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>.
+<% end %>
+
+---
+
+If you weren't expecting this invitation, you can safely ignore this email.

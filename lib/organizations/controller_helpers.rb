@@ -4,46 +4,88 @@ require "active_support/concern"
 
 module Organizations
   # Controller helpers to be included in host application controllers.
-  # Provides current_organization context and permission guards.
+  # Provides current_organization context, session-based switching, and permission guards.
   #
   # @example Include in ApplicationController
   #   class ApplicationController < ActionController::Base
   #     include Organizations::ControllerHelpers
   #   end
   #
+  # @example Using guards
+  #   class ProjectsController < ApplicationController
+  #     before_action :require_organization!
+  #     before_action :require_organization_admin!, only: [:create, :destroy]
+  #   end
+  #
   module ControllerHelpers
     extend ActiveSupport::Concern
 
     included do
-      helper_method :current_organization if respond_to?(:helper_method)
-      helper_method :current_membership if respond_to?(:helper_method)
+      # Make helpers available in views
+      if respond_to?(:helper_method)
+        helper_method :current_organization
+        helper_method :current_membership
+        helper_method :organization_signed_in?
+      end
     end
 
-    # Returns the current organization from the session
+    # === Context Helpers ===
+
+    # Returns the current organization from session
+    # Validates membership - if user was removed, auto-switches to next available org
+    # Falls back to most recently joined org if no session set
+    # Memoized within the request
     # @return [Organizations::Organization, nil]
     def current_organization
-      return @current_organization if defined?(@current_organization)
+      return @_current_organization if defined?(@_current_organization)
+
+      user = organizations_current_user
+      return @_current_organization = nil unless user
 
       session_key = Organizations.configuration.session_key
       org_id = session[session_key]
-      return nil unless org_id
 
-      user = send(Organizations.configuration.current_user_method)
-      return nil unless user
+      # Find organization AND verify membership
+      org = org_id ? Organizations::Organization.find_by(id: org_id) : nil
 
-      @current_organization = user.organizations.find_by(id: org_id)
+      if org && user.is_member_of?(org)
+        # Valid membership - use this org
+        user._current_organization_id = org.id
+        @_current_organization = org
+      else
+        # User was removed from this org OR no session set
+        # Auto-switch to next available org (most recently joined)
+        clear_organization_session!
+
+        fallback_org = fallback_organization_for(user)
+        if fallback_org
+          session[session_key] = fallback_org.id
+          user._current_organization_id = fallback_org.id
+          @_current_organization = fallback_org
+        else
+          @_current_organization = nil
+        end
+      end
     end
 
     # Returns the current user's membership in the current organization
     # @return [Organizations::Membership, nil]
     def current_membership
-      return nil unless current_organization
+      return @_current_membership if defined?(@_current_membership)
 
-      user = send(Organizations.configuration.current_user_method)
-      return nil unless user
+      user = organizations_current_user
+      return @_current_membership = nil unless user && current_organization
 
-      user.memberships.find_by(organization: current_organization)
+      @_current_membership = user.memberships.find_by(organization_id: current_organization.id)
     end
+
+    # Check if there's an active organization
+    # @return [Boolean]
+    def organization_signed_in?
+      current_organization.present?
+    end
+
+    # === Switching ===
 
     # Sets the current organization in session
     # @param org [Organizations::Organization, nil]
@@ -52,10 +94,14 @@ module Organizations
 
       if org
         session[session_key] = org.id
-        @current_organization = org
+        @_current_organization = org
+        @_current_membership = nil # Clear cached membership
+
+        # Update user's context
+        user = organizations_current_user
+        user._current_organization_id = org.id if user
       else
-        session.delete(session_key)
-        @current_organization = nil
+        clear_organization_session!
       end
     end
 
@@ -63,7 +109,7 @@ module Organizations
     # @param org [Organizations::Organization]
     # @raise [Organizations::NotAMember] if user is not a member
     def switch_to_organization!(org)
-      user = send(Organizations.configuration.current_user_method)
+      user = organizations_current_user
 
       unless user&.is_member_of?(org)
         raise Organizations::NotAMember.new(
@@ -74,9 +120,10 @@ module Organizations
       end
 
       self.current_organization = org
+      mark_membership_as_recent!(user, org)
     end
 
-    # --- Permission Guards ---
+    # === Permission Guards ===
     # Use these as before_action callbacks
 
     # Requires a current organization to be set
@@ -85,65 +132,161 @@ module Organizations
     def require_organization!
       return if current_organization
 
-      respond_to do |format|
-        format.html { redirect_to main_app.root_path, alert: "Please select an organization." }
-        format.json { render json: { error: "Organization required" }, status: :forbidden }
-      end
+      handle_no_organization
     end
 
-    # Requires the user to be an admin of the current organization
+    # Requires the user to have at least the specified role
+    # @param role [Symbol] The minimum required role
     # @example
-    #   before_action :require_organization_admin!, only: [:edit, :update, :destroy]
-    def require_organization_admin!
+    #   before_action -> { require_organization_role!(:admin) }, only: [:edit]
+    def require_organization_role!(role)
       require_organization!
       return unless current_organization
 
-      user = send(Organizations.configuration.current_user_method)
-      return if user&.is_admin_of?(current_organization)
+      user = organizations_current_user
+      return if user&.is_at_least?(role, in: current_organization)
 
-      raise Organizations::NotAuthorized.new(
-        "You need admin access to perform this action",
-        permission: :admin,
-        organization: current_organization,
-        user: user
-      )
-    end
-
-    # Requires the user to be the owner of the current organization
-    # @example
-    #   before_action :require_organization_owner!, only: [:destroy]
-    def require_organization_owner!
-      require_organization!
-      return unless current_organization
-
-      user = send(Organizations.configuration.current_user_method)
-      return if user&.is_owner_of?(current_organization)
-
-      raise Organizations::NotAuthorized.new(
-        "You need owner access to perform this action",
-        permission: :owner,
-        organization: current_organization,
-        user: user
+      handle_unauthorized(
+        permission: role,
+        required_role: role
       )
     end
 
     # Requires the user to have a specific permission
     # @param permission [Symbol] The permission to check
     # @example
-    #   before_action -> { require_organization_permission!(:invite_members) }, only: [:create]
-    def require_organization_permission!(permission)
+    #   before_action -> { require_organization_permission_to!(:invite_members) }
+    def require_organization_permission_to!(permission)
       require_organization!
       return unless current_organization
 
-      user = send(Organizations.configuration.current_user_method)
+      user = organizations_current_user
       return if user&.has_organization_permission_to?(permission)
 
-      raise Organizations::NotAuthorized.new(
-        "You don't have permission to #{permission.to_s.humanize.downcase}",
+      handle_unauthorized(permission: permission)
+    end
+
+    # Requires the user to be an admin (or owner) of the current organization
+    # Convenience method for require_organization_role!(:admin)
+    # @example
+    #   before_action :require_organization_admin!, only: [:edit, :update]
+    def require_organization_admin!
+      require_organization_role!(:admin)
+    end
+
+    # Requires the user to be the owner of the current organization
+    # Convenience method for require_organization_role!(:owner)
+    # @example
+    #   before_action :require_organization_owner!, only: [:destroy]
+    def require_organization_owner!
+      require_organization_role!(:owner)
+    end
+
+    private
+
+    # Get the current user using the configured method
+    # NOTE: This method safely calls the host app's current_user method
+    def organizations_current_user
+      return @_organizations_current_user if defined?(@_organizations_current_user)
+
+      method_name = Organizations.configuration.current_user_method
+
+      # The configured method should exist on the host controller
+      # (e.g., Devise's current_user). We call it directly.
+      @_organizations_current_user = if respond_to?(method_name, true)
+                                       send(method_name)
+                                     end
+    end
+
+    # Clear organization session and cached values
+    def clear_organization_session!
+      session_key = Organizations.configuration.session_key
+      session.delete(session_key)
+      @_current_organization = nil
+      @_current_membership = nil
+
+      user = organizations_current_user
+      user&.clear_organization_cache!
+    end
+
+    def fallback_organization_for(user)
+      membership = user.memberships.includes(:organization).order(updated_at: :desc, created_at: :desc).first
+      membership&.organization
+    end
+
+    def mark_membership_as_recent!(user, org)
+      user.memberships.where(organization_id: org.id).update_all(updated_at: Time.current)
+    end
+
+    # Handle unauthorized access
+    def handle_unauthorized(permission: nil, required_role: nil)
+      config = Organizations.configuration
+      user = organizations_current_user
+
+      # Use custom handler if configured
+      if config.unauthorized_handler
+        context = CallbackContext.new(
+          event: :unauthorized,
+          user: user,
+          organization: current_organization,
+          permission: permission,
+          required_role: required_role
+        )
+        instance_exec(context, &config.unauthorized_handler)
+        return
+      end
+
+      # Default behavior
+      error = Organizations::NotAuthorized.new(
+        build_unauthorized_message(permission, required_role),
         permission: permission,
         organization: current_organization,
         user: user
       )
+
+      respond_to_unauthorized(error)
+    end
+
+    def build_unauthorized_message(permission, required_role)
+      if required_role
+        "You need #{required_role} access to perform this action"
+      elsif permission
+        "You don't have permission to #{permission.to_s.humanize.downcase}"
+      else
+        "You are not authorized to perform this action"
+      end
+    end
+
+    def respond_to_unauthorized(error)
+      respond_to do |format|
+        format.html { redirect_back fallback_location: main_app.root_path, alert: error.message }
+        format.json { render json: { error: error.message }, status: :forbidden }
+      end
+    end
+
+    # Handle no organization
+    def handle_no_organization
+      config = Organizations.configuration
+      user = organizations_current_user
+
+      # Use custom handler if configured
+      if config.no_organization_handler
+        context = CallbackContext.new(
+          event: :no_organization,
+          user: user
+        )
+        instance_exec(context, &config.no_organization_handler)
+        return
+      end
+
+      # Default behavior
+      respond_to do |format|
+        format.html do
+          path = config.no_organization_path
+          redirect_to path, alert: "Please select or create an organization."
+        end
+        format.json { render json: { error: "Organization required" }, status: :forbidden }
+      end
     end
   end
 end

@@ -3,6 +3,7 @@
 class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %>
   def change
     primary_key_type, foreign_key_type = primary_and_foreign_key_types
+    adapter = connection.adapter_name.downcase
 
     # Organizations table
     create_table :organizations, id: primary_key_type do |t|
@@ -19,6 +20,7 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     create_table :memberships, id: primary_key_type do |t|
       t.references :user, null: false, type: foreign_key_type, foreign_key: true
       t.references :organization, null: false, type: foreign_key_type, foreign_key: true
+      t.references :invited_by, null: true, type: foreign_key_type, foreign_key: { to_table: :users }
       t.string :role, null: false, default: "member"
       t.send(json_column_type, :metadata, null: false, default: json_column_default)
 
@@ -28,10 +30,26 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     add_index :memberships, [:user_id, :organization_id], unique: true
     add_index :memberships, :role
 
+    # Enforce "at most one owner membership per organization" at DB level where possible.
+    if adapter.include?("postgresql")
+      execute <<-SQL
+        CREATE UNIQUE INDEX index_memberships_single_owner
+        ON memberships (organization_id)
+        WHERE role = 'owner'
+      SQL
+    elsif adapter.include?("sqlite")
+      execute <<-SQL
+        CREATE UNIQUE INDEX index_memberships_single_owner
+        ON memberships (organization_id)
+        WHERE role = 'owner'
+      SQL
+    end
+
     # Invitations table
     create_table :organization_invitations, id: primary_key_type do |t|
       t.references :organization, null: false, type: foreign_key_type, foreign_key: true
-      t.references :invited_by, null: false, type: foreign_key_type, foreign_key: { to_table: :users }
+      # invited_by is nullable to support dependent: :nullify when user is deleted
+      t.references :invited_by, null: true, type: foreign_key_type, foreign_key: { to_table: :users }
       t.string :email, null: false
       t.string :token, null: false
       t.string :role, null: false, default: "member"
@@ -42,7 +60,42 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     end
 
     add_index :organization_invitations, :token, unique: true
-    add_index :organization_invitations, [:organization_id, :email]
+    add_index :organization_invitations, :email
+
+    # Unique partial index: only one pending (non-accepted) invitation per email per org
+    # Both PostgreSQL and SQLite support partial indexes
+    if adapter.include?("postgresql")
+      execute <<-SQL
+        CREATE UNIQUE INDEX index_invitations_pending_unique
+        ON organization_invitations (organization_id, LOWER(email))
+        WHERE accepted_at IS NULL
+      SQL
+    elsif adapter.include?("sqlite")
+      # SQLite supports partial indexes since 3.8.0
+      execute <<-SQL
+        CREATE UNIQUE INDEX index_invitations_pending_unique
+        ON organization_invitations (organization_id, LOWER(email))
+        WHERE accepted_at IS NULL
+      SQL
+    elsif adapter.include?("mysql")
+      # MySQL doesn't support partial indexes, so we use a generated column that is
+      # only non-NULL for pending invitations and enforce uniqueness on that value.
+      execute <<-SQL
+        ALTER TABLE organization_invitations
+        ADD COLUMN pending_email VARCHAR(255)
+        GENERATED ALWAYS AS (
+          CASE
+            WHEN accepted_at IS NULL THEN LOWER(email)
+            ELSE NULL
+          END
+        ) STORED
+      SQL
+
+      add_index :organization_invitations, [:organization_id, :pending_email], unique: true, name: "index_invitations_pending_unique"
+    else
+      # For other adapters, fall back to app-level validation.
+      add_index :organization_invitations, [:organization_id, :email], name: "index_invitations_on_org_and_email"
+    end
   end
 
   private

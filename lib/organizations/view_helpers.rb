@@ -2,26 +2,72 @@
 
 module Organizations
   # View helpers for displaying organization information.
-  #
-  # These helpers provide formatted data without HTML opinions,
-  # allowing integrators to build their own UI while using
-  # consistent data formatting.
+  # Provides formatted data for building UI components without HTML opinions.
   #
   # @example Include in your ApplicationHelper
   #   module ApplicationHelper
   #     include Organizations::ViewHelpers
   #   end
   #
-  # @example Or include in a specific controller
-  #   class Settings::OrganizationsController < ApplicationController
-  #     helper Organizations::ViewHelpers
-  #   end
+  # @example Using the organization switcher
+  #   <% data = organization_switcher_data %>
+  #   <div class="org-switcher">
+  #     <button><%= data[:current][:name] %></button>
+  #     <ul>
+  #       <% data[:others].each do |org| %>
+  #         <li><%= link_to org[:name], data[:switch_path].call(org[:id]) %></li>
+  #       <% end %>
+  #     </ul>
+  #   </div>
   #
   module ViewHelpers
-    # Returns a human-readable role label
+    # === Organization Switcher ===
+
+    # Returns optimized data for building an organization switcher
+    # Only selects needed columns (id, name, slug) for performance
+    # Memoized within the request
     #
+    # @return [Hash] Hash with :current, :others, and :switch_path
+    #
+    # @example
+    #   organization_switcher_data
+    #   # => {
+    #   #   current: { id: "...", name: "Acme Corp", slug: "acme-corp" },
+    #   #   others: [
+    #   #     { id: "...", name: "Personal", slug: "personal" },
+    #   #     { id: "...", name: "StartupCo", slug: "startupco" }
+    #   #   ],
+    #   #   switch_path: ->(org_id) { "/organizations/switch/#{org_id}" }
+    #   # }
+    #
+    def organization_switcher_data
+      @_organization_switcher_data ||= build_switcher_data
+    end
+
+    # === Invitation Badge ===
+
+    # Returns pending invitation badge HTML or nil
+    # @param user [User] The user
+    # @return [String, nil] Badge HTML or nil if no invitations
+    #
+    # @example
+    #   <%= organization_invitation_badge(current_user) %>
+    #   # => <span class="badge">3</span>
+    #
+    def organization_invitation_badge(user)
+      return nil unless user&.respond_to?(:pending_organization_invitations)
+
+      count = user.pending_organization_invitations.count
+      return nil if count.zero?
+
+      content_tag(:span, count.to_s, class: "badge")
+    end
+
+    # === Role Labels ===
+
+    # Returns a human-readable role label
     # @param role [Symbol, String] The role
-    # @return [String] "Owner", "Admin", "Member", or "Viewer"
+    # @return [String]
     #
     # @example
     #   organization_role_label(:admin) # => "Admin"
@@ -37,12 +83,11 @@ module Organizations
     end
 
     # Returns a hash of role information for building badges
-    #
     # @param role [Symbol, String] The role
     # @return [Hash] Hash with :role, :label, and :color keys
     #
     # @example
-    #   info = organization_role_info(:admin)
+    #   organization_role_info(:admin)
     #   # => { role: :admin, label: "Admin", color: :blue }
     #
     def organization_role_info(role)
@@ -54,11 +99,11 @@ module Organizations
       }
     end
 
+    # === Invitation Status ===
+
     # Returns invitation status as a symbol
-    #
     # @param invitation [Organizations::Invitation] The invitation
     # @return [Symbol] :pending, :accepted, or :expired
-    #
     def organization_invitation_status(invitation)
       return :accepted if invitation.accepted_at.present?
       return :expired if invitation.expires_at && invitation.expires_at < Time.current
@@ -67,10 +112,8 @@ module Organizations
     end
 
     # Returns a human-readable invitation status label
-    #
     # @param invitation [Organizations::Invitation] The invitation
-    # @return [String] "Pending", "Accepted", or "Expired"
-    #
+    # @return [String]
     def organization_invitation_status_label(invitation)
       case organization_invitation_status(invitation)
       when :pending then "Pending"
@@ -80,10 +123,8 @@ module Organizations
     end
 
     # Returns a hash of invitation status information
-    #
     # @param invitation [Organizations::Invitation] The invitation
-    # @return [Hash] Hash with :status, :label, and :color keys
-    #
+    # @return [Hash]
     def organization_invitation_status_info(invitation)
       status = organization_invitation_status(invitation)
       {
@@ -93,68 +134,41 @@ module Organizations
       }
     end
 
-    # Returns data for building an organization switcher
-    #
-    # @param user [User] The user
-    # @param current_org [Organizations::Organization] The current organization
-    # @return [Array<Hash>] Array of hashes with organization data
-    #
-    # @example
-    #   organization_switcher_data(current_user, current_organization)
-    #   # => [
-    #   #   { id: 1, name: "Acme Corp", slug: "acme-corp", role: :owner, current: true },
-    #   #   { id: 2, name: "Startup Co", slug: "startup-co", role: :member, current: false }
-    #   # ]
-    #
-    def organization_switcher_data(user, current_org = nil)
-      user.memberships.includes(:organization).map do |membership|
-        org = membership.organization
-        {
-          id: org.id,
-          name: org.name,
-          slug: org.slug,
-          role: membership.role.to_sym,
-          role_label: organization_role_label(membership.role),
-          current: current_org && org.id == current_org.id
-        }
-      end
-    end
+    # === Members Data ===
 
     # Returns data for displaying organization members
-    #
     # @param organization [Organizations::Organization] The organization
-    # @return [Array<Hash>] Array of hashes with member data
-    #
+    # @return [Array<Hash>]
     def organization_members_data(organization)
-      organization.memberships.includes(:user).map do |membership|
+      organization.memberships.includes(:user).by_role_hierarchy.map do |membership|
         user = membership.user
         {
           id: user.id,
           membership_id: membership.id,
-          name: user.respond_to?(:name) ? user.name : user.email,
+          name: user.respond_to?(:name) && user.name.present? ? user.name : user.email,
           email: user.email,
           role: membership.role.to_sym,
           role_label: organization_role_label(membership.role),
           role_info: organization_role_info(membership.role),
-          joined_at: membership.created_at
+          joined_at: membership.created_at,
+          is_owner: membership.owner?
         }
       end
     end
 
     # Returns data for displaying pending invitations
-    #
     # @param organization [Organizations::Organization] The organization
-    # @return [Array<Hash>] Array of hashes with invitation data
-    #
+    # @return [Array<Hash>]
     def organization_invitations_data(organization)
       organization.invitations.pending.includes(:invited_by).map do |invitation|
+        inviter = invitation.invited_by
         {
           id: invitation.id,
           email: invitation.email,
           role: invitation.role.to_sym,
           role_label: organization_role_label(invitation.role),
-          invited_by: invitation.invited_by,
-          invited_by_name: invitation.invited_by.respond_to?(:name) ? invitation.invited_by.name : invitation.invited_by.email,
+          invited_by: inviter,
+          invited_by_name: inviter_display_name(inviter),
           status: organization_invitation_status(invitation),
           status_info: organization_invitation_status_info(invitation),
           expires_at: invitation.expires_at,
@@ -163,58 +177,141 @@ module Organizations
       end
     end
 
-    # Check if current user can manage organization
-    #
+    # === Permission Checks for Views ===
+
+    # Check if current user can manage organization settings
+    # Uses permission-based check to respect custom role configurations
     # @param user [User] The user
     # @param organization [Organizations::Organization] The organization
     # @return [Boolean]
-    #
     def can_manage_organization?(user, organization)
-      user.is_admin_of?(organization)
+      return false unless user && organization
+
+      role = user.role_in(organization)
+      role && Roles.has_permission?(role, :manage_settings)
     end
 
     # Check if current user can invite members
-    #
+    # Uses permission-based check to respect custom role configurations
     # @param user [User] The user
     # @param organization [Organizations::Organization] The organization
     # @return [Boolean]
-    #
     def can_invite_members?(user, organization)
-      user.is_admin_of?(organization)
+      return false unless user && organization
+
+      role = user.role_in(organization)
+      role && Roles.has_permission?(role, :invite_members)
     end
 
     # Check if current user can remove a member
-    #
-    # @param user [User] The user (performing the action)
+    # @param user [User] The user performing the action
     # @param membership [Organizations::Membership] The membership to remove
     # @return [Boolean]
-    #
     def can_remove_member?(user, membership)
-      return false unless user.is_admin_of?(membership.organization)
-      return false if membership.role.to_sym == :owner # Can't remove owners via this
+      return false unless user_has_permission_in_org?(user, membership.organization, :remove_members)
+      return false if membership.owner? # Can't remove owner
 
       true
     end
 
     # Check if current user can change a member's role
-    #
-    # @param user [User] The user (performing the action)
+    # @param user [User] The user performing the action
     # @param membership [Organizations::Membership] The membership to update
     # @return [Boolean]
-    #
     def can_change_member_role?(user, membership)
-      return false unless user.is_admin_of?(membership.organization)
+      return false unless user_has_permission_in_org?(user, membership.organization, :edit_member_roles)
       return false if membership.user_id == user.id # Can't change own role
 
       # Only owners can change roles to/from owner
-      if membership.role.to_sym == :owner
-        user.is_owner_of?(membership.organization)
+      if membership.owner?
+        user_has_permission_in_org?(user, membership.organization, :transfer_ownership)
       else
         true
       end
     end
 
+    # Check if current user can transfer ownership
+    # @param user [User] The user
+    # @param organization [Organizations::Organization] The organization
+    # @return [Boolean]
+    def can_transfer_ownership?(user, organization)
+      user_has_permission_in_org?(user, organization, :transfer_ownership)
+    end
+
+    # Check if current user can delete the organization
+    # @param user [User] The user
+    # @param organization [Organizations::Organization] The organization
+    # @return [Boolean]
+    def can_delete_organization?(user, organization)
+      user_has_permission_in_org?(user, organization, :delete_organization)
+    end
+
     private
+
+    def build_switcher_data
+      user = respond_to?(:current_user) ? current_user : nil
+      current_org = respond_to?(:current_organization) ? current_organization : nil
+
+      return empty_switcher_data unless user
+
+      # Optimized query: select only needed columns
+      memberships = user.memberships
+                        .includes(:organization)
+                        .joins(:organization)
+                        .select("memberships.id, memberships.organization_id, memberships.role, " \
+                                "organizations.id AS org_id, organizations.name AS org_name, organizations.slug AS org_slug")
+
+      current_data = nil
+      others = []
+
+      memberships.each do |m|
+        org_data = {
+          id: m.organization_id,
+          name: m.org_name,
+          slug: m.org_slug,
+          role: m.role.to_sym,
+          role_label: organization_role_label(m.role)
+        }
+
+        if current_org && m.organization_id == current_org.id
+          current_data = org_data.merge(current: true)
+        else
+          others << org_data.merge(current: false)
+        end
+      end
+
+      # If no current org was found in memberships, user might not be a member anymore
+      current_data ||= { id: nil, name: nil, slug: nil, role: nil, current: true }
+
+      {
+        current: current_data,
+        others: others,
+        switch_path: build_switch_path_lambda
+      }
+    end
+
+    def empty_switcher_data
+      {
+        current: { id: nil, name: nil, slug: nil, role: nil, current: true },
+        others: [],
+        switch_path: build_switch_path_lambda
+      }
+    end
+
+    # Build a lambda for generating switch paths
+    # Uses route helpers when available, falls back to hardcoded path
+    def build_switch_path_lambda
+      # Try to use route helpers if available
+      # The route name is :switch_organization (POST /organizations/switch/:id)
+      if respond_to?(:organizations) && organizations.respond_to?(:switch_organization_path)
+        ->(org_id) { organizations.switch_organization_path(org_id) }
+      elsif respond_to?(:main_app) && main_app.respond_to?(:switch_organization_path)
+        ->(org_id) { main_app.switch_organization_path(org_id) }
+      else
+        # Fallback to standard path
+        ->(org_id) { "/organizations/switch/#{org_id}" }
+      end
+    end
 
     def role_color(role)
       case role.to_sym
@@ -232,6 +329,24 @@ module Organizations
       when :accepted then :green
       when :expired then :red
       else :gray
+      end
+    end
+
+    def user_has_permission_in_org?(user, organization, permission)
+      return false unless user && organization
+
+      role = user.role_in(organization)
+      role && Roles.has_permission?(role, permission)
+    end
+
+    # Returns display name for invitation sender (handles nil inviter)
+    def inviter_display_name(inviter)
+      return nil unless inviter
+
+      if inviter.respond_to?(:name) && inviter.name.present?
+        inviter.name
+      else
+        inviter.email
       end
     end
   end

@@ -153,7 +153,9 @@ end
 
 ## Limit seats per plan (with `pricing_plans`)
 
-If you're using [`pricing_plans`](https://github.com/rameerez/pricing_plans), you can limit how many members an organization can have based on their subscription:
+> **Note:** This is an integration pattern, not built-in functionality. You implement the limit checks in your callbacks.
+
+If you're using [`pricing_plans`](https://github.com/rameerez/pricing_plans), you can limit how many members an organization can have based on their subscription using callbacks:
 
 ```ruby
 # config/initializers/pricing_plans.rb
@@ -166,17 +168,23 @@ plan :growth do
 end
 ```
 
-Then add `limited_by_pricing_plans` to the memberships association in your Organization model:
+Then hook into the invitation and member_joined callbacks to enforce limits:
 
 ```ruby
-class Organization < ApplicationRecord
-  has_many :memberships, limited_by_pricing_plans: { limit_key: :organization_members }
+# config/initializers/organizations.rb
+Organizations.configure do |config|
+  config.on_member_invited do |ctx|
+    org = ctx.organization
+    limit = org.current_plan.limit_for(:organization_members)
+
+    if limit && org.member_count >= limit
+      raise Organizations::InvitationError, "Member limit reached. Please upgrade your plan."
+    end
+  end
 end
 ```
 
-That's it. When a Hobby org tries to add a 4th member → blocked. Upgrade to Growth → works.
-
-The `pricing_plans` gem auto-detects the Organization as the plan owner and validates on Membership creation. You can hook into `pricing_plans.limit_warning` and `pricing_plans.limit_blocked` events to show upgrade prompts.
+This pattern gives you full control over how and when limits are enforced.
 
 ## Why this gem exists
 
@@ -609,13 +617,26 @@ The gem handles **both existing users and new signups** with a single invitation
 **For new users:**
 1. Invitation created → Email sent with unique link
 2. User clicks link → Sees invitation details + "Sign up to accept" button
-3. User registers → Invitation auto-accepted on signup, redirected to org
+3. User registers → Token stored in session, your app calls `invitation.accept!(user)` post-signup
 
-No need to handle these cases separately in your UI — one invitation flow works for everyone.
+The gem stores the invitation token in `session[:pending_invitation_token]` when an unauthenticated user tries to accept. In your registration callback, check for this token and accept the invitation:
+
+```ruby
+# In your User model or registration controller
+after_create :accept_pending_invitation
+
+def accept_pending_invitation
+  token = session.delete(:pending_invitation_token)
+  return unless token
+
+  invitation = Organizations::Invitation.find_by(token: token)
+  invitation&.accept!(self, skip_email_validation: true)
+end
+```
 
 ### Invitation emails
 
-The gem ships with a clean ActionMailer-based invitation email. If you have the [`goodmail`](https://github.com/rameerez/goodmail) gem installed, it automatically uses goodmail for beautiful transactional emails.
+The gem ships with a clean ActionMailer-based invitation email.
 
 ```ruby
 # Customize the mailer in config
@@ -888,7 +909,7 @@ end
 
 ### Integrates with pricing_plans
 
-Enforce member limits based on pricing plans:
+Enforce member limits based on pricing plans using callbacks:
 
 ```ruby
 # In your Organization model
@@ -906,7 +927,7 @@ plan :pro do
 end
 ```
 
-The `organizations` gem checks `pricing_plans` limits before allowing new invitations and before accepting invitations. The check uses `pricing_plans`'s row-level locking to prevent race conditions where multiple invitations could exceed the member limit.
+Then hook into callbacks to enforce limits (see "Limit seats per plan" section above for full example).
 
 ### Integrates with your gem ecosystem
 
@@ -1097,16 +1118,16 @@ memberships
   unique index: [user_id, organization_id]
 ```
 
-### invitations
+### organization_invitations
 
 ```sql
-invitations
+organization_invitations
   - id (primary key)
   - organization_id (foreign key, indexed)
   - email (string, required, indexed)
   - role (string, default: 'member')
   - token (string, unique, indexed)
-  - invited_by_id (foreign key)
+  - invited_by_id (foreign key, nullable)
   - accepted_at (datetime, nullable)
   - expires_at (datetime)
   - created_at
@@ -1236,7 +1257,7 @@ Boolean checks use efficient SQL `EXISTS` queries:
 
 ```ruby
 user.belongs_to_any_organization?     # SELECT 1 FROM memberships WHERE ... LIMIT 1
-user.has_pending_organization_invitations?  # SELECT 1 FROM invitations WHERE ... LIMIT 1
+user.has_pending_organization_invitations?  # SELECT 1 FROM organization_invitations WHERE ... LIMIT 1
 org.has_any_members?                  # SELECT 1 FROM memberships WHERE ... LIMIT 1
 ```
 
@@ -1415,9 +1436,9 @@ CREATE INDEX index_memberships_on_organization_id ON memberships (organization_i
 CREATE INDEX index_memberships_on_role ON memberships (role);
 
 -- Fast invitation lookups
-CREATE UNIQUE INDEX index_invitations_on_token ON invitations (token);
-CREATE INDEX index_invitations_on_email ON invitations (email);
-CREATE UNIQUE INDEX index_invitations_pending ON invitations (organization_id, email) WHERE accepted_at IS NULL;
+CREATE UNIQUE INDEX index_invitations_on_token ON organization_invitations (token);
+CREATE INDEX index_invitations_on_email ON organization_invitations (email);
+CREATE UNIQUE INDEX index_invitations_pending ON organization_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL;
 
 -- Fast org lookups
 CREATE UNIQUE INDEX index_organizations_on_slug ON organizations (slug);

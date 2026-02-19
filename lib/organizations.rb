@@ -4,13 +4,15 @@ require_relative "organizations/version"
 require_relative "organizations/engine" if defined?(Rails::Engine)
 
 module Organizations
-  # Base error class
+  # === Error Classes ===
+
+  # Base error class for all Organizations errors
   class Error < StandardError; end
 
   # Configuration errors
   class ConfigurationError < Error; end
 
-  # Authorization errors
+  # Authorization errors - raised when user doesn't have permission
   class NotAuthorized < Error
     attr_reader :permission, :organization, :user
 
@@ -22,7 +24,7 @@ module Organizations
     end
   end
 
-  # Membership errors
+  # Membership errors - raised when user is not a member
   class NotAMember < Error
     attr_reader :organization, :user
 
@@ -37,21 +39,30 @@ module Organizations
   class InvitationError < Error; end
   class InvitationExpired < InvitationError; end
   class InvitationAlreadyAccepted < InvitationError; end
+  class InvitationEmailMismatch < InvitationError; end
 
-  # Autoload components (lazy loading)
+  # === Autoload Components (lazy loading) ===
+
   autoload :Configuration, "organizations/configuration"
   autoload :ControllerHelpers, "organizations/controller_helpers"
   autoload :ViewHelpers, "organizations/view_helpers"
   autoload :Roles, "organizations/roles"
   autoload :Callbacks, "organizations/callbacks"
   autoload :CallbackContext, "organizations/callback_context"
+  autoload :ActsAsTenantIntegration, "organizations/acts_as_tenant_integration"
+  autoload :TestHelpers, "organizations/test_helpers"
 
-  # Models
+  # Alias for README compatibility: `include Organizations::Controller`
+  Controller = ControllerHelpers
+
+  # Models - autoload directly under Organizations namespace
+  # Model files define Organizations::Organization, etc.
+  autoload :Organization, "organizations/models/organization"
+  autoload :Membership, "organizations/models/membership"
+  autoload :Invitation, "organizations/models/invitation"
+
+  # Models module kept for backwards compatibility
   module Models
-    autoload :Organization, "organizations/models/organization"
-    autoload :Membership, "organizations/models/membership"
-    autoload :Invitation, "organizations/models/invitation"
-
     module Concerns
       autoload :HasOrganizations, "organizations/models/concerns/has_organizations"
     end
@@ -60,23 +71,37 @@ module Organizations
   class << self
     attr_writer :configuration
 
+    # Get the configuration instance
+    # @return [Configuration]
     def configuration
       @configuration ||= Configuration.new
     end
 
+    # Configure the gem
+    # @yield [Configuration] The configuration instance
+    #
+    # @example
+    #   Organizations.configure do |config|
+    #     config.create_personal_organization = true
+    #     config.invitation_expiry = 7.days
+    #   end
+    #
     def configure
       yield(configuration)
       configuration.validate!
     end
 
+    # Reset configuration to defaults
+    # Primarily used in tests
     def reset_configuration!
       @configuration = nil
+      Roles.reset!
     end
 
-    # Built-in roles with their permissions
-    # Apps can override via configuration
+    # Get the roles module
+    # @return [Module]
     def roles
-      @roles ||= Roles.default
+      Roles
     end
   end
 end

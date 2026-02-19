@@ -43,8 +43,25 @@ Organizations.configure do |config|
   #   :member - Standard access, can view and collaborate
   #   :viewer - Read-only access
   #
-  # Custom roles can be defined using the `define_organization_role` DSL
-  # in your User model. See README for examples.
+  # Custom roles can be defined using the config.roles DSL:
+  #
+  # config.roles do
+  #   role :viewer do
+  #     can :view_organization
+  #     can :view_members
+  #   end
+  #   role :member, inherits: :viewer do
+  #     can :create_resources
+  #   end
+  #   role :admin, inherits: :member do
+  #     can :invite_members
+  #     can :manage_settings
+  #   end
+  #   role :owner, inherits: :admin do
+  #     can :manage_billing
+  #     can :delete_organization
+  #   end
+  # end
 
   # ============================================================================
   # ORGANIZATION SWITCHING
