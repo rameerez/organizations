@@ -11,7 +11,11 @@ Organizations::Engine.routes.draw do
 
   # Membership management (scoped to current_organization)
   # These are flat routes - the organization is determined by session, not URL
-  resources :memberships, only: [:index, :update, :destroy]
+  resources :memberships, only: [:index, :update, :destroy] do
+    member do
+      post :transfer_ownership
+    end
+  end
 
   # Invitation management (scoped to current_organization)
   # These are flat routes - the organization is determined by session, not URL

@@ -7,9 +7,10 @@ module Organizations
   class MembershipsController < ApplicationController
     before_action :require_organization!
     before_action -> { require_organization_permission_to!(:view_members) }, only: [:index]
-    before_action :set_membership, only: [:update, :destroy]
+    before_action :set_membership, only: [:update, :destroy, :transfer_ownership]
     before_action -> { require_organization_permission_to!(:edit_member_roles) }, only: [:update]
     before_action -> { require_organization_permission_to!(:remove_members) }, only: [:destroy]
+    before_action -> { require_organization_permission_to!(:transfer_ownership) }, only: [:transfer_ownership]
 
     # GET /memberships
     # List all members of the current organization
@@ -75,6 +76,28 @@ module Organizations
       respond_to do |format|
         format.html { redirect_to memberships_path, alert: e.message }
         format.json { render json: { error: e.message }, status: :unprocessable_entity }
+      end
+    end
+
+    # POST /memberships/:id/transfer_ownership
+    # Transfer organization ownership to another member
+    def transfer_ownership
+      new_owner = @membership.user
+
+      begin
+        current_organization.transfer_ownership_to!(new_owner)
+
+        respond_to do |format|
+          format.html { redirect_to memberships_path, notice: "Ownership transferred to #{new_owner.email}." }
+          format.json { render json: { success: true, new_owner: new_owner.email } }
+        end
+      rescue Organizations::Organization::CannotTransferToNonMember,
+             Organizations::Organization::CannotTransferToSelf,
+             Organizations::Error => e
+        respond_to do |format|
+          format.html { redirect_to memberships_path, alert: e.message }
+          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+        end
       end
     end
 
