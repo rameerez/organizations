@@ -3,7 +3,7 @@
 require "test_helper"
 
 module Organizations
-  # Regression tests for all issues documented in FEEDBACK.md.
+  # Regression tests for all issues documented in REVIEW.md.
   # Each test targets a specific bug or missing behavior that was found
   # during the Codex review rounds (1-4). These tests ensure those fixes
   # remain in place and do not regress.
@@ -78,7 +78,7 @@ module Organizations
     # change_role_of! must prevent promoting to owner (use transfer_ownership_to!)
     # and prevent demoting the owner directly.
     test "owner integrity: cannot promote to owner via change_role_of!" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       admin = create_user!
       org.add_member!(admin, role: :admin)
 
@@ -129,7 +129,7 @@ module Organizations
     # Invite permission check was hardcoded to admin role instead of using
     # the permission system. Custom role configurations should be respected.
     test "invite permission uses permission-based check, not role-based" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       member = create_user!
       org.add_member!(member, role: :member)
 
@@ -220,7 +220,7 @@ module Organizations
     # When a user who sent invitations is deleted, their invited_by_id
     # should be set to NULL rather than raising a constraint error.
     test "dependent nullify works with nullable invited_by" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       inviter = create_user!
       org.add_member!(inviter, role: :admin)
 
@@ -256,7 +256,7 @@ module Organizations
     # Organization#change_role_of! to enforce the owner invariant,
     # instead of calling @membership.update! directly.
     test "change_role_of! enforces owner invariant" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       admin = create_user!
       org.add_member!(admin, role: :admin)
       member = create_user!
@@ -280,7 +280,7 @@ module Organizations
     # The invited_by association is optional: true, so nil inviter should
     # not crash any code paths.
     test "nullable inviter is safe in invitation model" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
 
       invitation = Organizations::Invitation.create!(
         organization: org,
@@ -312,7 +312,7 @@ module Organizations
     # If it ran after, the owner membership would already be destroyed and
     # the guard would not detect the ownership.
     test "owner deletion guard prevents deleting user who owns organizations" do
-      org, owner = create_org_with_owner!
+      _org, owner = create_org_with_owner!
 
       # Owner should not be deletable while owning organizations
       result = owner.destroy
@@ -339,7 +339,7 @@ module Organizations
     # :invite_members permission. Non-members and members without
     # permission should be rejected.
     test "org-centric invitation API requires membership" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       non_member = create_user!
 
       error = assert_raises(Organizations::NotAMember) do
@@ -349,7 +349,7 @@ module Organizations
     end
 
     test "org-centric invitation API requires invite_members permission" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       viewer = create_user!
       org.add_member!(viewer, role: :viewer)
 
@@ -360,7 +360,7 @@ module Organizations
     end
 
     test "org-centric invitation API succeeds for admin with permission" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       admin = create_user!
       org.add_member!(admin, role: :admin)
 
@@ -392,7 +392,7 @@ module Organizations
     # Owner role must be blocked in add_member! and promote_to!.
     # Only transfer_ownership_to! should assign the owner role.
     test "add_member! blocks owner role" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       new_user = create_user!
 
       error = assert_raises(Organizations::Organization::CannotHaveMultipleOwners) do
@@ -405,7 +405,7 @@ module Organizations
     end
 
     test "promote_to! blocks owner role" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       admin = create_user!
       org.add_member!(admin, role: :admin)
 
@@ -504,7 +504,7 @@ module Organizations
     end
 
     test "ownership transfer to non-member raises error" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       non_member = create_user!
 
       error = assert_raises(Organizations::Organization::CannotTransferToNonMember) do

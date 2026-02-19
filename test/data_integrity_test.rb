@@ -1016,10 +1016,10 @@ module Organizations
     end
 
     # =========================================================================
-    # Row-Level Locking Verification (via stubbing)
+    # Race Interleaving Behavior
     # =========================================================================
 
-    test "locking verification: invitation accept! calls lock! before checking status" do
+    test "race interleaving: accept! returns existing membership when invitation is accepted just before status re-check" do
       org, owner = create_org_with_owner!
       user = create_user!(email: "lock-verify@example.com")
       invitation = Organizations::Invitation.create!(
@@ -1027,99 +1027,109 @@ module Organizations
         role: "member", token: SecureRandom.urlsafe_base64(32), expires_at: 7.days.from_now
       )
 
-      lock_called = false
+      competing_membership = nil
       original_lock = invitation.method(:lock!)
       invitation.define_singleton_method(:lock!) do |*args|
-        lock_called = true
-        original_lock.call(*args)
+        original_lock.call(*args).tap do
+          # Simulate a competing transaction that finished acceptance first.
+          # accept! should re-check accepted? under lock and return this membership.
+          competing_membership ||= organization.memberships.create!(
+            user: user,
+            role: role,
+            invited_by: invited_by
+          )
+          update_column(:accepted_at, Time.current)
+        end
       end
 
-      invitation.accept!(user)
-      assert lock_called, "Expected lock! to be called during invitation acceptance"
+      result = invitation.accept!(user)
+      assert_equal competing_membership.id, result.id
+      assert_equal 1, org.memberships.where(user_id: user.id).count
     end
 
-    test "locking verification: transfer_ownership_to! calls lock! on organization" do
-      org, _owner = create_org_with_owner!
+    test "race interleaving: transfer_ownership_to! raises CannotTransferToNonMember if candidate disappears after lock" do
+      org, owner = create_org_with_owner!
       admin = create_user!(email: "lock-admin@example.com")
       Organizations::Membership.create!(user: admin, organization: org, role: "admin")
 
-      lock_called = false
       original_lock = org.method(:lock!)
       org.define_singleton_method(:lock!) do |*args|
-        lock_called = true
-        original_lock.call(*args)
+        original_lock.call(*args).tap do
+          # Simulate membership removal between operation start and transfer checks.
+          memberships.where(user_id: admin.id).delete_all
+        end
       end
 
-      org.transfer_ownership_to!(admin)
-      assert lock_called, "Expected lock! to be called on organization during ownership transfer"
+      assert_raises(Organizations::Organization::CannotTransferToNonMember) do
+        org.transfer_ownership_to!(admin)
+      end
+
+      assert_equal owner.id, org.reload.owner.id
+      assert_equal 1, org.memberships.where(role: "owner").count
     end
 
-    test "locking verification: remove_member! calls lock! on organization" do
+    test "race interleaving: remove_member! tolerates member already removed between lookup and destroy" do
       org, _owner = create_org_with_owner!
       member = create_user!(email: "lock-remove@example.com")
       Organizations::Membership.create!(user: member, organization: org, role: "member")
 
-      lock_called = false
       original_lock = org.method(:lock!)
       org.define_singleton_method(:lock!) do |*args|
-        lock_called = true
-        original_lock.call(*args)
+        original_lock.call(*args).tap do
+          # Simulate another worker removing this membership first.
+          memberships.where(user_id: member.id).delete_all
+        end
       end
 
       org.remove_member!(member)
-      assert lock_called, "Expected lock! to be called on organization during member removal"
+      refute org.has_member?(member)
     end
 
-    test "locking verification: leave_organization! calls lock! on organization" do
+    test "race interleaving: leave_organization! re-evaluates require_organization safety after lock" do
+      User.organization_settings = User.organization_settings.merge(
+        require_organization: true,
+        create_personal_org: false
+      ).freeze
+
       org, _owner = create_org_with_owner!
-      member = create_user!(email: "lock-leave@example.com")
+      member = create_user!(email: "departing-lock@example.com")
       Organizations::Membership.create!(user: member, organization: org, role: "member")
 
-      # User needs a second org so they can leave this one
-      second_org = Organizations::Organization.create!(name: "Second Org For Lock Test")
-      Organizations::Membership.create!(user: member, organization: second_org, role: "owner")
+      second_org, _second_owner = create_org_with_owner!(name: "Second Org For Lock Test")
+      Organizations::Membership.create!(user: member, organization: second_org, role: "member")
 
-      lock_called = false
       original_lock = org.method(:lock!)
       org.define_singleton_method(:lock!) do |*args|
-        lock_called = true
-        original_lock.call(*args)
+        original_lock.call(*args).tap do
+          # Simulate concurrent removal from the second org before count check.
+          member.memberships.where(organization_id: second_org.id).delete_all
+        end
       end
 
-      member.leave_organization!(org)
-      assert lock_called, "Expected lock! to be called on organization during leave"
+      assert_raises(Organizations::Models::Concerns::HasOrganizations::CannotLeaveLastOrganization) do
+        member.leave_organization!(org)
+      end
+      assert member.is_member_of?(org)
     end
 
-    test "locking verification: change_role_of! locks both org and membership" do
+    test "race interleaving: change_role_of! fails safely if target membership disappears after org lock" do
       org, _owner = create_org_with_owner!
       user = create_user!(email: "lock-role@example.com")
-      Organizations::Membership.create!(user: user, organization: org, role: "viewer")
+      membership = Organizations::Membership.create!(user: user, organization: org, role: "viewer")
 
-      org_lock_called = false
-      membership_lock_called = false
-
-      original_org_lock = org.method(:lock!)
-      org.define_singleton_method(:lock!) do |*args|
-        org_lock_called = true
-        original_org_lock.call(*args)
-      end
-
-      # We need to intercept the membership that change_role_of! finds internally
       original_find_by = org.memberships.method(:find_by!)
       org.memberships.define_singleton_method(:find_by!) do |*args|
         m = original_find_by.call(*args)
-        original_membership_lock = m.method(:lock!)
         m.define_singleton_method(:lock!) do |*lock_args|
-          membership_lock_called = true
-          original_membership_lock.call(*lock_args)
+          raise ActiveRecord::RecordNotFound, "Couldn't find Membership with id=#{id}"
         end
         m
       end
 
-      org.change_role_of!(user, to: :member)
-
-      assert org_lock_called, "Expected lock! to be called on organization during role change"
-      assert membership_lock_called, "Expected lock! to be called on membership during role change"
+      assert_raises(ActiveRecord::RecordNotFound) do
+        org.change_role_of!(user, to: :member)
+      end
+      assert_equal "viewer", membership.reload.role
     end
 
     # =========================================================================

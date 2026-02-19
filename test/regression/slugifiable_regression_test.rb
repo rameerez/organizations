@@ -634,7 +634,7 @@ module Organizations
       # Edge case: non-slug unique violation bubbles up correctly.
       test "R10: non-slug unique violations are not swallowed by slug retry" do
         # Create a user
-        user = create_user!(email: "unique_test@example.com")
+        _user = create_user!(email: "unique_test@example.com")
 
         # Attempting to create another user with same email should raise,
         # not be caught by any slug retry logic
@@ -813,7 +813,7 @@ module Organizations
 
       # Integration: Organization validations + slugifiable
       test "integration: validates slug presence and uniqueness" do
-        org1 = Organizations::Organization.create!(name: "Validate Slug")
+        _org1 = Organizations::Organization.create!(name: "Validate Slug")
 
         # Another org with manually set duplicate slug should fail validation
         org2 = Organizations::Organization.new(name: "Other Org", slug: "validate-slug")
