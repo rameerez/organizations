@@ -63,8 +63,8 @@
                 <div class="flex items-center justify-end gap-2">
                   <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
                     <%= form.select :role,
-                      Organizations::Roles::HIERARCHY.map { |role| [role.to_s.capitalize, role] },
-                      {},
+                      Organizations::Roles::HIERARCHY.reject { |r| r == :owner }.map { |role| [role.to_s.capitalize, role] },
+                      { selected: membership.role },
                       class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
                     <%= form.submit "Update",
                       class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>

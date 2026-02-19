@@ -1,10 +1,15 @@
 <%# Danger Zone partial - only visible to owners %>
-<% if current_user.has_organization_permission_to?(:transfer_ownership) %>
+<% org = local_assigns[:organization] || org %>
+<% if org && current_user.is_owner_of?(org) %>
   <%
-    other_members = current_organization.memberships
+    other_members = org.memberships
       .includes(:user)
       .where.not(user_id: current_user.id)
       .where.not(role: 'owner')
+
+    # Separate admins (can receive ownership) from non-admins (need promotion first)
+    admin_members = other_members.select { |m| m.role == 'admin' }
+    non_admin_members = other_members.reject { |m| m.role == 'admin' }
   %>
   <div class="bg-white rounded-xl shadow-sm border-2 border-red-200 overflow-hidden">
     <div class="px-6 py-4 bg-red-50 border-b border-red-200">
@@ -17,13 +22,13 @@
 
     <div class="divide-y divide-red-100">
       <%# Transfer Ownership %>
-      <div class="p-6" data-controller="transfer-modal" data-transfer-modal-phrase-value="<%= current_organization.name %>">
+      <div class="p-6" data-controller="transfer-modal" data-transfer-modal-phrase-value="<%= org.name %>">
         <div class="space-y-3">
           <div>
             <h3 class="text-sm font-medium text-gray-900">Transfer Ownership</h3>
-            <p class="text-sm text-gray-500 mt-1">Transfer this organization to another member. You will become an admin.</p>
+            <p class="text-sm text-gray-500 mt-1">Transfer this organization to an admin. You will stop being the owner and become an admin.</p>
           </div>
-          <% if other_members.any? %>
+          <% if admin_members.any? %>
             <button type="button"
               data-action="transfer-modal#open"
               class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-red-600 ring-1 ring-inset ring-red-300 hover:bg-red-50">
@@ -34,30 +39,59 @@
             <div data-transfer-modal-target="modal"
               data-action="click->transfer-modal#closeOnBackdrop keydown@window->transfer-modal#closeOnEscape"
               class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <div class="bg-white rounded-xl shadow-2xl max-w-md w-full">
-                <div class="px-6 py-4 border-b border-gray-200">
+              <div class="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col">
+                <div class="px-6 py-4 border-b border-gray-200 flex-shrink-0">
                   <h3 class="text-lg font-semibold text-gray-900">Transfer Ownership</h3>
-                  <p class="text-sm text-gray-500 mt-1">Select a member to become the new owner.</p>
+                  <p class="text-sm text-gray-500 mt-1">Select an admin to become the new owner.</p>
                 </div>
 
                 <%# Step 1: Select member %>
-                <div data-transfer-modal-target="memberList" class="p-6 space-y-3">
-                  <p class="text-xs font-medium text-gray-500 uppercase">Select new owner:</p>
-                  <% other_members.each do |membership| %>
-                    <button type="button"
-                      data-action="transfer-modal#selectMember"
-                      data-member-id="<%= membership.id %>"
-                      data-member-email="<%= membership.user.email %>"
-                      class="w-full text-left px-4 py-3 text-sm text-gray-700 bg-gray-50 hover:bg-slate-100 rounded-lg flex items-center gap-3 border border-gray-200 hover:border-slate-300 transition-colors">
-                      <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
-                        <%= membership.user.email.first.upcase %>
-                      </span>
-                      <div class="flex-1 min-w-0">
-                        <span class="block truncate font-medium"><%= membership.user.email %></span>
-                        <span class="text-xs text-gray-400"><%= membership.role.capitalize %></span>
-                      </div>
-                      <%= heroicon "chevron-right", variant: :mini, options: { class: "h-5 w-5 text-gray-400" } %>
-                    </button>
+                <div data-transfer-modal-target="memberList" class="p-6 space-y-4 overflow-y-auto flex-1">
+                  <%# Admins - selectable %>
+                  <div class="space-y-2">
+                    <p class="text-xs font-medium text-gray-500 uppercase flex items-center gap-1.5">
+                      <%= heroicon "check-circle", variant: :mini, options: { class: "h-4 w-4 text-green-500" } %>
+                      Eligible admins
+                    </p>
+                    <% admin_members.each do |membership| %>
+                      <button type="button"
+                        data-action="transfer-modal#selectMember"
+                        data-member-id="<%= membership.id %>"
+                        data-member-email="<%= membership.user.email %>"
+                        class="w-full text-left px-4 py-3 text-sm text-gray-700 bg-gray-50 hover:bg-slate-100 rounded-lg flex items-center gap-3 border border-gray-200 hover:border-slate-300 transition-colors cursor-pointer">
+                        <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-sm font-medium text-purple-700">
+                          <%= membership.user.email.first.upcase %>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <span class="block truncate font-medium"><%= membership.user.email %></span>
+                          <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">Admin</span>
+                        </div>
+                        <%= heroicon "chevron-right", variant: :mini, options: { class: "h-5 w-5 text-gray-400" } %>
+                      </button>
+                    <% end %>
+                  </div>
+
+                  <%# Non-admins - disabled with explanation %>
+                  <% if non_admin_members.any? %>
+                    <div class="space-y-2 pt-2 border-t border-gray-100">
+                      <p class="text-xs font-medium text-gray-400 uppercase flex items-center gap-1.5">
+                        <%= heroicon "lock-closed", variant: :mini, options: { class: "h-4 w-4" } %>
+                        Not eligible
+                      </p>
+                      <p class="text-xs text-gray-500 mb-2">These members must be promoted to admin before they can receive ownership.</p>
+                      <% non_admin_members.each do |membership| %>
+                        <div class="w-full text-left px-4 py-3 text-sm text-gray-400 bg-gray-50 rounded-lg flex items-center gap-3 border border-gray-100 opacity-60 cursor-not-allowed">
+                          <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-sm font-medium text-gray-400">
+                            <%= membership.user.email.first.upcase %>
+                          </span>
+                          <div class="flex-1 min-w-0">
+                            <span class="block truncate font-medium"><%= membership.user.email %></span>
+                            <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500"><%= membership.role.capitalize %></span>
+                          </div>
+                          <%= heroicon "arrow-up-circle", variant: :mini, options: { class: "h-5 w-5 text-gray-300", title: "Promote to admin first" } %>
+                        </div>
+                      <% end %>
+                    </div>
                   <% end %>
                 </div>
 
@@ -73,13 +107,13 @@
 
                   <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                     <p class="text-sm text-amber-800">
-                      <strong>Warning:</strong> You will become an admin. This action cannot be undone.
+                      <strong>Warning:</strong> You will stop being the owner and become an admin. This action cannot be undone.
                     </p>
                   </div>
 
                   <div>
                     <label class="block text-sm text-gray-700 mb-1">
-                      Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= current_organization.name %></code> to confirm:
+                      Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= org.name %></code> to confirm:
                     </label>
                     <input type="text"
                       data-transfer-modal-target="input"
@@ -107,21 +141,40 @@
                 </div>
               </div>
             </div>
-          <% else %>
-            <div>
+          <% elsif non_admin_members.any? %>
+            <%# Has members but no admins - explain promotion requirement %>
+            <div class="space-y-2">
               <button type="button"
                 disabled
                 class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-400 ring-1 ring-inset ring-gray-200 cursor-not-allowed opacity-50">
                 Transfer
               </button>
-              <p class="text-xs text-gray-400 mt-1 text-center">No other members to transfer to</p>
+              <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <p class="text-xs text-amber-800 flex items-start gap-1.5">
+                  <%= heroicon "information-circle", variant: :mini, options: { class: "h-4 w-4 flex-shrink-0 mt-0.5" } %>
+                  <span>
+                    <strong>No eligible members.</strong> Only admins can receive ownership.
+                    Promote a member to admin first using the Members table.
+                  </span>
+                </p>
+              </div>
+            </div>
+          <% else %>
+            <%# No other members at all %>
+            <div class="space-y-2">
+              <button type="button"
+                disabled
+                class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-400 ring-1 ring-inset ring-gray-200 cursor-not-allowed opacity-50">
+                Transfer
+              </button>
+              <p class="text-xs text-gray-500 text-center">No other members to transfer to. Invite members first.</p>
             </div>
           <% end %>
         </div>
       </div>
 
       <%# Delete Organization %>
-      <div class="p-6" data-controller="confirm-modal" data-confirm-modal-phrase-value="<%= current_organization.name %>">
+      <div class="p-6" data-controller="confirm-modal" data-confirm-modal-phrase-value="<%= org.name %>">
         <div class="space-y-3">
           <div>
             <h3 class="text-sm font-medium text-gray-900">Delete Organization</h3>
@@ -146,7 +199,7 @@
             <div class="p-6 space-y-4">
               <div>
                 <label class="block text-sm text-gray-700 mb-1">
-                  Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= current_organization.name %></code> to confirm:
+                  Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= org.name %></code> to confirm:
                 </label>
                 <input type="text"
                   data-confirm-modal-target="input"
@@ -156,7 +209,7 @@
                   class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm">
               </div>
 
-              <%= form_with url: organizations.organization_path(current_organization), method: :delete, data: { confirm_modal_target: "form", action: "submit->confirm-modal#submit" } do %>
+              <%= form_with url: organizations.organization_path(org), method: :delete, data: { confirm_modal_target: "form", action: "submit->confirm-modal#submit" } do %>
                 <button type="submit"
                   disabled
                   data-confirm-modal-target="confirmButton"
@@ -176,11 +229,11 @@
       </div>
     </div>
   </div>
-<% else %>
+<% elsif org %>
   <div class="bg-red-50 rounded-xl border-2 border-dashed border-red-200 p-6">
     <%= heroicon "exclamation-triangle", variant: :solid, options: { class: "mx-auto h-10 w-10 text-red-300" } %>
     <h3 class="mt-3 text-sm font-semibold text-red-900 text-center">Danger Zone</h3>
-    <p class="mt-2 text-xs text-red-700 text-center">This panel is <strong>hidden</strong> because you're viewing as a <strong><%= current_user.current_organization_role %></strong>.</p>
+    <p class="mt-2 text-xs text-red-700 text-center">This panel is <strong>hidden</strong> because you're viewing as a <strong><%= current_user.role_in(org) %></strong>.</p>
     <p class="mt-2 text-xs text-red-600 text-center">Only <strong>owners</strong> can delete organizations or transfer ownership.</p>
   </div>
 <% end %>

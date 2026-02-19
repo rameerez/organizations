@@ -92,7 +92,7 @@ module Organizations
           format.json { render json: { success: true, new_owner: new_owner.email } }
         end
       rescue Organizations::Organization::CannotTransferToNonMember,
-             Organizations::Organization::CannotTransferToSelf,
+             Organizations::Organization::CannotTransferToNonAdmin,
              Organizations::Error => e
         respond_to do |format|
           format.html { redirect_back fallback_location: memberships_path, alert: e.message }
