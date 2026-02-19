@@ -2,7 +2,6 @@
 
 source "https://rubygems.org"
 
-gem "slugifiable", path: "../../slugifiable"
 gem "rake", "~> 13.0"
 gem "rails", "~> 7.2.3"
 

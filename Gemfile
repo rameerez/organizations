@@ -5,8 +5,7 @@ source "https://rubygems.org"
 # Specify your gem's dependencies in organizations.gemspec
 gemspec
 
-# Use local slugifiable while validating and preparing its next release.
-gem "slugifiable", path: "../slugifiable"
+# slugifiable is specified in gemspec - uses released gem from RubyGems
 
 # Tooling
 gem "rake", "~> 13.0"
