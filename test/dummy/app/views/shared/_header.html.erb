@@ -13,7 +13,7 @@
     <div class="flex items-center gap-x-4 flex-1">
       <% if current_organization %>
         <div class="relative" data-controller="dropdown">
-          <button type="button" class="flex items-center gap-x-3 rounded-lg px-3 py-2 hover:bg-gray-50" data-action="dropdown#toggle">
+          <button type="button" class="flex items-center gap-x-3 rounded-lg px-3 py-2 hover:bg-gray-50 cursor-pointer" data-action="dropdown#toggle">
             <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-600 text-white font-semibold text-sm">
               <%= current_organization.name.first.upcase %>
             </span>
@@ -27,7 +27,7 @@
           </button>
 
           <%# Organization dropdown menu %>
-          <div data-dropdown-target="menu" class="hidden absolute left-0 z-10 mt-2 w-72 origin-top-left rounded-xl bg-white shadow-lg ring-1 ring-black ring-opacity-5 p-2">
+          <div data-dropdown-target="menu" class="hidden absolute left-0 z-10 mt-2 w-72 origin-top-left rounded-xl bg-white shadow-lg ring-1 ring-black/5 p-2">
             <%# Current organization info %>
             <div class="px-3 py-2 border-b border-gray-100 mb-2">
               <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Current Organization</p>
@@ -40,17 +40,17 @@
             <%# Quick actions %>
             <div class="space-y-1 mb-2">
               <%= link_to organizations.organization_path(current_organization),
-                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer" do %>
                 <%= heroicon "building-office-2", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
                 Organization Settings
               <% end %>
               <%= link_to organizations.memberships_path,
-                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer" do %>
                 <%= heroicon "users", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
                 Manage Members
               <% end %>
               <%= link_to organizations.organization_invitations_path,
-                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer" do %>
                 <%= heroicon "envelope", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
                 Invitations
               <% end %>
@@ -66,7 +66,7 @@
                     <%= button_to organizations.switch_organization_path(org),
                       method: :post,
                       data: { turbo: false },
-                      class: "w-full flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left" do %>
+                      class: "w-full flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left cursor-pointer" do %>
                       <span class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-gray-200 text-gray-600 font-medium text-xs">
                         <%= org.name.first.upcase %>
                       </span>
@@ -77,12 +77,12 @@
               </div>
             <% end %>
 
-            <%# Create new organization %>
+            <%# Invite someone %>
             <div class="border-t border-gray-100 pt-2 mt-2">
-              <%= link_to organizations.new_organization_path,
-                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
-                <%= heroicon "plus", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
-                Create New Organization
+              <%= link_to organizations.new_organization_invitation_path,
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer" do %>
+                <%= heroicon "user-plus", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+                Invite Someone
               <% end %>
             </div>
           </div>

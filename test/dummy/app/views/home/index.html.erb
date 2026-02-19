@@ -305,15 +305,17 @@
         <div class="mx-auto h-24 w-24 rounded-full bg-slate-100 flex items-center justify-center mb-6">
           <%= heroicon "building-office-2", variant: :solid, options: { class: "h-12 w-12 text-slate-600" } %>
         </div>
-        <h1 class="text-2xl font-bold text-gray-900 mb-2">Welcome to the Organizations Gem Demo!</h1>
-        <p class="text-gray-500 mb-4">You don't belong to any organization yet. Create one to explore the full feature set.</p>
-        <p class="text-sm text-gray-400 mb-8">Organizations let you group users together with role-based permissions. Each user can belong to multiple organizations with different roles in each.</p>
+        <h1 class="text-2xl font-bold text-gray-900 mb-2 text-center">Welcome to the Organizations Gem Demo!</h1>
+        <p class="text-gray-500 mb-4 text-center">You don't belong to any organization yet. Create one to explore the full feature set.</p>
+        <p class="text-sm text-gray-400 mb-8 text-center">Organizations let you group users together with role-based permissions. Each user can belong to multiple organizations with different roles in each.</p>
 
-        <%= link_to organizations.new_organization_path,
-          class: "inline-flex items-center gap-2 rounded-lg bg-slate-600 px-6 py-3 text-lg font-semibold text-white shadow-sm hover:bg-slate-500 transition-colors" do %>
-          <%= heroicon "plus", variant: :solid, options: { class: "h-5 w-5" } %>
-          Create Your First Organization
-        <% end %>
+        <div class="text-center">
+          <%= link_to organizations.new_organization_path,
+            class: "inline-flex items-center gap-2 rounded-lg bg-slate-600 px-6 py-3 text-lg font-semibold text-white shadow-sm hover:bg-slate-500 transition-colors" do %>
+            <%= heroicon "plus", variant: :solid, options: { class: "h-5 w-5" } %>
+            Create Your First Organization
+          <% end %>
+        </div>
       <% end %>
 
     </div>
