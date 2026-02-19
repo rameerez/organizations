@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <title><%= content_for(:title) || "organizations gem demo" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+
+    <script defer src="https://a.rameerez.com/script.js" data-website-id="7372fbf5-d4e3-4b47-af62-9a39000c9aa4"></script>
+
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.png">
+
+    <%= stylesheet_link_tag "tailwind", "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+
+    <%= yield :head %>
+  </head>
+
+  <body class="bg-gray-50 min-h-full h-full font-sans antialiased">
+    <div class="min-h-full">
+      <%# Mobile sidebar toggle (hidden on desktop) %>
+      <div class="lg:hidden" id="mobile-sidebar-backdrop" data-controller="mobile-menu">
+        <div class="fixed inset-0 z-50 hidden" data-mobile-menu-target="backdrop">
+          <div class="fixed inset-0 bg-gray-900/80" data-action="click->mobile-menu#close"></div>
+          <div class="fixed inset-y-0 left-0 flex w-72">
+            <%= render "shared/sidebar", mobile: true %>
+          </div>
+        </div>
+      </div>
+
+      <%# Desktop sidebar %>
+      <div class="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col">
+        <%= render "shared/sidebar", mobile: false %>
+      </div>
+
+      <%# Main content area %>
+      <div class="lg:pl-72 min-h-screen flex flex-col">
+        <%= render "shared/header" %>
+
+        <main class="py-6 flex-1">
+          <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <%= render "shared/flash" %>
+            <%= yield %>
+          </div>
+        </main>
+
+        <footer class="border-t border-gray-200 bg-white py-4 mt-auto">
+          <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-sm text-gray-500">
+              The <a href="https://github.com/rameerez/organizations" class="text-slate-600 hover:text-slate-800 font-medium">organizations</a> Ruby gem by <a href="https://x.com/rameerez" class="text-slate-600 hover:text-slate-800 font-medium">@rameerez</a>
+            </p>
+          </div>
+        </footer>
+      </div>
+    </div>
+  </body>
+</html>

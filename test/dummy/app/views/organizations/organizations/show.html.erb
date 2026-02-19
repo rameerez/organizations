@@ -1,0 +1,115 @@
+<div class="mb-8 flex justify-between items-start">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-3">
+      <span class="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-slate-600 text-white font-bold text-xl">
+        <%= @organization.name.first.upcase %>
+      </span>
+      <%= @organization.name %>
+    </h1>
+    <p class="mt-2 text-sm text-gray-500">
+      Slug: <code class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-700"><%= @organization.slug %></code>
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <%= link_to edit_organization_path(@organization),
+      class: "inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" do %>
+      <%= heroicon "pencil", variant: :mini, options: { class: "h-4 w-4" } %>
+      Edit
+    <% end %>
+    <%= link_to new_organization_invitation_path,
+      class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
+      <%= heroicon "plus", variant: :mini, options: { class: "h-4 w-4" } %>
+      Invite
+    <% end %>
+    <%= button_to organization_path(@organization),
+      method: :delete,
+      data: { turbo_confirm: "Delete this organization? This cannot be undone." },
+      class: "inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" do %>
+      <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
+      Delete
+    <% end %>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <%# Members Card %>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <%= heroicon "users", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+        Members (<%= @organization.member_count %>)
+      </h2>
+    </div>
+    <div class="divide-y divide-gray-200">
+      <% @organization.memberships.includes(:user).each do |membership| %>
+        <div class="px-6 py-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-gray-600 font-medium">
+              <%= membership.user.email.first.upcase %>
+            </span>
+            <div>
+              <p class="text-sm font-medium text-gray-900"><%= membership.user.email %></p>
+              <p class="text-xs text-gray-500">Joined <%= time_ago_in_words(membership.created_at) %> ago</p>
+            </div>
+          </div>
+          <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+            <%= case membership.role
+                when 'owner' then 'bg-amber-100 text-amber-800'
+                when 'admin' then 'bg-purple-100 text-purple-800'
+                when 'member' then 'bg-blue-100 text-blue-800'
+                else 'bg-gray-100 text-gray-800'
+                end %>">
+            <%= membership.role.capitalize %>
+          </span>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Pending Invitations Card %>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <%= heroicon "envelope", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+        Pending Invitations
+      </h2>
+    </div>
+
+    <% pending = @organization.invitations.pending %>
+    <% if pending.any? %>
+      <div class="divide-y divide-gray-200">
+        <% pending.each do |invitation| %>
+          <div class="px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                <%= heroicon "clock", variant: :outline, options: { class: "h-5 w-5" } %>
+              </span>
+              <div>
+                <p class="text-sm font-medium text-gray-900"><%= invitation.email %></p>
+                <p class="text-xs text-gray-500">
+                  <% if invitation.expires_at %>
+                    Expires in <%= distance_of_time_in_words(Time.current, invitation.expires_at) %>
+                  <% else %>
+                    Never expires
+                  <% end %>
+                </p>
+              </div>
+            </div>
+            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+              <%= case invitation.role
+                  when 'admin' then 'bg-purple-100 text-purple-800'
+                  when 'member' then 'bg-blue-100 text-blue-800'
+                  else 'bg-gray-100 text-gray-800'
+                  end %>">
+              <%= invitation.role.capitalize %>
+            </span>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="p-6 text-center">
+        <p class="text-sm text-gray-500">No pending invitations.</p>
+      </div>
+    <% end %>
+  </div>
+</div>

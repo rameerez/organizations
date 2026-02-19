@@ -1,0 +1,26 @@
+<%#
+  Reusable stats card component
+
+  Usage:
+  render "shared/stats_card",
+      title: "Members",
+      value: 12,
+      icon: "users",
+      icon_color: "text-slate-600",
+      subtitle: "Active users"
+%>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+  <div class="flex items-center">
+    <%= heroicon icon, variant: :solid, options: { class: "h-8 w-8 #{icon_color || 'text-slate-600'} opacity-75 mr-4" } %>
+    <div>
+      <p class="text-sm font-medium text-gray-600"><%= title %></p>
+      <p class="text-2xl font-semibold text-gray-900">
+        <%= value.is_a?(Numeric) ? number_with_delimiter(value) : value %>
+      </p>
+      <% if local_assigns[:subtitle] %>
+        <p class="text-xs text-gray-500 mt-1"><%= subtitle %></p>
+      <% end %>
+    </div>
+  </div>
+</div>

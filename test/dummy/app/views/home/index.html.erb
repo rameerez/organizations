@@ -1,0 +1,416 @@
+<% if current_organization %>
+
+  <%# Page header with context %>
+  <div class="mb-10">
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p class="mt-2 text-gray-500">Welcome to your simulated organization. This demo lets you explore all features of the <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">organizations</code> gem.</p>
+      </div>
+      <div class="flex-shrink-0 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <p class="text-xs font-medium text-amber-800">You're viewing as</p>
+        <p class="text-sm font-bold text-amber-900"><%= current_user.current_organization_role&.capitalize || "Guest" %></p>
+      </div>
+    </div>
+  </div>
+
+  <%# Stats grid with explanations %>
+  <div class="mb-8">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Organization Stats</p>
+    <p class="text-sm text-gray-500 mb-4">These stats are pulled in real-time using <code class="bg-gray-100 px-1 py-0.5 rounded text-xs">current_organization.member_count</code> and similar helpers.</p>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 sm:grid-cols-3 mb-12">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div class="flex items-center gap-4">
+        <div class="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center">
+          <%= heroicon "users", variant: :solid, options: { class: "h-6 w-6 text-slate-600" } %>
+        </div>
+        <div>
+          <p class="text-sm text-gray-500">Team Members</p>
+          <p class="text-2xl font-bold text-gray-900"><%= current_organization.member_count %></p>
+        </div>
+      </div>
+      <p class="mt-3 text-xs text-gray-400">Users with a <code class="bg-gray-100 px-1 rounded">Membership</code> record in this org</p>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div class="flex items-center gap-4">
+        <div class="h-12 w-12 rounded-xl bg-amber-100 flex items-center justify-center">
+          <%= heroicon "envelope", variant: :solid, options: { class: "h-6 w-6 text-amber-600" } %>
+        </div>
+        <div>
+          <p class="text-sm text-gray-500">Pending Invites</p>
+          <p class="text-2xl font-bold text-gray-900"><%= current_organization.invitations.pending.count %></p>
+        </div>
+      </div>
+      <p class="mt-3 text-xs text-gray-400">Invitations sent but not yet accepted</p>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div class="flex items-center gap-4">
+        <div class="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+          <%= heroicon "shield-check", variant: :solid, options: { class: "h-6 w-6 text-emerald-600" } %>
+        </div>
+        <div>
+          <p class="text-sm text-gray-500">Your Role</p>
+          <p class="text-2xl font-bold text-gray-900"><%= current_user.current_organization_role&.capitalize || "N/A" %></p>
+        </div>
+      </div>
+      <p class="mt-3 text-xs text-gray-400">Determines which panels you can see below</p>
+    </div>
+  </div>
+
+  <%# Main content - Two column layout %>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <%# Left column - Team Members (2/3 width) %>
+    <div class="lg:col-span-2 space-y-6">
+
+      <%# Team Members Card %>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-5 border-b border-gray-200">
+          <div class="flex justify-between items-start">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900">Team Members</h2>
+              <p class="text-sm text-gray-500 mt-1">All users who belong to this organization. Each has a role: <span class="font-medium">owner</span>, <span class="font-medium">admin</span>, <span class="font-medium">member</span>, or <span class="font-medium">viewer</span>.</p>
+            </div>
+            <% if current_user.has_organization_permission_to?(:invite_members) %>
+              <%= link_to organizations.new_organization_invitation_path,
+                class: "flex-shrink-0 inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
+                <%= heroicon "user-plus", variant: :solid, options: { class: "h-4 w-4" } %>
+                Invite
+              <% end %>
+            <% end %>
+          </div>
+          <% unless current_user.has_organization_permission_to?(:invite_members) %>
+            <p class="mt-3 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+              <%= heroicon "lock-closed", variant: :solid, options: { class: "inline h-3 w-3 mr-1" } %>
+              <strong>Invite button hidden.</strong> Only <span class="font-medium">admins</span> and <span class="font-medium">owners</span> can invite new members. Switch to an admin user to see it.
+            </p>
+          <% end %>
+        </div>
+
+        <div class="divide-y divide-gray-100">
+          <% current_organization.memberships.includes(:user).each do |membership| %>
+            <div class="px-6 py-5 flex items-center justify-between hover:bg-gray-50">
+              <div class="flex items-center gap-4">
+                <span class="inline-flex h-11 w-11 items-center justify-center rounded-full <%= membership.user_id == current_user.id ? 'bg-slate-600 text-white' : 'bg-gray-100 text-gray-600' %> font-semibold text-sm">
+                  <%= membership.user.email.first.upcase %>
+                </span>
+                <div>
+                  <p class="text-sm font-medium text-gray-900">
+                    <%= membership.user.email %>
+                    <% if membership.user_id == current_user.id %>
+                      <span class="text-xs text-emerald-600 ml-1">(viewing as)</span>
+                    <% end %>
+                  </p>
+                  <p class="text-xs text-gray-500 mt-0.5">Joined <%= time_ago_in_words(membership.created_at) %> ago</p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-4">
+                <div class="text-right">
+                  <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
+                    <%= case membership.role
+                        when 'owner' then 'bg-amber-100 text-amber-800'
+                        when 'admin' then 'bg-purple-100 text-purple-800'
+                        when 'member' then 'bg-blue-100 text-blue-800'
+                        else 'bg-gray-100 text-gray-700'
+                        end %>">
+                    <%= membership.role.capitalize %>
+                  </span>
+                  <p class="text-xs text-gray-400 mt-1">
+                    <% case membership.role
+                       when 'owner' %>Full control
+                    <% when 'admin' %>Can manage members
+                    <% when 'member' %>Can create resources
+                    <% else %>Read-only access
+                    <% end %>
+                  </p>
+                </div>
+
+                <%# Demo: Switch to this user %>
+                <% if membership.user.id != current_user.id %>
+                  <%= button_to main_app.switch_user_path(email: membership.user.email),
+                    method: :post,
+                    data: { turbo: false },
+                    class: "inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors",
+                    title: "Demo: Switch to this user to see the UI from their perspective" do %>
+                    <%= heroicon "arrow-path", variant: :solid, options: { class: "h-3.5 w-3.5" } %>
+                    Become
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+
+        <div class="px-6 py-3 bg-gray-50 border-t border-gray-100">
+          <p class="text-xs text-gray-500">
+            <strong>Try it:</strong> Click "Become" to switch users and see how the UI changes based on their role permissions.
+          </p>
+        </div>
+
+        <%# Pending invitations %>
+        <% pending = current_organization.invitations.pending %>
+        <% if pending.any? && current_user.has_organization_permission_to?(:invite_members) %>
+          <div class="border-t border-gray-200 bg-amber-50 px-6 py-5">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-amber-900">Pending Invitations</h3>
+              <span class="inline-flex items-center rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                <%= pending.count %>
+              </span>
+            </div>
+            <p class="text-xs text-amber-700 mb-4">These users have been invited but haven't accepted yet. Click "Become & Accept" to simulate accepting the invitation as that user.</p>
+            <div class="space-y-3">
+              <% pending.each do |inv| %>
+                <div class="flex items-center justify-between bg-white rounded-lg px-4 py-3 border border-amber-200">
+                  <div class="flex items-center gap-3">
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-medium text-xs">
+                      <%= inv.email.first.upcase %>
+                    </span>
+                    <div>
+                      <span class="text-sm font-medium text-gray-900"><%= inv.email %></span>
+                      <span class="ml-2 text-xs text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">will be <%= inv.role %></span>
+                    </div>
+                  </div>
+                  <%= button_to main_app.switch_user_path(email: inv.email),
+                    method: :post,
+                    data: { turbo: false },
+                    class: "text-sm font-medium text-amber-700 hover:text-amber-900" do %>
+                    Become & Accept →
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+
+    </div>
+
+    <%# Right column - Settings (1/3 width) %>
+    <div class="space-y-6">
+
+      <%# Organization Settings %>
+      <% if current_user.has_organization_permission_to?(:manage_settings) %>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="px-6 py-5 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Organization Settings</h2>
+            <p class="text-sm text-gray-500 mt-1">Only <span class="font-medium">admins</span> and <span class="font-medium">owners</span> can see and edit these settings.</p>
+          </div>
+          <%= form_with model: current_organization, url: organizations.organization_path(current_organization), method: :patch, class: "p-6 space-y-4" do |f| %>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Name</label>
+              <%= f.text_field :name, class: "block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-slate-500 focus:ring-slate-500" %>
+              <p class="mt-1 text-xs text-gray-400">Stored in <code class="bg-gray-100 px-1 rounded">organizations.name</code></p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Slug</label>
+              <%= f.text_field :slug, disabled: true, class: "block w-full rounded-lg border-gray-200 bg-gray-50 text-gray-500 text-sm" %>
+              <p class="mt-1 text-xs text-gray-400">Auto-generated URL-safe identifier</p>
+            </div>
+            <%= f.submit "Save Changes", class: "w-full inline-flex justify-center items-center rounded-lg bg-slate-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-500 cursor-pointer" %>
+          <% end %>
+        </div>
+      <% else %>
+        <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-6">
+          <%= heroicon "lock-closed", variant: :solid, options: { class: "mx-auto h-10 w-10 text-gray-300" } %>
+          <h3 class="mt-3 text-sm font-semibold text-gray-900 text-center">Organization Settings</h3>
+          <p class="mt-2 text-xs text-gray-500 text-center">This panel is <strong>hidden</strong> because you're viewing as a <strong><%= current_user.current_organization_role %></strong>.</p>
+          <p class="mt-2 text-xs text-gray-500 text-center">Switch to an <strong>admin</strong> or <strong>owner</strong> to see and edit organization settings.</p>
+          <p class="mt-3 text-xs text-gray-400 text-center bg-white rounded-lg px-3 py-2 border border-gray-200">
+            Code: <code class="text-xs">has_organization_permission_to?(:manage_settings)</code>
+          </p>
+        </div>
+      <% end %>
+
+      <%# Danger Zone - Owner only %>
+      <% if current_user.has_organization_permission_to?(:transfer_ownership) %>
+        <div class="bg-white rounded-xl shadow-sm border-2 border-red-200 overflow-hidden">
+          <div class="px-6 py-4 bg-red-50 border-b border-red-200">
+            <h2 class="text-base font-semibold text-red-900 flex items-center gap-2">
+              <%= heroicon "exclamation-triangle", variant: :solid, options: { class: "h-5 w-5 text-red-500" } %>
+              Danger Zone
+            </h2>
+            <p class="text-xs text-red-700 mt-1">Only <span class="font-medium">owners</span> can see this panel. These are destructive actions.</p>
+          </div>
+          <div class="p-6">
+            <h3 class="text-sm font-medium text-gray-900">Delete Organization</h3>
+            <p class="text-sm text-gray-500 mt-1 mb-2">Permanently delete this demo organization and all its data.</p>
+            <p class="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1 mb-4">
+              <strong>Note:</strong> In this demo, deletion will fail if other members exist (the gem prevents orphaning users).
+            </p>
+            <%= button_to organizations.organization_path(current_organization),
+              method: :delete,
+              data: { turbo_confirm: "Are you sure? This cannot be undone!" },
+              class: "w-full inline-flex justify-center items-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500" do %>
+              Delete Organization
+            <% end %>
+            <p class="mt-3 text-xs text-gray-400 text-center">
+              Code: <code class="bg-gray-100 px-1 rounded">has_organization_permission_to?(:transfer_ownership)</code>
+            </p>
+          </div>
+        </div>
+      <% else %>
+        <div class="bg-red-50 rounded-xl border-2 border-dashed border-red-200 p-6">
+          <%= heroicon "exclamation-triangle", variant: :solid, options: { class: "mx-auto h-10 w-10 text-red-300" } %>
+          <h3 class="mt-3 text-sm font-semibold text-red-900 text-center">Danger Zone</h3>
+          <p class="mt-2 text-xs text-red-700 text-center">This panel is <strong>hidden</strong> because you're viewing as a <strong><%= current_user.current_organization_role %></strong>.</p>
+          <p class="mt-2 text-xs text-red-600 text-center">Only <strong>owners</strong> can delete organizations or transfer ownership.</p>
+          <p class="mt-3 text-xs text-gray-400 text-center bg-white rounded-lg px-3 py-2 border border-red-200">
+            Code: <code class="text-xs">has_organization_permission_to?(:transfer_ownership)</code>
+          </p>
+        </div>
+      <% end %>
+
+    </div>
+  </div>
+
+  <%# Floating Quick Test Setup Card %>
+  <div class="fixed bottom-16 left-1/2 -translate-x-1/2 z-40 w-full max-w-3xl px-4 lg:pl-72">
+    <div class="bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden" data-controller="collapsible">
+      <button type="button" data-action="collapsible#toggle" class="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-700 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="h-10 w-10 rounded-xl bg-slate-700 flex items-center justify-center">
+            <%= heroicon "beaker", variant: :solid, options: { class: "h-5 w-5 text-slate-300" } %>
+          </div>
+          <div class="text-left">
+            <h3 class="text-sm font-semibold text-white">Quick Test Setup</h3>
+            <p class="text-xs text-slate-400">Click to expand instructions</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <%= link_to organizations.new_organization_invitation_path,
+            class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-500 transition-colors",
+            onclick: "event.stopPropagation()" do %>
+            <%= heroicon "paper-airplane", variant: :solid, options: { class: "h-3.5 w-3.5" } %>
+            Invite
+          <% end %>
+          <%= heroicon "chevron-up", variant: :solid, options: { class: "h-5 w-5 text-slate-400", "data-collapsible-target": "icon" } %>
+        </div>
+      </button>
+      <div data-collapsible-target="content" class="hidden border-t border-slate-700 px-6 py-4 bg-slate-800">
+        <ol class="space-y-2 text-sm">
+          <li class="flex items-start gap-2">
+            <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">1</span>
+            <span class="text-slate-300">Invite <code class="bg-slate-700 px-1.5 py-0.5 rounded text-xs text-slate-200">viewer@test.com</code>, <code class="bg-slate-700 px-1.5 py-0.5 rounded text-xs text-slate-200">member@test.com</code>, <code class="bg-slate-700 px-1.5 py-0.5 rounded text-xs text-slate-200">admin@test.com</code></span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">2</span>
+            <span class="text-slate-300">Use the <strong class="text-white">user dropdown</strong> (top right) to switch users and accept invitations</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">3</span>
+            <span class="text-slate-300">Go to <strong class="text-white">Members</strong> and assign roles</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">4</span>
+            <span class="text-slate-300">Switch users to see panels appear/disappear based on permissions</span>
+          </li>
+        </ol>
+        <div class="flex gap-3 mt-4">
+          <%= link_to organizations.new_organization_invitation_path,
+            class: "inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 transition-colors" do %>
+            <%= heroicon "paper-airplane", variant: :solid, options: { class: "h-4 w-4" } %>
+            Send Invitations
+          <% end %>
+          <%= link_to organizations.memberships_path,
+            class: "inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600 transition-colors" do %>
+            <%= heroicon "users", variant: :solid, options: { class: "h-4 w-4" } %>
+            Manage Members
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<% else %>
+  <%# Welcome screen - no organization yet %>
+  <% pending_invitations = current_user.pending_organization_invitations %>
+
+  <div class="flex min-h-[60vh] items-center justify-center px-4">
+    <div class="w-full max-w-md">
+      <% if pending_invitations.any? %>
+        <%# User has pending invitations - show them prominently %>
+        <div class="space-y-4">
+          <% pending_invitations.includes(:organization, :invited_by).each_with_index do |invitation, index| %>
+            <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+              <%# Header with gradient %>
+              <div class="px-6 py-5 bg-gradient-to-br from-emerald-500 to-emerald-600">
+                <div class="flex items-center gap-4">
+                  <div class="h-14 w-14 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center shadow-lg">
+                    <span class="text-2xl font-bold text-white"><%= invitation.organization.name.first.upcase %></span>
+                  </div>
+                  <div>
+                    <p class="text-emerald-100 text-sm">You're invited to join</p>
+                    <h2 class="text-xl font-bold text-white"><%= invitation.organization.name %></h2>
+                  </div>
+                </div>
+              </div>
+
+              <%# Details %>
+              <div class="px-6 py-5">
+                <div class="flex items-center justify-between mb-4">
+                  <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <%= heroicon "user", variant: :mini, options: { class: "h-4 w-4" } %>
+                    <span>From <span class="font-medium text-gray-700"><%= invitation.invited_by&.email&.split('@')&.first || 'a team member' %></span></span>
+                  </div>
+                  <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold
+                    <%= case invitation.role
+                        when 'owner' then 'bg-amber-100 text-amber-700'
+                        when 'admin' then 'bg-purple-100 text-purple-700'
+                        when 'member' then 'bg-blue-100 text-blue-700'
+                        else 'bg-gray-100 text-gray-700'
+                        end %>">
+                    <%= invitation.role.capitalize %>
+                  </span>
+                </div>
+
+                <%= link_to organizations.invitation_path(invitation.token),
+                  class: "w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-base font-semibold text-white shadow-md hover:bg-emerald-500 hover:shadow-lg transition-all" do %>
+                  <%= heroicon "check-circle", variant: :solid, options: { class: "h-5 w-5" } %>
+                  View & Accept Invitation
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+
+        <%# Separator %>
+        <div class="flex items-center gap-4 my-8">
+          <div class="flex-1 h-px bg-gray-200"></div>
+          <span class="text-sm text-gray-400">or</span>
+          <div class="flex-1 h-px bg-gray-200"></div>
+        </div>
+
+        <%# Create org option %>
+        <div class="text-center">
+          <%= link_to organizations.new_organization_path,
+            class: "inline-flex items-center gap-2 rounded-xl bg-gray-100 px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors" do %>
+            <%= heroicon "plus", variant: :solid, options: { class: "h-4 w-4" } %>
+            Create your own organization instead
+          <% end %>
+        </div>
+
+      <% else %>
+        <%# No pending invitations %>
+        <div class="mx-auto h-24 w-24 rounded-full bg-slate-100 flex items-center justify-center mb-6">
+          <%= heroicon "building-office-2", variant: :solid, options: { class: "h-12 w-12 text-slate-600" } %>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">Welcome to the Organizations Gem Demo!</h1>
+        <p class="text-gray-500 mb-4">You don't belong to any organization yet. Create one to explore the full feature set.</p>
+        <p class="text-sm text-gray-400 mb-8">Organizations let you group users together with role-based permissions. Each user can belong to multiple organizations with different roles in each.</p>
+
+        <%= link_to organizations.new_organization_path,
+          class: "inline-flex items-center gap-2 rounded-lg bg-slate-600 px-6 py-3 text-lg font-semibold text-white shadow-sm hover:bg-slate-500 transition-colors" do %>
+          <%= heroicon "plus", variant: :solid, options: { class: "h-5 w-5" } %>
+          Create Your First Organization
+        <% end %>
+      <% end %>
+
+    </div>
+  </div>
+
+<% end %>

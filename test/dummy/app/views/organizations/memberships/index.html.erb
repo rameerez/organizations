@@ -1,0 +1,86 @@
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Members</h1>
+  <p class="mt-1 text-sm text-gray-500">Manage organization member roles and remove members.</p>
+</div>
+
+<% if @memberships.blank? %>
+  <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-12 text-center">
+    <%= heroicon "users", variant: :outline, options: { class: "mx-auto h-12 w-12 text-gray-400" } %>
+    <h3 class="mt-2 text-sm font-semibold text-gray-900">No members</h3>
+    <p class="mt-1 text-sm text-gray-500">Invite members to your organization.</p>
+  </div>
+<% else %>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
+          <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="bg-white divide-y divide-gray-200">
+        <% @memberships.each do |membership| %>
+          <% is_current_user = membership.user_id == current_user.id %>
+          <tr class="<%= is_current_user ? 'bg-slate-50' : 'hover:bg-gray-50' %>">
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-full <%= is_current_user ? 'bg-slate-600 text-white' : 'bg-gray-200 text-gray-600' %> font-medium">
+                  <%= membership.user.email.first.upcase %>
+                </span>
+                <div>
+                  <div class="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    <%= membership.user.respond_to?(:name) && membership.user.name.present? ? membership.user.name : membership.user.email %>
+                    <% if is_current_user %>
+                      <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">You</span>
+                    <% end %>
+                  </div>
+                  <div class="text-sm text-gray-500"><%= membership.user.email %></div>
+                </div>
+              </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+                <%= case membership.role
+                    when 'owner' then 'bg-amber-100 text-amber-800'
+                    when 'admin' then 'bg-purple-100 text-purple-800'
+                    when 'member' then 'bg-blue-100 text-blue-800'
+                    else 'bg-gray-100 text-gray-800'
+                    end %>">
+                <%= membership.role.capitalize %>
+              </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <%= time_ago_in_words(membership.created_at) %> ago
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right">
+              <% if is_current_user %>
+                <span class="text-sm text-gray-400 italic">Current user</span>
+              <% elsif membership.role == 'owner' %>
+                <span class="text-sm text-gray-400 italic">Organization owner</span>
+              <% else %>
+                <div class="flex items-center justify-end gap-2">
+                  <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
+                    <%= form.select :role,
+                      Organizations::Roles::HIERARCHY.map { |role| [role.to_s.capitalize, role] },
+                      {},
+                      class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
+                    <%= form.submit "Update",
+                      class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+                  <% end %>
+                  <%= button_to membership_path(membership),
+                    method: :delete,
+                    data: { turbo_confirm: "Remove #{membership.user.email} from the organization?" },
+                    class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" do %>
+                    <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
+                  <% end %>
+                </div>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% end %>

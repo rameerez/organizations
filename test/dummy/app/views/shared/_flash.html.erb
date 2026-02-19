@@ -1,0 +1,29 @@
+<% if notice.present? || alert.present? %>
+  <div class="mb-6">
+    <% if notice.present? %>
+      <div class="rounded-lg bg-emerald-50 p-4 border border-emerald-200">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <%= heroicon "check-circle", variant: :solid, options: { class: "h-5 w-5 text-emerald-400" } %>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm font-medium text-emerald-800"><%= notice %></p>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <% if alert.present? %>
+      <div class="rounded-lg bg-red-50 p-4 border border-red-200">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <%= heroicon "x-circle", variant: :solid, options: { class: "h-5 w-5 text-red-400" } %>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm font-medium text-red-800"><%= alert %></p>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% end %>

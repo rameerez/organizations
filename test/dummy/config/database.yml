@@ -1,0 +1,27 @@
+# Database configuration for multi-database testing.
+#
+# By default, uses SQLite for simplicity.
+# Set DATABASE_URL environment variable to switch to PostgreSQL or MySQL:
+#
+#   DATABASE_URL=postgres://localhost/usage_credits_test bundle exec rake test
+#   DATABASE_URL=mysql2://root:@localhost/usage_credits_test bundle exec rake test
+#
+# For CI, DATABASE_URL is set automatically based on the matrix configuration.
+# Rails automatically uses DATABASE_URL when present, overriding these defaults.
+
+default: &default
+  adapter: sqlite3
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  timeout: 5000
+
+development:
+  <<: *default
+  database: storage/development.sqlite3
+
+test:
+  <<: *default
+  database: storage/test.sqlite3
+
+production:
+  <<: *default
+  database: storage/production.sqlite3

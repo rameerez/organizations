@@ -1,0 +1,182 @@
+<header class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+  <%# Mobile menu button %>
+  <button type="button" class="-m-2.5 p-2.5 text-gray-700 lg:hidden" data-action="mobile-menu#open">
+    <span class="sr-only">Open sidebar</span>
+    <%= heroicon "bars-3", variant: :outline, options: { class: "h-6 w-6" } %>
+  </button>
+
+  <%# Separator %>
+  <div class="h-6 w-px bg-gray-200 lg:hidden"></div>
+
+  <div class="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
+    <%# Organization switcher dropdown %>
+    <div class="flex items-center gap-x-4 flex-1">
+      <% if current_organization %>
+        <div class="relative" data-controller="dropdown">
+          <button type="button" class="flex items-center gap-x-3 rounded-lg px-3 py-2 hover:bg-gray-50" data-action="dropdown#toggle">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-600 text-white font-semibold text-sm">
+              <%= current_organization.name.first.upcase %>
+            </span>
+            <div class="hidden sm:block text-left">
+              <p class="text-sm font-semibold text-gray-900"><%= current_organization.name %></p>
+              <p class="text-xs text-gray-500">
+                <%= current_user.current_organization_role&.capitalize %> · <%= current_organization.member_count %> <%= "member".pluralize(current_organization.member_count) %>
+              </p>
+            </div>
+            <%= heroicon "chevron-down", variant: :mini, options: { class: "h-5 w-5 text-gray-400" } %>
+          </button>
+
+          <%# Organization dropdown menu %>
+          <div data-dropdown-target="menu" class="hidden absolute left-0 z-10 mt-2 w-72 origin-top-left rounded-xl bg-white shadow-lg ring-1 ring-black ring-opacity-5 p-2">
+            <%# Current organization info %>
+            <div class="px-3 py-2 border-b border-gray-100 mb-2">
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Current Organization</p>
+              <p class="text-sm font-semibold text-gray-900 mt-1"><%= current_organization.name %></p>
+              <span class="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700 mt-1">
+                <%= current_user.current_organization_role&.capitalize %>
+              </span>
+            </div>
+
+            <%# Quick actions %>
+            <div class="space-y-1 mb-2">
+              <%= link_to organizations.organization_path(current_organization),
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                <%= heroicon "building-office-2", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+                Organization Settings
+              <% end %>
+              <%= link_to organizations.memberships_path,
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                <%= heroicon "users", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+                Manage Members
+              <% end %>
+              <%= link_to organizations.organization_invitations_path,
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                <%= heroicon "envelope", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+                Invitations
+              <% end %>
+            </div>
+
+            <%# Switch organization %>
+            <% other_orgs = current_user.organizations.where.not(id: current_organization.id) %>
+            <% if other_orgs.any? %>
+              <div class="border-t border-gray-100 pt-2">
+                <p class="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">Switch Organization</p>
+                <div class="space-y-1 mt-1">
+                  <% other_orgs.each do |org| %>
+                    <%= button_to organizations.switch_organization_path(org),
+                      method: :post,
+                      data: { turbo: false },
+                      class: "w-full flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left" do %>
+                      <span class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-gray-200 text-gray-600 font-medium text-xs">
+                        <%= org.name.first.upcase %>
+                      </span>
+                      <span class="truncate"><%= org.name %></span>
+                    <% end %>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+
+            <%# Create new organization %>
+            <div class="border-t border-gray-100 pt-2 mt-2">
+              <%= link_to organizations.new_organization_path,
+                class: "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" do %>
+                <%= heroicon "plus", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
+                Create New Organization
+              <% end %>
+            </div>
+          </div>
+        </div>
+      <% else %>
+        <%= link_to organizations.new_organization_path,
+          class: "inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700" do %>
+          <%= heroicon "plus", variant: :outline, options: { class: "h-5 w-5" } %>
+          Create Organization
+        <% end %>
+      <% end %>
+    </div>
+
+    <%# Right side: User dropdown %>
+    <div class="flex items-center gap-x-4 lg:gap-x-6">
+      <div class="relative" data-controller="dropdown">
+        <button type="button" class="flex items-center gap-x-2 p-1.5 text-sm rounded-lg hover:bg-gray-50" data-action="dropdown#toggle">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-medium text-sm">
+            <%= current_user.email.first.upcase %>
+          </span>
+          <span class="hidden lg:flex lg:items-center">
+            <span class="text-sm font-medium text-gray-700 max-w-[140px] truncate"><%= current_user.email %></span>
+            <%= heroicon "chevron-down", variant: :mini, options: { class: "ml-1 h-4 w-4 text-gray-400" } %>
+          </span>
+        </button>
+
+        <div data-dropdown-target="menu" class="hidden absolute right-0 z-10 mt-2.5 w-72 origin-top-right rounded-xl bg-white shadow-lg ring-1 ring-gray-900/5 p-2">
+          <%# Current user info %>
+          <div class="px-3 py-2 border-b border-gray-100 mb-2">
+            <p class="text-sm font-semibold text-gray-900 truncate"><%= current_user.email %></p>
+            <p class="text-xs text-gray-500 mt-0.5">Demo User</p>
+          </div>
+
+          <%# Demo User Switcher %>
+          <div class="mb-2">
+            <p class="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">Switch Demo User</p>
+            <% all_demo_users = respond_to?(:demo_users) ? demo_users : User.order(:created_at) %>
+            <% if all_demo_users.count > 1 %>
+              <div class="space-y-0.5 mt-1 max-h-32 overflow-y-auto">
+                <% all_demo_users.limit(5).each do |user| %>
+                  <% if user.id == current_user.id %>
+                    <div class="flex items-center gap-x-2 px-3 py-1.5 rounded-lg bg-slate-50">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-600 text-white font-medium text-xs">
+                        <%= user.email.first.upcase %>
+                      </span>
+                      <span class="text-sm text-slate-700 truncate flex-1"><%= user.email %></span>
+                      <span class="text-xs text-slate-500">current</span>
+                    </div>
+                  <% else %>
+                    <%= button_to main_app.switch_user_path(email: user.email),
+                      method: :post,
+                      data: { turbo: false },
+                      class: "w-full flex items-center gap-x-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-left" do %>
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-gray-600 font-medium text-xs">
+                        <%= user.email.first.upcase %>
+                      </span>
+                      <span class="text-sm text-gray-700 truncate"><%= user.email %></span>
+                    <% end %>
+                  <% end %>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+
+          <%# Custom email switch %>
+          <div class="border-t border-gray-100 pt-2">
+            <%= form_with url: main_app.switch_user_path, method: :post, local: true, class: "px-2" do |f| %>
+              <div class="flex gap-2">
+                <%= f.email_field :email,
+                  placeholder: "any@email.com",
+                  required: true,
+                  class: "flex-1 rounded-lg border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500 py-1.5" %>
+                <%= f.submit "Switch",
+                  class: "rounded-lg bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-500 cursor-pointer" %>
+              </div>
+            <% end %>
+          </div>
+
+          <%# Pending invitations %>
+          <% pending_invitations = Organizations::Invitation.pending.where(email: current_user.email) %>
+          <% if pending_invitations.any? %>
+            <div class="border-t border-gray-100 mt-2 pt-2">
+              <p class="px-3 py-1 text-xs font-medium text-emerald-600 uppercase tracking-wider">Pending Invitations</p>
+              <% pending_invitations.each do |inv| %>
+                <%= link_to organizations.invitation_path(inv.token),
+                  class: "flex items-center gap-x-2 px-3 py-2 rounded-lg hover:bg-emerald-50 text-sm text-emerald-700" do %>
+                  <%= heroicon "envelope-open", variant: :outline, options: { class: "h-4 w-4" } %>
+                  <span>Join <%= inv.organization.name %></span>
+                <% end %>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
