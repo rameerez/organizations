@@ -119,46 +119,30 @@
           <%# Demo User Switcher %>
           <div class="mb-2">
             <p class="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">Switch Demo User</p>
-            <% all_demo_users = respond_to?(:demo_users) ? demo_users : User.order(:created_at) %>
-            <% if all_demo_users.count > 1 %>
-              <div class="space-y-0.5 mt-1 max-h-32 overflow-y-auto">
-                <% all_demo_users.limit(5).each do |user| %>
-                  <% if user.id == current_user.id %>
-                    <div class="flex items-center gap-x-2 px-3 py-1.5 rounded-lg bg-slate-50">
-                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-600 text-white font-medium text-xs">
-                        <%= user.email.first.upcase %>
-                      </span>
-                      <span class="text-sm text-slate-700 truncate flex-1"><%= user.email %></span>
-                      <span class="text-xs text-slate-500">current</span>
-                    </div>
-                  <% else %>
-                    <%= button_to main_app.switch_user_path(email: user.email),
-                      method: :post,
-                      data: { turbo: false },
-                      class: "w-full flex items-center gap-x-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-left" do %>
-                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-gray-600 font-medium text-xs">
-                        <%= user.email.first.upcase %>
-                      </span>
-                      <span class="text-sm text-gray-700 truncate"><%= user.email %></span>
-                    <% end %>
+            <% all_users = User.order(:created_at) %>
+            <div class="space-y-0.5 mt-1 max-h-48 overflow-y-auto">
+              <% all_users.each do |user| %>
+                <% if user.id == current_user.id %>
+                  <div class="flex items-center gap-x-2 px-3 py-1.5 rounded-lg bg-slate-50">
+                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-600 text-white font-medium text-xs">
+                      <%= user.email.first.upcase %>
+                    </span>
+                    <span class="text-sm text-slate-700 truncate flex-1"><%= user.email %></span>
+                    <span class="text-xs text-slate-500">current</span>
+                  </div>
+                <% else %>
+                  <%= button_to main_app.switch_user_path(email: user.email),
+                    method: :post,
+                    data: { turbo: false },
+                    class: "w-full flex items-center gap-x-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-left" do %>
+                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-gray-600 font-medium text-xs">
+                      <%= user.email.first.upcase %>
+                    </span>
+                    <span class="text-sm text-gray-700 truncate"><%= user.email %></span>
                   <% end %>
                 <% end %>
-              </div>
-            <% end %>
-          </div>
-
-          <%# Custom email switch %>
-          <div class="border-t border-gray-100 pt-2">
-            <%= form_with url: main_app.switch_user_path, method: :post, local: true, class: "px-2" do |f| %>
-              <div class="flex gap-2">
-                <%= f.email_field :email,
-                  placeholder: "any@email.com",
-                  required: true,
-                  class: "flex-1 rounded-lg border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500 py-1.5" %>
-                <%= f.submit "Switch",
-                  class: "rounded-lg bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-500 cursor-pointer" %>
-              </div>
-            <% end %>
+              <% end %>
+            </div>
           </div>
 
           <%# Pending invitations %>
