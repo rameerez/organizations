@@ -32,3 +32,8 @@ TODO
 
 dist/
 .claude/
+
+# Dummy app runtime files
+test/dummy/log/
+test/dummy/tmp/
+test/dummy/storage/*.sqlite3*
