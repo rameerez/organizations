@@ -1,2 +1,111 @@
-<%# TODO: Implement layout %>
-<%= yield %>
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Organizations</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="utf-8">
+    <style>
+      :root {
+        --org-bg: #f7f8fa;
+        --org-card: #ffffff;
+        --org-border: #d9dee7;
+        --org-text: #101828;
+        --org-muted: #667085;
+        --org-brand: #0b63f6;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--org-text);
+        background: var(--org-bg);
+      }
+
+      .org-shell { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+      .org-nav {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .org-nav-links { display: flex; gap: 8px; flex-wrap: wrap; }
+      .org-nav a {
+        display: inline-block;
+        text-decoration: none;
+        color: var(--org-text);
+        border: 1px solid var(--org-border);
+        background: var(--org-card);
+        padding: 8px 10px;
+        border-radius: 8px;
+      }
+      .org-card {
+        background: var(--org-card);
+        border: 1px solid var(--org-border);
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .org-muted { color: var(--org-muted); }
+      .org-flash {
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+      }
+      .org-flash.notice { background: #e8f6ea; border: 1px solid #b7dfbd; color: #14532d; }
+      .org-flash.alert { background: #fff1f0; border: 1px solid #f3c4c1; color: #7f1d1d; }
+      .org-table { width: 100%; border-collapse: collapse; }
+      .org-table th, .org-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--org-border); }
+      .org-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      .org-button {
+        display: inline-block;
+        border-radius: 8px;
+        border: 1px solid var(--org-border);
+        background: #fff;
+        padding: 8px 12px;
+        color: var(--org-text);
+        text-decoration: none;
+      }
+      .org-button.primary { background: var(--org-brand); border-color: var(--org-brand); color: #fff; }
+      .org-button.danger { border-color: #ef4444; color: #991b1b; }
+      .org-form-row { margin-bottom: 12px; }
+      .org-form-row label { display: block; margin-bottom: 6px; }
+      .org-form-row input, .org-form-row select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid var(--org-border);
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="org-shell">
+      <nav class="org-nav">
+        <div class="org-nav-links">
+          <%= link_to "Organizations", organizations_path %>
+          <% if current_organization %>
+            <%= link_to "Members", memberships_path %>
+            <%= link_to "Invitations", organization_invitations_path %>
+          <% end %>
+        </div>
+
+        <div class="org-muted">
+          <% if current_organization %>
+            Current: <strong><%= current_organization.name %></strong>
+          <% else %>
+            No active organization
+          <% end %>
+        </div>
+      </nav>
+
+      <% flash.each do |type, message| %>
+        <div class="org-flash <%= type %>"><%= message %></div>
+      <% end %>
+
+      <main class="org-card">
+        <%= yield %>
+      </main>
+    </div>
+  </body>
+</html>

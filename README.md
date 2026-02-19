@@ -168,7 +168,7 @@ plan :growth do
 end
 ```
 
-Then hook into the invitation and member_joined callbacks to enforce limits:
+Then hook into the `on_member_invited` callback to enforce limits. **This callback runs BEFORE the invitation is persisted**, so raising an error will block the invitation:
 
 ```ruby
 # config/initializers/organizations.rb
@@ -183,6 +183,11 @@ Organizations.configure do |config|
   end
 end
 ```
+
+The `on_member_invited` callback is special — it runs in **strict mode**, meaning:
+- It executes **before** the invitation is saved to the database
+- Raising any error will **veto** the invitation (it won't be created)
+- The error message is returned to the user
 
 This pattern gives you full control over how and when limits are enforced.
 
@@ -286,7 +291,7 @@ org.has_any_members?            # "Does org have any members?"
 org.member_count                # Number of members
 
 # Class methods / Scopes
-Organization.with_member(user)  # Find all orgs where user is a member
+Organizations::Organization.with_member(user)  # Find all orgs where user is a member
 
 # Actions
 org.add_member!(user, role: :member)
@@ -294,7 +299,7 @@ org.remove_member!(user)
 org.change_role_of!(user, to: :admin)
 org.transfer_ownership_to!(other_user)
 
-# Invitations
+# Invitations (inviter must be a member with :invite_members permission)
 org.send_invite_to!(email)                  # Auto-infers invited_by from Current.user
 org.send_invite_to!(email, invited_by: user) # Explicit inviter
 
@@ -604,6 +609,8 @@ There's also an organization-centric API if you prefer:
 ```ruby
 org.send_invite_to!("teammate@example.com", invited_by: current_user)
 ```
+
+> **Note:** Both APIs enforce authorization. The inviter must be a member of the organization with the `:invite_members` permission. If not, `Organizations::NotAMember` or `Organizations::NotAuthorized` is raised.
 
 ### Invitation flow
 
@@ -990,14 +997,18 @@ end
 
 ### Available callbacks
 
-| Callback | Context fields |
-|----------|----------------|
-| `on_organization_created` | `organization`, `user` |
-| `on_member_invited` | `organization`, `invitation`, `invited_by` |
-| `on_member_joined` | `organization`, `membership`, `user` |
-| `on_member_removed` | `organization`, `membership`, `user`, `removed_by` |
-| `on_role_changed` | `organization`, `membership`, `old_role`, `new_role`, `changed_by` |
-| `on_ownership_transferred` | `organization`, `old_owner`, `new_owner` |
+| Callback | Context fields | Mode |
+|----------|----------------|------|
+| `on_organization_created` | `organization`, `user` | After |
+| `on_member_invited` | `organization`, `invitation`, `invited_by` | **Before (strict)** |
+| `on_member_joined` | `organization`, `membership`, `user` | After |
+| `on_member_removed` | `organization`, `membership`, `user`, `removed_by` | After |
+| `on_role_changed` | `organization`, `membership`, `old_role`, `new_role`, `changed_by` | After |
+| `on_ownership_transferred` | `organization`, `old_owner`, `new_owner` | After |
+
+**Callback modes:**
+- **After**: Runs after the action completes. Errors are logged but don't block the operation. Use for notifications, analytics, and audit logs.
+- **Before (strict)**: Runs before the action. Raising an error **vetoes** the operation. Use for validation and policy enforcement (e.g., seat limits).
 
 ## Testing
 
@@ -1053,7 +1064,7 @@ assert user.belongs_to_any_organization?
 
 ## Extending the Organization model
 
-The gem creates a base `Organization` model. **You should extend it** with your app's specific fields:
+The gem provides `Organizations::Organization` as the base model. You can extend it with your app's specific fields by adding migrations and reopening the class:
 
 ```ruby
 # db/migrate/xxx_add_custom_fields_to_organizations.rb
@@ -1067,8 +1078,10 @@ end
 ```
 
 ```ruby
-# app/models/organization.rb
-class Organization < ApplicationRecord
+# config/initializers/organization_extensions.rb
+# Or: app/models/concerns/organization_extensions.rb (then include in initializer)
+
+Organizations::Organization.class_eval do
   # Add your own associations
   has_many :projects
   has_many :documents
@@ -1082,6 +1095,20 @@ class Organization < ApplicationRecord
   end
 end
 ```
+
+Alternatively, create your own model that inherits from the gem's model:
+
+```ruby
+# app/models/organization.rb
+class Organization < Organizations::Organization
+  has_many :projects
+  has_many :documents
+
+  validates :support_email, presence: true
+end
+```
+
+> **Note:** If you create your own `Organization` class, be aware that internal gem code uses `Organizations::Organization`. Your subclass will work for your app code, but associations from `User#organizations` will return `Organizations::Organization` instances.
 
 This is standard Rails practice — the gem provides the foundation (memberships, invitations, roles), your app extends it with domain-specific features.
 
@@ -1446,7 +1473,7 @@ CREATE UNIQUE INDEX index_organizations_on_slug ON organizations (slug);
 
 ## Migration from 1:1 relationships
 
-If your app currently has `User belongs_to :organization` (1:1), see our [migration guide](docs/migration-guide.md) for upgrading to many-to-many.
+If your app currently has `User belongs_to :organization` (1:1), migrate to `User has_many :organizations, through: :memberships` by backfilling memberships and removing direct `organization_id` dependencies incrementally.
 
 ## Roadmap
 

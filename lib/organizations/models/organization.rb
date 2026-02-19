@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "slugifiable/model"
+
 module Organizations
   # Organization model representing a team, workspace, or account.
   # Users belong to organizations through memberships with specific roles.
@@ -17,6 +19,11 @@ module Organizations
   #
   class Organization < ActiveRecord::Base
     self.table_name = "organizations"
+    include Slugifiable::Model
+
+    # Keep slug semantics aligned with README and slugifiable defaults:
+    # organization names become URL-friendly slugs, with collision handling.
+    generate_slug_based_on :name
 
     # Error raised when trying to perform invalid operations on organization
     class CannotRemoveOwner < Organizations::Error; end
@@ -25,6 +32,7 @@ module Organizations
     class CannotTransferToNonMember < Organizations::Error; end
     class CannotTransferToNonAdmin < Organizations::Error; end
     class CannotInviteAsOwner < Organizations::Error; end
+    class NoOwnerPresent < Organizations::Error; end
     class MemberAlreadyExists < Organizations::Error; end
 
     # === Associations ===
@@ -49,28 +57,10 @@ module Organizations
 
     # === Callbacks ===
 
-    before_validation :generate_slug, on: :create, if: -> { slug.blank? && name.present? }
-
-    # Retry slug generation on unique constraint violation
-    MAX_SLUG_RETRIES = 5
-
-    def save(*, **)
-      retries = 0
-
-      begin
-        super
-      rescue ActiveRecord::RecordNotUnique => e
-        # Only handle slug collisions, re-raise other unique violations.
-        raise unless e.message.include?("slug") || e.message.include?("organizations_slug")
-
-        retries += 1
-        raise if retries > MAX_SLUG_RETRIES
-
-        base_slug = name.to_s.parameterize
-        self.slug = "#{base_slug}-#{SecureRandom.alphanumeric(6).downcase}"
-        retry
-      end
-    end
+    # slugifiable persists slugs in after_create by default, but this gem keeps
+    # organizations.slug as NOT NULL and validates presence. We therefore compute
+    # a slug before validation when needed.
+    before_validation :ensure_slug_present, on: :create, if: -> { slug.blank? && name.present? }
 
     # === Scopes ===
 
@@ -101,12 +91,6 @@ module Organizations
     # @return [ActiveRecord::Relation<User>]
     def admins
       users.where(memberships: { role: %w[owner admin] }).distinct
-    end
-
-    # Get all members (users with member role or higher)
-    # @return [ActiveRecord::Relation<User>]
-    def members
-      users
     end
 
     # Alias for users (semantic convenience)
@@ -278,6 +262,10 @@ module Organizations
         old_owner_membership = owner_membership
         new_owner_membership = memberships.find_by(user_id: new_owner.id)
 
+        unless old_owner_membership
+          raise NoOwnerPresent, "Cannot transfer ownership because organization has no owner membership"
+        end
+
         unless new_owner_membership
           raise CannotTransferToNonMember, "Cannot transfer ownership to a non-member"
         end
@@ -286,6 +274,9 @@ module Organizations
         unless Roles.at_least?(new_owner_membership.role.to_sym, :admin)
           raise CannotTransferToNonAdmin, "Cannot transfer ownership to non-admin. Promote them to admin first."
         end
+
+        # No-op transfer to the current owner.
+        return old_owner_membership if old_owner_membership.user_id == new_owner.id
 
         # Lock both memberships
         old_owner_membership.lock!
@@ -321,6 +312,8 @@ module Organizations
       unless inviter
         raise ArgumentError, "invited_by is required (or set Current.user)"
       end
+
+      authorize_inviter!(inviter)
 
       role ||= Organizations.configuration.default_invitation_role
       role_sym = role.to_sym
@@ -392,17 +385,32 @@ module Organizations
 
     private
 
-    def generate_slug
-      base_slug = name.to_s.parameterize
-      slug_candidate = base_slug
-      counter = 1
+    def ensure_slug_present
+      self.slug = compute_slug if slug.blank?
+    end
 
-      while Organization.exists?(slug: slug_candidate)
-        counter += 1
-        slug_candidate = "#{base_slug}-#{counter}"
+    # Defense in depth for organization-centric API usage.
+    # The user-level API already checks this, but direct calls to `org.send_invite_to!`
+    # must enforce membership and invite permission as well.
+    def authorize_inviter!(inviter)
+      inviter_membership = memberships.find_by(user_id: inviter.id)
+
+      unless inviter_membership
+        raise Organizations::NotAMember.new(
+          "Only organization members can send invitations",
+          organization: self,
+          user: inviter
+        )
       end
 
-      self.slug = slug_candidate
+      return if Roles.has_permission?(inviter_membership.role.to_sym, :invite_members)
+
+      raise Organizations::NotAuthorized.new(
+        "You don't have permission to invite members",
+        permission: :invite_members,
+        organization: self,
+        user: inviter
+      )
     end
 
     def validate_role!(role)

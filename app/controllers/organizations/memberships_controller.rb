@@ -65,21 +65,16 @@ module Organizations
     def destroy
       # Validate the requester can make this change
       validate_removal!
-
-      user = @membership.user
-      @membership.destroy!
-
-      Callbacks.dispatch(
-        :member_removed,
-        organization: current_organization,
-        membership: @membership,
-        user: user,
-        removed_by: current_user
-      )
+      current_organization.remove_member!(@membership.user, removed_by: current_user)
 
       respond_to do |format|
         format.html { redirect_to memberships_path, notice: "Member removed successfully." }
         format.json { head :no_content }
+      end
+    rescue Organizations::Organization::CannotRemoveOwner, Organizations::Error => e
+      respond_to do |format|
+        format.html { redirect_to memberships_path, alert: e.message }
+        format.json { render json: { error: e.message }, status: :unprocessable_entity }
       end
     end
 

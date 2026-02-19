@@ -117,7 +117,9 @@ module Organizations
           end
 
           def setup_owner_deletion_guard
-            before_destroy :prevent_deletion_while_owning_organizations
+            # `memberships` uses `dependent: :destroy`; this guard must run first
+            # so owner memberships still exist when we verify ownership.
+            before_destroy :prevent_deletion_while_owning_organizations, prepend: true
           end
         end
 

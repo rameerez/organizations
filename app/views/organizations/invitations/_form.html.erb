@@ -1,0 +1,27 @@
+<%= form_with(model: @invitation, url: organization_invitations_path, local: true) do |form| %>
+  <% if @invitation.errors.any? %>
+    <div class="org-flash alert">
+      <strong>Could not send invitation:</strong>
+      <ul>
+        <% @invitation.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div class="org-form-row">
+    <%= form.label :email, "Invitee email" %>
+    <%= form.email_field :email, required: true, autofocus: true %>
+  </div>
+
+  <div class="org-form-row">
+    <%= form.label :role, "Role" %>
+    <%= form.select :role, Organizations::Roles::HIERARCHY.reject { |role| role == :owner }.map { |role| [role.to_s.humanize, role] }, {}, required: true %>
+  </div>
+
+  <div class="org-actions">
+    <%= form.submit "Send invitation", class: "org-button primary" %>
+    <%= link_to "Cancel", organization_invitations_path, class: "org-button" %>
+  </div>
+<% end %>

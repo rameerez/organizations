@@ -9,7 +9,7 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     create_table :organizations, id: primary_key_type do |t|
       t.string :name, null: false
       t.string :slug, null: false
-      t.send(json_column_type, :metadata, null: false, default: json_column_default)
+      t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
 
       t.timestamps
     end
@@ -22,7 +22,7 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
       t.references :organization, null: false, type: foreign_key_type, foreign_key: true
       t.references :invited_by, null: true, type: foreign_key_type, foreign_key: { to_table: :users }
       t.string :role, null: false, default: "member"
-      t.send(json_column_type, :metadata, null: false, default: json_column_default)
+      t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
 
       t.timestamps
     end
@@ -115,9 +115,14 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
 
   # MySQL 8+ doesn't allow default values on JSON columns.
   # Returns an empty hash default for SQLite/PostgreSQL, nil for MySQL.
-  # Models handle nil metadata gracefully by defaulting to {} in their accessors.
   def json_column_default
     return nil if connection.adapter_name.downcase.include?('mysql')
     {}
+  end
+
+  # Keep inserts safe on MySQL where JSON defaults are restricted.
+  # Other adapters keep metadata required with a {} default.
+  def json_column_null
+    connection.adapter_name.downcase.include?('mysql')
   end
 end
