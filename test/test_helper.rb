@@ -16,14 +16,15 @@ require "minitest/mock"
 require "active_support/test_case"
 require "active_support/testing/time_helpers"
 require "active_record"
+require "active_job"
 require "action_mailer"
+require "globalid"
 require "sqlite3"
 
 # Configure ActionMailer for testing
 ActionMailer::Base.delivery_method = :test
 ActionMailer::Base.perform_deliveries = true
-
-puts "Setting up test environment..."
+ActiveJob::Base.queue_adapter = :test
 
 # In-memory SQLite database
 ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
@@ -75,8 +76,6 @@ ActiveRecord::Schema.define do
   add_index :organization_invitations, [:organization_id, :email]
 end
 
-puts "Database schema loaded."
-
 # Test User model with has_organizations
 class User < ActiveRecord::Base
   extend Organizations::Models::Concerns::HasOrganizations::ClassMethods
@@ -85,7 +84,14 @@ class User < ActiveRecord::Base
   validates :email, presence: true, uniqueness: true
 end
 
-puts "User model defined."
+# ActiveRecord does not include GlobalID in this non-Rails test harness by default.
+# Include it so ActionMailer.deliver_later can serialize AR models.
+GlobalID.app = "organizations-test"
+ActiveRecord::Base.include(GlobalID::Identification) unless ActiveRecord::Base.included_modules.include?(GlobalID::Identification)
+
+# Load engine mailer class for default invitation_mailer constantization.
+mailer_path = File.expand_path("../app/mailers/organizations/invitation_mailer.rb", __dir__)
+require mailer_path if File.exist?(mailer_path)
 
 # Require test helpers
 require "organizations/test_helpers"
@@ -128,5 +134,3 @@ module Organizations
     end
   end
 end
-
-puts "Test helper setup complete."

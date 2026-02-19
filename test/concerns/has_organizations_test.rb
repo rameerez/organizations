@@ -1006,7 +1006,7 @@ module Organizations
 
     test "create_organization! sets current_membership to nil for lazy fetch" do
       user = create_user!
-      org = user.create_organization!("Lazy Fetch Org")
+      _org = user.create_organization!("Lazy Fetch Org")
 
       # current_membership should be fetchable after create
       membership = user.current_membership

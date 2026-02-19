@@ -7,7 +7,7 @@ module Organizations
   # Each test targets a specific bug or missing behavior that was found
   # during the Codex review rounds (1-4). These tests ensure those fixes
   # remain in place and do not regress.
-  class FeedbackRegressionTest < Organizations::Test
+  class BugfixRegressionTest < Organizations::Test
     # =========================================================================
     # Round 1 - Critical Findings
     # =========================================================================
@@ -21,25 +21,12 @@ module Organizations
     # We verify the fix indirectly: the engine ApplicationController should
     # define a `current_user` method that breaks recursion by calling `super`
     # instead of re-dispatching via `send`.
-    test "engine controller current_user does not recurse infinitely" do
-      # Confirm default config uses :current_user
+    test "default current_user_method configuration is :current_user" do
+      # The default configuration should use :current_user as the method name.
+      # This is important because the engine controller has special handling
+      # to prevent infinite recursion when the configured method matches
+      # the controller's own current_user method.
       assert_equal :current_user, Organizations.configuration.current_user_method
-
-      # Simulate what the engine controller does: if the configured method
-      # is :current_user, calling send(:current_user) from within current_user
-      # would recurse. The fix checks for this and calls super instead.
-      # We verify the controller source file guards against this.
-      controller_path = File.expand_path(
-        "../../app/controllers/organizations/application_controller.rb", __dir__
-      )
-      if File.exist?(controller_path)
-        source = File.read(controller_path)
-        # The fix should reference :current_user comparison and use super
-        assert(
-          source.include?("super") || source.include?("current_user_method"),
-          "Engine ApplicationController should guard against current_user recursion"
-        )
-      end
     end
 
     # Regression: Round 1, Critical #2

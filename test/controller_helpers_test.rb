@@ -420,7 +420,7 @@ module Organizations
     end
 
     test "require_organization_role! with admin checks role hierarchy" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       member = create_user!(email: "member@example.com")
       Organizations::Membership.create!(user: member, organization: org, role: "member")
 

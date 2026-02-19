@@ -169,7 +169,7 @@ module Organizations
         end
       end
 
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       member = create_user!(email: "member@example.com")
       membership = Organizations::Membership.create!(user: member, organization: org, role: "member")
 

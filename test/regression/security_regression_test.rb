@@ -10,7 +10,7 @@ module Organizations
     #
     # Tests are grouped by severity (P0, P1, P2, Security) and each test
     # documents which REVIEW.md finding it covers.
-    class ReviewTest < Organizations::Test
+    class SecurityRegressionTest < Organizations::Test
       # =========================================================================
       # P0 Issues
       # =========================================================================

@@ -9,7 +9,7 @@ module Organizations
     # =========================================================================
 
     test "has many memberships" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       member = create_user!(email: "member@example.com")
       Membership.create!(user: member, organization: org, role: "member")
 
@@ -28,7 +28,7 @@ module Organizations
     end
 
     test "members is an alias for users" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
 
       assert_equal org.users.to_a, org.members.to_a
     end
@@ -222,7 +222,7 @@ module Organizations
     end
 
     test "admins returns no duplicates" do
-      org, owner = create_org_with_owner!
+      org, _owner = create_org_with_owner!
       admin = create_user!(email: "admin@example.com")
       Membership.create!(user: admin, organization: org, role: "admin")
 

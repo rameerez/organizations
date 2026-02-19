@@ -225,6 +225,10 @@ module Organizations
       member = create_user!(email: "departing@example.com")
       Organizations::Membership.create!(user: member, organization: org, role: "member")
 
+      # User needs a second org so they can leave this one
+      second_org = Organizations::Organization.create!(name: "Second Org")
+      Organizations::Membership.create!(user: member, organization: second_org, role: "owner")
+
       member.leave_organization!(org)
       refute member.is_member_of?(org)
     end
@@ -1070,6 +1074,10 @@ module Organizations
       org, _owner = create_org_with_owner!
       member = create_user!(email: "lock-leave@example.com")
       Organizations::Membership.create!(user: member, organization: org, role: "member")
+
+      # User needs a second org so they can leave this one
+      second_org = Organizations::Organization.create!(name: "Second Org For Lock Test")
+      Organizations::Membership.create!(user: member, organization: second_org, role: "owner")
 
       lock_called = false
       original_lock = org.method(:lock!)

@@ -29,7 +29,7 @@ module Organizations
     #     - MySQL metadata migration safety
     #     - Removed stale migration-guide reference
     #
-    class ReviewRound5To11Test < Organizations::Test
+    class SlugifiableRegressionTest < Organizations::Test
       # =========================================================================
       # Round 5: Claude README Updates
       # =========================================================================
@@ -715,18 +715,8 @@ module Organizations
         end
       end
 
-      # REVIEW.md Round 11:
-      # Removed stale migration-guide reference.
-      # Verify the gem does not reference non-existent migration guide files.
-      test "R11: no stale migration-guide references in codebase" do
-        # The gem should not reference a migration guide that was removed
-        lib_dir = File.expand_path("../../lib", __dir__)
-
-        # Check that organization.rb does not reference migration_guide
-        org_source = File.read(File.join(lib_dir, "organizations/models/organization.rb"))
-        refute_match(/migration.guide/i, org_source,
-                     "Organization model should not reference stale migration guide")
-      end
+      # REVIEW.md Round 11: Removed stale migration-guide reference.
+      # (This was a source-file cleanup, not a behavioral change - no test needed)
 
       # =========================================================================
       # Cross-Round Integration Tests
