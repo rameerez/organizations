@@ -113,3 +113,64 @@
     <% end %>
   </div>
 </div>
+
+<% if can_transfer_ownership?(current_user, current_organization) %>
+  <%
+    other_members = current_organization.memberships
+      .includes(:user)
+      .where.not(user_id: current_user.id)
+      .where.not(role: 'owner')
+  %>
+
+  <div class="mt-10">
+    <h2 class="text-lg font-semibold text-red-600 mb-4">Danger Zone</h2>
+
+    <div class="bg-white rounded-xl border-2 border-red-200 p-6">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-900">Transfer Ownership</h3>
+          <p class="mt-1 text-sm text-gray-500">
+            Transfer this organization to another member. You will become an admin.
+          </p>
+        </div>
+
+        <% if other_members.any? %>
+          <div class="flex-shrink-0" data-controller="dropdown">
+            <button type="button"
+              data-action="click->dropdown#toggle"
+              class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500">
+              <%= heroicon "arrow-right-circle", variant: :mini, options: { class: "h-4 w-4" } %>
+              Transfer Ownership
+            </button>
+
+            <div data-dropdown-target="menu"
+              class="hidden absolute right-0 mt-2 w-64 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 z-50">
+              <div class="p-2">
+                <p class="px-3 py-2 text-xs font-medium text-gray-500 uppercase">Transfer to:</p>
+                <% other_members.each do |membership| %>
+                  <%= button_to transfer_ownership_membership_path(membership),
+                    method: :post,
+                    data: { turbo_confirm: "Transfer ownership to #{membership.user.email}? You will become an admin and cannot undo this action." },
+                    class: "w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2" do %>
+                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs font-medium text-gray-600">
+                      <%= membership.user.email.first.upcase %>
+                    </span>
+                    <span class="truncate"><%= membership.user.email %></span>
+                    <span class="ml-auto text-xs text-gray-400"><%= membership.role.capitalize %></span>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        <% else %>
+          <div class="flex-shrink-0">
+            <span class="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400">
+              <%= heroicon "arrow-right-circle", variant: :mini, options: { class: "h-4 w-4" } %>
+              No other members
+            </span>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>

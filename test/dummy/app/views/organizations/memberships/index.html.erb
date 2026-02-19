@@ -70,16 +70,6 @@
                       class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
                   <% end %>
 
-                  <% if can_transfer_ownership?(current_user, current_organization) %>
-                    <%= button_to transfer_ownership_membership_path(membership),
-                      method: :post,
-                      data: { turbo_confirm: "Transfer ownership to #{membership.user.email}? You will become an admin." },
-                      class: "inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100" do %>
-                      <%= heroicon "arrow-right-circle", variant: :mini, options: { class: "h-4 w-4" } %>
-                      Make Owner
-                    <% end %>
-                  <% end %>
-
                   <%= button_to membership_path(membership),
                     method: :delete,
                     data: { turbo_confirm: "Remove #{membership.user.email} from the organization?" },
