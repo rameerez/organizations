@@ -72,13 +72,13 @@ That's the simplest setup. You can also configure per-model options:
 class User < ApplicationRecord
   has_organizations do
     max_organizations 5         # Limit how many orgs a user can own (nil = unlimited)
-    create_personal_org true    # Auto-create org on signup (default: true)
-    require_organization false  # Allow users to exist without any org (default: true)
+    create_personal_org true    # Auto-create org on signup (default: false)
+    require_organization true   # Require users to have at least one org (default: false)
   end
 end
 ```
 
-> **Note:** Set `require_organization false` for onboarding flows where users sign up first, then create/join an organization later.
+> **Note:** By default, users can exist without any organization (invite-to-join flow). Set `create_personal_org true` if you want to auto-create a personal organization when users sign up.
 
 Mount the engine in your routes:
 
@@ -88,6 +88,9 @@ mount Organizations::Engine => '/'
 ```
 
 Done. Your app now has full organizations / teams support.
+
+> [!IMPORTANT]
+> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. You'll need to create your own views in `app/views/organizations/`. For a complete working example, check out the demo app in [`test/dummy`](test/dummy/app/views/organizations/).
 
 > [!NOTE]
 > This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
@@ -715,21 +718,21 @@ POST /invitations/:token/accept → Organizations::InvitationsController#accept
 
 ## Auto-created organizations
 
-By default, every user gets a personal organization on signup:
+By default, users do **not** get an auto-created organization on signup (invite-to-join flow). You can enable this if you want:
 
 ```ruby
-# When user is created:
+# When create_personal_organization is enabled:
 # 1. Organization created with name from config
 # 2. User becomes owner of that organization
 # 3. current_organization set to this new org
 ```
 
-### Configure auto-creation
+### Enable auto-creation
 
 ```ruby
 Organizations.configure do |config|
-  # Enable/disable auto-creation
-  config.create_personal_organization = true  # Default
+  # Enable auto-creation (disabled by default)
+  config.create_personal_organization = true
 
   # Customize the name
   config.personal_organization_name = ->(user) { "#{user.email.split('@').first}'s Workspace" }
@@ -737,32 +740,24 @@ Organizations.configure do |config|
 end
 ```
 
-### Disable auto-creation
+By default (`create_personal_organization = false`), users must explicitly create or be invited to an organization.
 
-```ruby
-Organizations.configure do |config|
-  config.create_personal_organization = false
-end
-```
+### Users without organizations (default behavior)
 
-When disabled, users must explicitly create or be invited to an organization.
-
-### Users without organizations (limbo state)
-
-Many apps have onboarding flows where users sign up first, then create or join an organization later:
+By default, users can exist without any organization (invite-to-join flow):
 
 1. User signs up → verifies email
 2. User is in "limbo" (no organization yet)
 3. User creates org OR accepts invitation
 4. User now has an organization
 
-To support this flow, configure your User model:
+This is the default behavior. If you want to auto-create a personal organization on signup, configure your User model:
 
 ```ruby
 class User < ApplicationRecord
   has_organizations do
-    create_personal_org false    # Don't auto-create on signup
-    require_organization false   # Allow users without any org
+    create_personal_org true     # Auto-create org on signup
+    require_organization true    # Require users to always have an org
   end
 end
 ```
@@ -816,8 +811,8 @@ Organizations.configure do |config|
   config.authenticate_user_method = :authenticate_user!
 
   # === Auto-creation ===
-  # Create personal organization on user signup
-  config.create_personal_organization = true
+  # Create personal organization on user signup (default: false)
+  config.create_personal_organization = false
 
   # Name for auto-created organizations
   config.personal_organization_name = ->(user) { "Personal" }
@@ -834,9 +829,9 @@ Organizations.configure do |config|
   config.max_organizations_per_user = nil
 
   # === Onboarding ===
-  # Allow users to exist without any organization membership
-  # Set to false for flows where users sign up first, then create/join org later
-  config.require_organization = true  # Default
+  # Require users to belong to at least one organization
+  # Set to true if users should always have an organization
+  config.require_organization = false  # Default
 
   # === Redirects ===
   # Where to redirect when user has no organization
