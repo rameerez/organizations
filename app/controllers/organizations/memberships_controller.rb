@@ -43,19 +43,19 @@ module Organizations
         @membership.reload
 
         respond_to do |format|
-          format.html { redirect_to memberships_path, notice: "Role updated successfully." }
+          format.html { redirect_back fallback_location: memberships_path, notice: "Role updated successfully." }
           format.json { render json: membership_json(@membership) }
         end
       rescue Organizations::Organization::CannotHaveMultipleOwners,
              Organizations::Organization::CannotDemoteOwner,
              Organizations::Error => e
         respond_to do |format|
-          format.html { redirect_to memberships_path, alert: e.message }
+          format.html { redirect_back fallback_location: memberships_path, alert: e.message }
           format.json { render json: { error: e.message }, status: :unprocessable_entity }
         end
       rescue ActiveRecord::RecordInvalid => e
         respond_to do |format|
-          format.html { redirect_to memberships_path, alert: e.record.errors.full_messages.join(", ") }
+          format.html { redirect_back fallback_location: memberships_path, alert: e.record.errors.full_messages.join(", ") }
           format.json { render json: { errors: e.record.errors }, status: :unprocessable_entity }
         end
       end
@@ -69,12 +69,12 @@ module Organizations
       current_organization.remove_member!(@membership.user, removed_by: current_user)
 
       respond_to do |format|
-        format.html { redirect_to memberships_path, notice: "Member removed successfully." }
+        format.html { redirect_back fallback_location: memberships_path, notice: "Member removed successfully." }
         format.json { head :no_content }
       end
     rescue Organizations::Organization::CannotRemoveOwner, Organizations::Error => e
       respond_to do |format|
-        format.html { redirect_to memberships_path, alert: e.message }
+        format.html { redirect_back fallback_location: memberships_path, alert: e.message }
         format.json { render json: { error: e.message }, status: :unprocessable_entity }
       end
     end
@@ -88,14 +88,14 @@ module Organizations
         current_organization.transfer_ownership_to!(new_owner)
 
         respond_to do |format|
-          format.html { redirect_to memberships_path, notice: "Ownership transferred to #{new_owner.email}." }
+          format.html { redirect_back fallback_location: memberships_path, notice: "Ownership transferred to #{new_owner.email}." }
           format.json { render json: { success: true, new_owner: new_owner.email } }
         end
       rescue Organizations::Organization::CannotTransferToNonMember,
              Organizations::Organization::CannotTransferToSelf,
              Organizations::Error => e
         respond_to do |format|
-          format.html { redirect_to memberships_path, alert: e.message }
+          format.html { redirect_back fallback_location: memberships_path, alert: e.message }
           format.json { render json: { error: e.message }, status: :unprocessable_entity }
         end
       end

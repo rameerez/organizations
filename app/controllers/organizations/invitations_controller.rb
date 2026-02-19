@@ -45,7 +45,7 @@ module Organizations
         )
 
         respond_to do |format|
-          format.html { redirect_to organization_invitations_path, notice: "Invitation sent to #{email}" }
+          format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation sent to #{email}" }
           format.json { render json: invitation_json(@invitation), status: :created }
         end
       rescue ::Organizations::InvitationError, ActiveRecord::RecordInvalid, ArgumentError => e
@@ -131,7 +131,7 @@ module Organizations
       @invitation.destroy!
 
       respond_to do |format|
-        format.html { redirect_to organization_invitations_path, notice: "Invitation revoked" }
+        format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation revoked" }
         format.json { head :no_content }
       end
     end
@@ -143,12 +143,12 @@ module Organizations
         @invitation.resend!
 
         respond_to do |format|
-          format.html { redirect_to organization_invitations_path, notice: "Invitation resent to #{@invitation.email}" }
+          format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation resent to #{@invitation.email}" }
           format.json { render json: invitation_json(@invitation) }
         end
       rescue ::Organizations::InvitationAlreadyAccepted => e
         respond_to do |format|
-          format.html { redirect_to organization_invitations_path, alert: e.message }
+          format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }
           format.json { render json: { error: e.message }, status: :unprocessable_entity }
         end
       end

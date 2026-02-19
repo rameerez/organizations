@@ -80,7 +80,7 @@ module Organizations
     def update
       if @organization.update(organization_params)
         respond_to do |format|
-          format.html { redirect_to organization_path(@organization), notice: "Organization updated successfully." }
+          format.html { redirect_back fallback_location: organization_path(@organization), notice: "Organization updated successfully." }
           format.json { render json: organization_json(@organization) }
         end
       else
