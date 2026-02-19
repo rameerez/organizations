@@ -17,7 +17,7 @@
 
     <div class="divide-y divide-red-100">
       <%# Transfer Ownership %>
-      <div class="p-6" data-controller="confirm-modal" data-confirm-modal-phrase-value="<%= current_organization.name %>">
+      <div class="p-6" data-controller="transfer-modal" data-transfer-modal-phrase-value="<%= current_organization.name %>">
         <div class="flex items-start justify-between gap-4">
           <div>
             <h3 class="text-sm font-medium text-gray-900">Transfer Ownership</h3>
@@ -25,53 +25,83 @@
           </div>
           <% if other_members.any? %>
             <button type="button"
-              data-action="confirm-modal#open"
+              data-action="transfer-modal#open"
               class="flex-shrink-0 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-red-600 ring-1 ring-inset ring-red-300 hover:bg-red-50">
               Transfer
             </button>
 
             <%# Transfer Modal %>
-            <div data-confirm-modal-target="modal"
-              data-action="click->confirm-modal#closeOnBackdrop keydown@window->confirm-modal#closeOnEscape"
+            <div data-transfer-modal-target="modal"
+              data-action="click->transfer-modal#closeOnBackdrop keydown@window->transfer-modal#closeOnEscape"
               class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
               <div class="bg-white rounded-xl shadow-2xl max-w-md w-full">
                 <div class="px-6 py-4 border-b border-gray-200">
                   <h3 class="text-lg font-semibold text-gray-900">Transfer Ownership</h3>
-                  <p class="text-sm text-gray-500 mt-1">You will become an admin. This cannot be undone.</p>
+                  <p class="text-sm text-gray-500 mt-1">Select a member to become the new owner.</p>
                 </div>
-                <div class="p-6 space-y-4">
+
+                <%# Step 1: Select member %>
+                <div data-transfer-modal-target="memberList" class="p-6 space-y-3">
+                  <p class="text-xs font-medium text-gray-500 uppercase">Select new owner:</p>
+                  <% other_members.each do |membership| %>
+                    <button type="button"
+                      data-action="transfer-modal#selectMember"
+                      data-member-id="<%= membership.id %>"
+                      data-member-email="<%= membership.user.email %>"
+                      class="w-full text-left px-4 py-3 text-sm text-gray-700 bg-gray-50 hover:bg-slate-100 rounded-lg flex items-center gap-3 border border-gray-200 hover:border-slate-300 transition-colors">
+                      <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
+                        <%= membership.user.email.first.upcase %>
+                      </span>
+                      <div class="flex-1 min-w-0">
+                        <span class="block truncate font-medium"><%= membership.user.email %></span>
+                        <span class="text-xs text-gray-400"><%= membership.role.capitalize %></span>
+                      </div>
+                      <%= heroicon "chevron-right", variant: :mini, options: { class: "h-5 w-5 text-gray-400" } %>
+                    </button>
+                  <% end %>
+                </div>
+
+                <%# Step 2: Confirm with typing %>
+                <div data-transfer-modal-target="confirmStep" class="hidden p-6 space-y-4">
+                  <div class="flex items-center gap-2 text-sm">
+                    <button type="button" data-action="transfer-modal#backToSelect" class="text-gray-500 hover:text-gray-700">
+                      <%= heroicon "arrow-left", variant: :mini, options: { class: "h-4 w-4" } %>
+                    </button>
+                    <span class="text-gray-500">Transfer to:</span>
+                    <span data-transfer-modal-target="selectedName" class="font-semibold text-gray-900"></span>
+                  </div>
+
+                  <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                    <p class="text-sm text-amber-800">
+                      <strong>Warning:</strong> You will become an admin. This action cannot be undone.
+                    </p>
+                  </div>
+
                   <div>
                     <label class="block text-sm text-gray-700 mb-1">
                       Type <code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-mono text-sm"><%= current_organization.name %></code> to confirm:
                     </label>
                     <input type="text"
-                      data-confirm-modal-target="input"
-                      data-action="input->confirm-modal#validate"
+                      data-transfer-modal-target="input"
+                      data-action="input->transfer-modal#validate"
                       placeholder="Type organization name..."
                       autocomplete="off"
                       class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm">
                   </div>
 
-                  <div class="space-y-2">
-                    <p class="text-xs font-medium text-gray-500">Select new owner:</p>
-                    <% other_members.each do |membership| %>
-                      <%= form_with url: organizations.transfer_ownership_membership_path(membership), method: :post, data: { confirm_modal_target: "form", action: "submit->confirm-modal#submit" } do %>
-                        <button type="submit"
-                          disabled
-                          data-confirm-modal-target="confirmButton"
-                          class="w-full text-left px-3 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-red-50 hover:text-red-700 rounded-lg flex items-center gap-2 border border-gray-200 hover:border-red-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:text-gray-700 disabled:hover:border-gray-200">
-                          <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs font-medium text-gray-600">
-                            <%= membership.user.email.first.upcase %>
-                          </span>
-                          <span class="truncate font-medium"><%= membership.user.email %></span>
-                          <span class="ml-auto text-xs text-gray-400"><%= membership.role.capitalize %></span>
-                        </button>
-                      <% end %>
-                    <% end %>
-                  </div>
+                  <%= form_with url: "#", method: :post, data: { transfer_modal_target: "form", action: "submit->transfer-modal#submit", base_url: organizations.transfer_ownership_membership_path("MEMBER_ID") } do %>
+                    <button type="submit"
+                      disabled
+                      data-transfer-modal-target="confirmButton"
+                      class="w-full inline-flex justify-center items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm opacity-50 cursor-not-allowed">
+                      <%= heroicon "arrow-right-circle", variant: :mini, options: { class: "h-4 w-4" } %>
+                      Transfer Ownership
+                    </button>
+                  <% end %>
                 </div>
+
                 <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
-                  <button type="button" data-action="confirm-modal#close" class="text-sm font-medium text-gray-600 hover:text-gray-900">
+                  <button type="button" data-action="transfer-modal#close" class="text-sm font-medium text-gray-600 hover:text-gray-900">
                     Cancel
                   </button>
                 </div>
@@ -123,7 +153,7 @@
                 <button type="submit"
                   disabled
                   data-confirm-modal-target="confirmButton"
-                  class="w-full inline-flex justify-center items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                  class="w-full inline-flex justify-center items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm opacity-50 cursor-not-allowed">
                   <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
                   Delete Organization Forever
                 </button>
