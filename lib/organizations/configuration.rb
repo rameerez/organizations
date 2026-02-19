@@ -93,7 +93,7 @@ module Organizations
       @authenticate_user_method = :authenticate_user!
 
       # Auto-creation defaults
-      @create_personal_organization = true
+      @create_personal_organization = false
       @personal_organization_name = "Personal"
 
       # Invitation defaults
@@ -105,7 +105,7 @@ module Organizations
       @max_organizations_per_user = nil
 
       # Onboarding
-      @require_organization = true
+      @require_organization = false
 
       # Session/switching
       @session_key = :current_organization_id
