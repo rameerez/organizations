@@ -168,10 +168,12 @@ module Organizations
         end
 
         # Create the membership
+        # Use invited_by_id instead of invited_by to avoid Rails class reloading issues
+        # (AssociationTypeMismatch when User class is reloaded in development)
         membership = organization.memberships.create!(
           user: accepting_user,
           role: role,
-          invited_by: invited_by
+          invited_by_id: invited_by_id
         )
 
         # Mark invitation as accepted
