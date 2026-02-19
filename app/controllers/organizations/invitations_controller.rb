@@ -29,6 +29,7 @@ module Organizations
     # Form to create a new invitation
     def new
       @invitation = current_organization.invitations.build
+      @return_to = request.referer
     end
 
     # POST /invitations
@@ -45,7 +46,8 @@ module Organizations
         )
 
         respond_to do |format|
-          format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation sent to #{email}" }
+          return_to = params[:return_to].presence || organization_invitations_path
+          format.html { redirect_to return_to, notice: "Invitation sent to #{email}" }
           format.json { render json: invitation_json(@invitation), status: :created }
         end
       rescue ::Organizations::InvitationError, ActiveRecord::RecordInvalid, ArgumentError => e

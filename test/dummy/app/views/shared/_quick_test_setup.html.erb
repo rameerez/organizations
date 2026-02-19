@@ -1,0 +1,90 @@
+<%# Floating Quick Test Setup Card - visible on all pages when user has an organization %>
+<% if current_organization %>
+  <div class="fixed bottom-16 left-1/2 -translate-x-1/2 z-40 w-full max-w-3xl px-4 lg:pl-72">
+    <div class="bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden" data-controller="collapsible">
+      <button type="button" data-action="collapsible#toggle" class="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-700 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="h-10 w-10 rounded-xl bg-slate-700 flex items-center justify-center">
+            <%= heroicon "beaker", variant: :solid, options: { class: "h-5 w-5 text-slate-300" } %>
+          </div>
+          <div class="text-left">
+            <h3 class="text-sm font-semibold text-white">Quick Test Setup</h3>
+            <p class="text-xs text-slate-400">Click to expand instructions</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <%= link_to organizations.new_organization_invitation_path,
+            class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-500 transition-colors",
+            onclick: "event.stopPropagation()" do %>
+            <%= heroicon "paper-airplane", variant: :solid, options: { class: "h-3.5 w-3.5" } %>
+            Invite
+          <% end %>
+          <%= heroicon "chevron-up", variant: :solid, options: { class: "h-5 w-5 text-slate-400", "data-collapsible-target": "icon" } %>
+        </div>
+      </button>
+      <div data-collapsible-target="content" class="hidden border-t border-slate-700 px-6 py-4 bg-slate-800">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <%# Left column: Basic setup %>
+          <div>
+            <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Basic Setup</h4>
+            <ol class="space-y-2 text-sm">
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">1</span>
+                <span class="text-slate-300">Invite users with different emails</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">2</span>
+                <span class="text-slate-300">Use the <strong class="text-white">user dropdown</strong> (top right) to switch users and accept invites</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">3</span>
+                <span class="text-slate-300">Go to <strong class="text-white">Members</strong> and assign different roles</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold">4</span>
+                <span class="text-slate-300">Switch users to see UI change based on permissions</span>
+              </li>
+            </ol>
+          </div>
+
+          <%# Right column: Advanced features %>
+          <div>
+            <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Advanced Features</h4>
+            <ol class="space-y-2 text-sm">
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-amber-600 text-white flex items-center justify-center text-xs font-bold">★</span>
+                <span class="text-slate-300"><strong class="text-white">Transfer Ownership:</strong> As owner, go to Dashboard → Danger Zone → transfer to an admin</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">★</span>
+                <span class="text-slate-300"><strong class="text-white">Multi-Org:</strong> Create a second org, then use the <strong class="text-white">org switcher</strong> (sidebar) to jump between them</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="flex-shrink-0 h-5 w-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">★</span>
+                <span class="text-slate-300"><strong class="text-white">Role Hierarchy:</strong> viewer → member → admin → owner (each inherits lower permissions)</span>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="flex gap-3 mt-5 pt-4 border-t border-slate-700">
+          <%= link_to organizations.new_organization_invitation_path,
+            class: "inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 transition-colors" do %>
+            <%= heroicon "paper-airplane", variant: :solid, options: { class: "h-4 w-4" } %>
+            Send Invitation
+          <% end %>
+          <%= link_to organizations.memberships_path,
+            class: "inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600 transition-colors" do %>
+            <%= heroicon "users", variant: :solid, options: { class: "h-4 w-4" } %>
+            Manage Members
+          <% end %>
+          <%= link_to organizations.new_organization_path,
+            class: "inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600 transition-colors" do %>
+            <%= heroicon "plus", variant: :solid, options: { class: "h-4 w-4" } %>
+            New Organization
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>

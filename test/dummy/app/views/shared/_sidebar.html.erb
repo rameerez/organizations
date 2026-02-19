@@ -64,20 +64,28 @@
       <%# Organization switcher %>
       <% if current_user && current_user.organizations.count > 1 %>
         <li>
-          <div class="text-xs font-semibold leading-6 text-gray-400 mb-2">Switch Organization</div>
+          <div class="text-xs font-semibold leading-6 text-gray-400 mb-2">Your Organizations</div>
           <ul role="list" class="-mx-2 space-y-1">
             <% current_user.organizations.each do |org| %>
               <li>
                 <% is_current = current_organization && org.id == current_organization.id %>
-                <%= button_to organizations.switch_organization_path(org),
-                  method: :post,
-                  data: { turbo: false },
-                  class: "w-full group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 #{ is_current ? 'bg-slate-100 text-slate-700' : 'text-gray-700 hover:text-slate-600 hover:bg-gray-50' }" do %>
-                  <%= heroicon "building-office", variant: is_current ? :solid : :outline, options: { class: "h-5 w-5 shrink-0 #{ is_current ? 'text-slate-600' : 'text-gray-400 group-hover:text-slate-600' }" } %>
-                  <span class="truncate"><%= org.name %></span>
-                  <% if is_current %>
-                    <span class="ml-auto text-xs text-slate-500">Current</span>
-                  <% end %>
+                <% if is_current %>
+                  <div class="w-full flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 bg-slate-100 text-slate-700">
+                    <%= heroicon "building-office", variant: :solid, options: { class: "h-5 w-5 shrink-0 text-slate-600" } %>
+                    <span class="truncate flex-1"><%= org.name %></span>
+                    <span class="inline-flex items-center rounded-full bg-slate-600 px-2 py-0.5 text-xs font-medium text-white">Current</span>
+                  </div>
+                <% else %>
+                  <div class="w-full group flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-700 hover:bg-gray-50">
+                    <%= heroicon "building-office", variant: :outline, options: { class: "h-5 w-5 shrink-0 text-gray-400 group-hover:text-slate-600" } %>
+                    <span class="truncate flex-1"><%= org.name %></span>
+                    <%= button_to organizations.switch_organization_path(org),
+                      method: :post,
+                      data: { turbo: false },
+                      class: "inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:text-slate-700 cursor-pointer" do %>
+                      Switch
+                    <% end %>
+                  </div>
                 <% end %>
               </li>
             <% end %>

@@ -1,5 +1,6 @@
 <% suggested_email = ::Faker::Internet.email(name: ::Faker::Name.name, domain: 'example.com') %>
 <%= form_with(model: @invitation, url: organization_invitations_path, local: true, class: "space-y-6") do |form| %>
+  <%= hidden_field_tag :return_to, @return_to %>
   <% if @invitation.errors.any? %>
     <div class="rounded-lg bg-red-50 p-4 border border-red-200">
       <div class="flex">
