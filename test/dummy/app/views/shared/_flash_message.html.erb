@@ -1,0 +1,85 @@
+<%
+  # Normalize flash types
+  normalized_type = case type.to_s
+                   when 'notice', 'success'
+                     'success'
+                   when 'alert', 'error', 'danger'
+                     'error'
+                   when 'warn', 'warning'
+                     'warning'
+                   else
+                     'info'
+                   end
+
+  theme_config = {
+    'success' => {
+      bg: 'bg-emerald-50',
+      border: 'border-emerald-200',
+      text: 'text-emerald-900',
+      icon: 'text-emerald-600',
+      icon_name: 'check-circle',
+      button_hover: 'hover:bg-emerald-100'
+    },
+    'error' => {
+      bg: 'bg-red-50',
+      border: 'border-red-200',
+      text: 'text-red-900',
+      icon: 'text-red-600',
+      icon_name: 'x-circle',
+      button_hover: 'hover:bg-red-100'
+    },
+    'warning' => {
+      bg: 'bg-amber-50',
+      border: 'border-amber-200',
+      text: 'text-amber-900',
+      icon: 'text-amber-600',
+      icon_name: 'exclamation-triangle',
+      button_hover: 'hover:bg-amber-100'
+    },
+    'info' => {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-900',
+      icon: 'text-blue-600',
+      icon_name: 'information-circle',
+      button_hover: 'hover:bg-blue-100'
+    }
+  }
+
+  config = theme_config[normalized_type]
+%>
+
+<div
+  data-controller="alert"
+  data-alert-dismiss-after-value="5000"
+  class="w-full shadow-lg rounded-lg px-4 py-3 <%= config[:bg] %> <%= config[:border] %> border pointer-events-auto"
+  role="alert"
+  aria-live="polite"
+  aria-atomic="true">
+
+  <div class="flex items-center gap-3">
+    <div class="flex-shrink-0">
+      <%= heroicon config[:icon_name],
+            variant: :solid,
+            options: {
+              class: "h-5 w-5 #{config[:icon]}"
+            } %>
+    </div>
+
+    <div class="flex-1">
+      <p class="text-sm font-medium <%= config[:text] %>">
+        <%= message %>
+      </p>
+    </div>
+
+    <button
+      type="button"
+      data-action="alert#close"
+      class="flex-shrink-0 rounded-md p-1 <%= config[:text] %> <%= config[:button_hover] %> focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors"
+      aria-label="Dismiss">
+      <%= heroicon "x-mark",
+            variant: :solid,
+            options: { class: "h-4 w-4" } %>
+    </button>
+  </div>
+</div>

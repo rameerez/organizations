@@ -43,9 +43,11 @@
       <div class="lg:pl-72 min-h-screen flex flex-col">
         <%= render "shared/header" %>
 
+        <%# Floating flash messages %>
+        <%= render "shared/flash" %>
+
         <main class="py-6 flex-1">
           <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <%= render "shared/flash" %>
             <%= yield %>
           </div>
         </main>
