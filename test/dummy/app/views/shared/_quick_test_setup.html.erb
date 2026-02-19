@@ -1,102 +1,101 @@
 <%# Floating help bubble - visible on all pages when user has an organization %>
 <% if current_organization %>
-  <div class="fixed bottom-16 inset-x-0 z-40 pointer-events-none">
+  <div class="fixed bottom-16 left-0 right-0 z-40 pointer-events-none">
     <div class="lg:pl-72">
-      <div class="mx-auto w-full max-w-2xl px-4 pointer-events-auto">
-        <div class="bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden" data-controller="collapsible">
+      <div class="mx-auto w-full max-w-lg px-4 pointer-events-auto">
+        <div class="w-full bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden" data-controller="collapsible">
 
-          <button type="button" data-action="collapsible#toggle" class="w-full px-5 py-3 flex items-center justify-between hover:bg-slate-700 transition-colors">
-            <div class="flex items-center gap-3">
-              <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
-                <%= heroicon "light-bulb", variant: :solid, options: { class: "h-5 w-5 text-white" } %>
-              </div>
-              <div class="text-left">
-                <h3 class="text-sm font-semibold text-white">What can I try?</h3>
-                <p class="text-xs text-slate-400">Ideas to explore the gem's features</p>
-              </div>
+        <button type="button" data-action="collapsible#toggle" class="w-full px-5 py-3 flex items-center justify-between hover:bg-slate-700 transition-colors cursor-pointer">
+          <div class="flex items-center gap-3">
+            <div class="h-9 w-9 rounded-xl bg-slate-700 flex items-center justify-center">
+              <%= heroicon "light-bulb", variant: :solid, options: { class: "h-5 w-5 text-slate-200" } %>
             </div>
-            <%= heroicon "chevron-up", variant: :solid, options: { class: "h-5 w-5 text-slate-400", "data-collapsible-target": "icon" } %>
-          </button>
-
-          <div data-collapsible-target="content" class="hidden border-t border-slate-700 bg-slate-800/50">
-            <div class="p-5 space-y-4">
-
-              <%# Idea 1: Invite & Roles %>
-              <div class="flex gap-3">
-                <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                  <%= heroicon "user-plus", variant: :solid, options: { class: "h-4 w-4 text-blue-400" } %>
-                </div>
-                <div>
-                  <p class="text-sm text-white font-medium">Invite someone & play with roles</p>
-                  <p class="text-xs text-slate-400 mt-0.5">Send an invite, switch to that user (top-right dropdown), accept it, then go to <strong class="text-slate-300">Members</strong> to change their role. Watch the UI adapt!</p>
-                </div>
-              </div>
-
-              <%# Idea 2: Permission-based UI %>
-              <div class="flex gap-3">
-                <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                  <%= heroicon "eye", variant: :solid, options: { class: "h-4 w-4 text-purple-400" } %>
-                </div>
-                <div>
-                  <p class="text-sm text-white font-medium">See the UI change by role</p>
-                  <p class="text-xs text-slate-400 mt-0.5">Switch between users with different roles. Viewers can't invite. Members can't manage. Admins can't transfer ownership. Only owners see the Danger Zone.</p>
-                </div>
-              </div>
-
-              <%# Idea 3: Multi-org %>
-              <div class="flex gap-3">
-                <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                  <%= heroicon "building-office-2", variant: :solid, options: { class: "h-4 w-4 text-emerald-400" } %>
-                </div>
-                <div>
-                  <p class="text-sm text-white font-medium">Create a second organization</p>
-                  <p class="text-xs text-slate-400 mt-0.5">Users can belong to multiple orgs. Create another one and use the <strong class="text-slate-300">org switcher</strong> in the sidebar to jump between them.</p>
-                </div>
-              </div>
-
-              <%# Idea 4: Transfer ownership %>
-              <div class="flex gap-3">
-                <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                  <%= heroicon "arrow-path", variant: :solid, options: { class: "h-4 w-4 text-amber-400" } %>
-                </div>
-                <div>
-                  <p class="text-sm text-white font-medium">Transfer ownership</p>
-                  <p class="text-xs text-slate-400 mt-0.5">As the owner, scroll down to the <strong class="text-slate-300">Danger Zone</strong> and hand over the keys to an admin. The old owner becomes an admin.</p>
-                </div>
-              </div>
-
-              <%# Idea 5: Delete org %>
-              <div class="flex gap-3">
-                <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-red-500/20 flex items-center justify-center">
-                  <%= heroicon "trash", variant: :solid, options: { class: "h-4 w-4 text-red-400" } %>
-                </div>
-                <div>
-                  <p class="text-sm text-white font-medium">Delete everything & start fresh</p>
-                  <p class="text-xs text-slate-400 mt-0.5">Owners can delete the entire organization from the Danger Zone. Or use <strong class="text-slate-300">Reset Demo</strong> in the sidebar to wipe all data.</p>
-                </div>
-              </div>
-
-            </div>
-
-            <div class="flex gap-2 px-5 py-3 bg-slate-900/50 border-t border-slate-700">
-              <%= link_to organizations.new_organization_invitation_path,
-                class: "inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors" do %>
-                <%= heroicon "paper-airplane", variant: :solid, options: { class: "h-3.5 w-3.5 text-slate-600" } %>
-                Invite
-              <% end %>
-              <%= link_to organizations.memberships_path,
-                class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 transition-colors" do %>
-                <%= heroicon "users", variant: :solid, options: { class: "h-3.5 w-3.5 text-slate-300" } %>
-                Members
-              <% end %>
-              <%= link_to organizations.new_organization_path,
-                class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 transition-colors" do %>
-                <%= heroicon "plus", variant: :solid, options: { class: "h-3.5 w-3.5 text-slate-300" } %>
-                New Org
-              <% end %>
+            <div class="text-left">
+              <h3 class="text-sm font-semibold text-white">What can I try?</h3>
+              <p class="text-xs text-slate-400">Ideas to explore the gem's features</p>
             </div>
           </div>
+          <%= heroicon "chevron-up", variant: :solid, options: { class: "h-5 w-5 text-slate-400", "data-collapsible-target": "icon" } %>
+        </button>
 
+        <div data-collapsible-target="content" class="hidden border-t border-slate-700 bg-slate-800/50">
+          <div class="p-5 space-y-4">
+
+            <%# Idea 1: Invite & Roles %>
+            <div class="flex gap-3">
+              <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-slate-700 flex items-center justify-center">
+                <%= heroicon "user-plus", variant: :solid, options: { class: "h-4 w-4 text-slate-300" } %>
+              </div>
+              <div>
+                <p class="text-sm text-white font-medium">Invite someone & play with roles</p>
+                <p class="text-xs text-slate-400 mt-0.5">Send an invite, switch to that user (top-right dropdown), accept it, then go to <strong class="text-slate-300">Organization</strong> to change their role. Watch the UI adapt!</p>
+              </div>
+            </div>
+
+            <%# Idea 2: Permission-based UI %>
+            <div class="flex gap-3">
+              <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-slate-700 flex items-center justify-center">
+                <%= heroicon "eye", variant: :solid, options: { class: "h-4 w-4 text-slate-300" } %>
+              </div>
+              <div>
+                <p class="text-sm text-white font-medium">See the UI change by role</p>
+                <p class="text-xs text-slate-400 mt-0.5">Switch between users with different roles. Viewers can't invite. Members can't manage. Admins can't transfer ownership. Only owners see the Danger Zone.</p>
+              </div>
+            </div>
+
+            <%# Idea 3: Multi-org %>
+            <div class="flex gap-3">
+              <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-slate-700 flex items-center justify-center">
+                <%= heroicon "building-office-2", variant: :solid, options: { class: "h-4 w-4 text-slate-300" } %>
+              </div>
+              <div>
+                <p class="text-sm text-white font-medium">Create a second organization</p>
+                <p class="text-xs text-slate-400 mt-0.5">Users can belong to multiple orgs. Create another one and use the <strong class="text-slate-300">org switcher</strong> in the sidebar to jump between them.</p>
+              </div>
+            </div>
+
+            <%# Idea 4: Transfer ownership %>
+            <div class="flex gap-3">
+              <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-slate-700 flex items-center justify-center">
+                <%= heroicon "arrow-path", variant: :solid, options: { class: "h-4 w-4 text-slate-300" } %>
+              </div>
+              <div>
+                <p class="text-sm text-white font-medium">Transfer ownership</p>
+                <p class="text-xs text-slate-400 mt-0.5">As the owner, scroll down to the <strong class="text-slate-300">Danger Zone</strong> and hand over the keys to an admin. The old owner becomes an admin.</p>
+              </div>
+            </div>
+
+            <%# Idea 5: Delete org %>
+            <div class="flex gap-3">
+              <div class="flex-shrink-0 h-7 w-7 rounded-lg bg-slate-700 flex items-center justify-center">
+                <%= heroicon "trash", variant: :solid, options: { class: "h-4 w-4 text-slate-300" } %>
+              </div>
+              <div>
+                <p class="text-sm text-white font-medium">Delete everything & start fresh</p>
+                <p class="text-xs text-slate-400 mt-0.5">Owners can delete the entire organization from the Danger Zone. Or use <strong class="text-slate-300">Reset Demo</strong> in the sidebar to wipe all data.</p>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="flex gap-2 px-5 py-3 bg-slate-900/50 border-t border-slate-700">
+            <%= link_to organizations.new_organization_invitation_path,
+              class: "inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors" do %>
+              <%= heroicon "paper-airplane", variant: :solid, options: { class: "h-3.5 w-3.5 text-slate-600" } %>
+              Invite
+            <% end %>
+            <%= link_to organizations.organization_path(current_organization),
+              class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 transition-colors" do %>
+              <%= heroicon "building-office-2", variant: :solid, options: { class: "h-3.5 w-3.5 text-slate-300" } %>
+              Manage Org
+            <% end %>
+            <%= link_to organizations.new_organization_path,
+              class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 transition-colors" do %>
+              <%= heroicon "plus", variant: :solid, options: { class: "h-3.5 w-3.5 text-slate-300" } %>
+              New Org
+            <% end %>
+          </div>
+        </div>
         </div>
       </div>
     </div>

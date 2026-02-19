@@ -7,9 +7,8 @@
 
   if current_organization
     nav_items += [
-      { path: organizations.organizations_path, icon: "building-office-2", label: "Organizations", active: controller_name == "organizations" },
-      { path: organizations.memberships_path, icon: "users", label: "Members", active: controller_name == "memberships" },
-      { path: organizations.organization_invitations_path, icon: "envelope", label: "Invitations", active: controller_name == "invitations" }
+      { path: organizations.organization_path(current_organization), icon: "building-office-2", label: "Current Organization", active: controller_name == "organizations" && action_name == "show" },
+      { path: organizations.organizations_path, icon: "rectangle-stack", label: "My Organizations", active: controller_name == "organizations" && action_name == "index" }
     ]
   end
 %>
@@ -64,7 +63,7 @@
       <%# Organization switcher %>
       <% if current_user && current_user.organizations.count > 1 %>
         <li>
-          <div class="text-xs font-semibold leading-6 text-gray-400 mb-2">Your Organizations</div>
+          <div class="text-xs font-semibold leading-6 text-gray-400 mb-2">Switch Organizations</div>
           <ul role="list" class="-mx-2 space-y-1">
             <% current_user.organizations.each do |org| %>
               <li>
