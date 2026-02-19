@@ -1,3 +1,4 @@
+<% suggested_email = ::Faker::Internet.email(name: ::Faker::Name.name, domain: 'example.com') %>
 <%= form_with(model: @invitation, url: organization_invitations_path, local: true, class: "space-y-6") do |form| %>
   <% if @invitation.errors.any? %>
     <div class="rounded-lg bg-red-50 p-4 border border-red-200">
@@ -24,6 +25,7 @@
     <%= form.email_field :email,
       required: true,
       autofocus: true,
+      value: @invitation.email.presence || suggested_email,
       placeholder: "colleague@company.com",
       class: "block w-full rounded-lg border-gray-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 sm:text-sm" %>
     <p class="mt-1 text-xs text-gray-500">They'll receive an email invitation to join this organization.</p>
@@ -40,7 +42,7 @@
   </div>
 
   <div class="flex items-center justify-end gap-3 pt-4">
-    <%= link_to "Cancel", organization_invitations_path,
+    <%= link_to "Cancel", "javascript:history.back()",
       class: "inline-flex items-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <%= form.submit "Send Invitation",
       class: "inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500 cursor-pointer" %>

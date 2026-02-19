@@ -1,4 +1,5 @@
 <%# Shared organization form used by new/edit. %>
+<% suggested_company_name = @organization.persisted? ? nil : "#{::Faker::Company.name} #{::Faker::Company.suffix}" %>
 <%= form_with(model: @organization, local: true, class: "space-y-6") do |form| %>
   <% if @organization.errors.any? %>
     <div class="rounded-lg bg-red-50 p-4 border border-red-200">
@@ -25,12 +26,13 @@
     <%= form.text_field :name,
       required: true,
       autofocus: true,
+      value: @organization.name.presence || suggested_company_name,
       placeholder: "Acme Inc.",
       class: "block w-full rounded-lg border-gray-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 sm:text-sm" %>
   </div>
 
   <div class="flex items-center justify-end gap-3 pt-4">
-    <%= link_to "Cancel", organizations_path,
+    <%= link_to "Cancel", (@organization.persisted? ? organization_path(@organization) : organizations_path),
       class: "inline-flex items-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <%= form.submit class: "inline-flex items-center rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500 cursor-pointer" %>
   </div>
