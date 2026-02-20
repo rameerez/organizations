@@ -7,7 +7,7 @@
 
 `organizations` adds organizations with members to any Rails app. It handles team invites, user memberships, roles, and permissions.
 
-[TODO: invitation / member management gif]
+**🎮 [Try the live demo →](https://organizations.rameerez.com)**
 
 It's everything you need to turn a `User`-based app into a multi-tenant, `Organization`-based B2B SaaS (users belong in organizations, and organizations share resources and billing, etc.)
 
