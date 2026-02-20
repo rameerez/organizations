@@ -839,6 +839,14 @@ Organizations.configure do |config|
   # Where to redirect when user has no organization
   config.redirect_path_when_no_organization = "/organizations/new"
 
+  # === Engine Controllers ===
+  # Base controller for authenticated routes (default: ::ApplicationController)
+  config.parent_controller = "::ApplicationController"
+
+  # Base controller for public routes like invitation acceptance (default: ActionController::Base)
+  # Use this to avoid inheriting host app filters that enforce authentication
+  config.public_controller = "ActionController::Base"
+
   # === Handlers ===
   # Called when authorization fails
   config.on_unauthorized do |context|

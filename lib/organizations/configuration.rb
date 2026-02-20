@@ -68,7 +68,12 @@ module Organizations
     attr_accessor :redirect_path_when_no_organization
 
     # === Engine configuration ===
+    # Base controller for authenticated routes (default: ::ApplicationController)
     attr_accessor :parent_controller
+
+    # Base controller for public routes like invitation acceptance (default: ActionController::Base)
+    # Use this to avoid inheriting host app filters that enforce authentication
+    attr_accessor :public_controller
 
     # === Handlers (blocks) ===
     # @private - stored handler blocks
@@ -115,6 +120,7 @@ module Organizations
 
       # Engine
       @parent_controller = "::ApplicationController"
+      @public_controller = "ActionController::Base"
 
       # Handlers (nil by default - use default behavior)
       @unauthorized_handler = nil

@@ -27,9 +27,11 @@ Organizations::Engine.routes.draw do
   end
 
   # Invitation acceptance (public routes with token)
+  # These use PublicInvitationsController which inherits from a minimal base controller
+  # to avoid host app filters that might enforce authentication.
   # GET  /invitations/:token        → View invitation details
   # POST /invitations/:token/accept → Accept the invitation
   # NOTE: These must come AFTER resourceful routes to avoid matching "new" as a token
-  get "invitations/:token", to: "invitations#show", as: :invitation
-  post "invitations/:token/accept", to: "invitations#accept", as: :accept_invitation
+  get "invitations/:token", to: "public_invitations#show", as: :invitation
+  post "invitations/:token/accept", to: "public_invitations#accept", as: :accept_invitation
 end

@@ -71,4 +71,17 @@ Organizations.configure do |config|
   # Default: :current_organization_id
   # config.session_key = :current_organization_id
 
+  # ============================================================================
+  # ENGINE CONTROLLERS
+  # ============================================================================
+
+  # Base controller for authenticated routes (default: ::ApplicationController)
+  # All organization management controllers inherit from this.
+  # config.parent_controller = "::ApplicationController"
+
+  # Base controller for public routes like invitation acceptance.
+  # Uses a minimal base to avoid host app filters that enforce authentication.
+  # Default: ActionController::Base
+  # config.public_controller = "ActionController::Base"
+
 end
