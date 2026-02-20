@@ -42,3 +42,5 @@ test/dummy/app/assets/builds/
 # Dummy app deployment secrets
 test/dummy/config/deploy.yml
 test/dummy/.kamal/secrets
+test/dummy/config/master.key
+test/dummy/*/.key
