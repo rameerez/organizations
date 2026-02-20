@@ -3,211 +3,262 @@
 <% is_owner = current_user.is_owner_of?(@organization) %>
 
 <%# Organization header %>
-<div class="mb-8 flex justify-between items-start">
-  <div>
-    <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-3">
-      <span class="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-slate-600 text-white font-bold text-xl">
+<div class="mb-8">
+  <div class="flex items-start justify-between">
+    <div class="flex items-center gap-4">
+      <span class="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-slate-600 text-white font-bold text-2xl shadow-lg">
         <%= @organization.name.first.upcase %>
       </span>
-      <%= @organization.name %>
-    </h1>
-    <p class="mt-2 text-sm text-gray-500">
-      Created <%= time_ago_in_words(@organization.created_at) %> ago
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    <% if is_admin_or_owner %>
-      <%= link_to edit_organization_path(@organization),
-        class: "inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" do %>
-        <%= heroicon "pencil", variant: :mini, options: { class: "h-4 w-4" } %>
-        Edit
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900"><%= @organization.name %></h1>
+        <p class="mt-1 text-gray-500">Manage your organization settings, team members, and invitations.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <% if is_admin_or_owner %>
+        <%= link_to organizations.new_organization_invitation_path,
+          class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
+          <%= heroicon "user-plus", variant: :mini, options: { class: "h-4 w-4" } %>
+          Invite Member
+        <% end %>
       <% end %>
-      <%= link_to new_organization_invitation_path,
-        class: "inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
-        <%= heroicon "user-plus", variant: :mini, options: { class: "h-4 w-4" } %>
-        Invite Member
-      <% end %>
-    <% end %>
+    </div>
   </div>
 </div>
 
-<%# Members Section %>
-<div class="mb-8">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
-      <%= heroicon "users", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
-      Members (<%= @organization.member_count %>)
-    </h2>
+<%# Stats grid %>
+<div class="grid grid-cols-1 gap-6 sm:grid-cols-3 mb-8">
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center">
+        <%= heroicon "users", variant: :solid, options: { class: "h-6 w-6 text-slate-600" } %>
+      </div>
+      <div>
+        <p class="text-sm text-gray-500">Team Members</p>
+        <p class="text-2xl font-bold text-gray-900"><%= @organization.member_count %></p>
+      </div>
+    </div>
   </div>
 
-  <% memberships = @organization.memberships.includes(:user).order(:created_at) %>
-  <% if memberships.any? %>
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-            <% if is_admin_or_owner %>
-              <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            <% end %>
-          </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-          <% memberships.each do |membership| %>
-            <% is_current_user = membership.user_id == current_user.id %>
-            <tr class="<%= is_current_user ? 'bg-slate-50' : 'hover:bg-gray-50' %>">
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center gap-3">
-                  <span class="inline-flex h-10 w-10 items-center justify-center rounded-full <%= is_current_user ? 'bg-slate-600 text-white' : 'bg-gray-200 text-gray-600' %> font-medium">
-                    <%= membership.user.email.first.upcase %>
-                  </span>
-                  <div>
-                    <div class="text-sm font-medium text-gray-900 flex items-center gap-2">
-                      <%= membership.user.respond_to?(:name) && membership.user.name.present? ? membership.user.name : membership.user.email.split('@').first %>
-                      <% if is_current_user %>
-                        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">You</span>
-                      <% end %>
-                    </div>
-                    <div class="text-sm text-gray-500"><%= membership.user.email %></div>
-                  </div>
-                </div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
-                  <%= case membership.role
-                      when 'owner' then 'bg-amber-100 text-amber-800'
-                      when 'admin' then 'bg-purple-100 text-purple-800'
-                      when 'member' then 'bg-blue-100 text-blue-800'
-                      else 'bg-gray-100 text-gray-800'
-                      end %>">
-                  <%= membership.role.capitalize %>
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                <%= time_ago_in_words(membership.created_at) %> ago
-              </td>
-              <% if is_admin_or_owner %>
-                <td class="px-6 py-4 whitespace-nowrap text-right">
-                  <% if is_current_user %>
-                    <span class="text-sm text-gray-400 italic">Current user</span>
-                  <% elsif membership.role == 'owner' %>
-                    <span class="text-sm text-gray-400 italic">Organization owner</span>
-                  <% else %>
-                    <div class="flex items-center justify-end gap-2">
-                      <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
-                        <%= form.select :role,
-                          Organizations::Roles::HIERARCHY.reject { |r| r == :owner }.map { |role| [role.to_s.capitalize, role] },
-                          { selected: membership.role },
-                          class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
-                        <%= form.submit "Update",
-                          class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
-                      <% end %>
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-xl bg-amber-100 flex items-center justify-center">
+        <%= heroicon "envelope", variant: :solid, options: { class: "h-6 w-6 text-amber-600" } %>
+      </div>
+      <div>
+        <p class="text-sm text-gray-500">Pending Invites</p>
+        <p class="text-2xl font-bold text-gray-900"><%= @organization.invitations.pending.count %></p>
+      </div>
+    </div>
+  </div>
 
-                      <% if is_admin_or_owner %>
-                        <%= button_to membership_path(membership),
-                          method: :delete,
-                          data: { turbo_confirm: "Remove #{membership.user.email} from the organization?" },
-                          class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 cursor-pointer" do %>
-                          <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
-                        <% end %>
-                      <% end %>
-                    </div>
-                  <% end %>
-                </td>
-              <% end %>
-            </tr>
-          <% end %>
-        </tbody>
-      </table>
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+        <%= heroicon "shield-check", variant: :solid, options: { class: "h-6 w-6 text-emerald-600" } %>
+      </div>
+      <div>
+        <p class="text-sm text-gray-500">Your Role</p>
+        <p class="text-2xl font-bold text-gray-900"><%= current_user.role_in(@organization)&.capitalize || "N/A" %></p>
+      </div>
     </div>
-  <% else %>
-    <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
-      <%= heroicon "users", variant: :outline, options: { class: "mx-auto h-10 w-10 text-gray-400" } %>
-      <p class="mt-2 text-sm text-gray-500">No members yet.</p>
-    </div>
-  <% end %>
+  </div>
 </div>
 
-<%# Bottom row: Pending Invitations + Danger Zone side by side %>
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <%# Pending Invitations %>
-  <% if is_admin_or_owner %>
-    <% invitations = @organization.invitations.includes(:invited_by).order(created_at: :desc) %>
-    <% pending_invitations = invitations.select(&:pending?) %>
-
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-        <h2 class="text-base font-semibold text-gray-900 flex items-center gap-2">
-          <%= heroicon "envelope", variant: :outline, options: { class: "h-5 w-5 text-gray-400" } %>
-          Pending Invitations (<%= pending_invitations.count %>)
-        </h2>
-        <%= link_to new_organization_invitation_path,
-          class: "inline-flex items-center gap-1 rounded-md bg-slate-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-500" do %>
-          <%= heroicon "plus", variant: :mini, options: { class: "h-3.5 w-3.5" } %>
+<%# Team Members Card - Full width %>
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+  <div class="px-6 py-5 border-b border-gray-200">
+    <div class="flex justify-between items-start">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Team Members</h2>
+        <p class="text-sm text-gray-500 mt-1">All users who belong to this organization with their roles.</p>
+      </div>
+      <% if is_admin_or_owner %>
+        <%= link_to organizations.new_organization_invitation_path,
+          class: "flex-shrink-0 inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
+          <%= heroicon "user-plus", variant: :solid, options: { class: "h-4 w-4" } %>
           Invite
         <% end %>
-      </div>
-
-      <% if pending_invitations.any? %>
-        <div class="divide-y divide-gray-100">
-          <% pending_invitations.each do |invitation| %>
-            <div class="px-6 py-3 flex items-center justify-between hover:bg-gray-50">
-              <div class="flex items-center gap-3 min-w-0">
-                <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600 font-medium text-sm flex-shrink-0">
-                  <%= invitation.email.first.upcase %>
-                </span>
-                <div class="min-w-0">
-                  <p class="text-sm font-medium text-gray-900 truncate"><%= invitation.email %></p>
-                  <p class="text-xs text-gray-500">
-                    <%= invitation.role.capitalize %> •
-                    <% if invitation.expires_at && invitation.expires_at > Time.current %>
-                      expires in <%= distance_of_time_in_words(Time.current, invitation.expires_at) %>
-                    <% elsif invitation.expires_at %>
-                      <span class="text-red-600">expired</span>
-                    <% else %>
-                      never expires
-                    <% end %>
-                  </p>
-                </div>
-              </div>
-              <div class="flex items-center gap-1 flex-shrink-0 ml-2">
-                <%= button_to resend_organization_invitation_path(invitation),
-                  method: :post,
-                  class: "p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer",
-                  title: "Resend" do %>
-                  <%= heroicon "arrow-path", variant: :mini, options: { class: "h-4 w-4" } %>
-                <% end %>
-                <%= button_to organization_invitation_path(invitation),
-                  method: :delete,
-                  data: { turbo_confirm: "Revoke this invitation?" },
-                  class: "p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer",
-                  title: "Revoke" do %>
-                  <%= heroicon "x-mark", variant: :mini, options: { class: "h-4 w-4" } %>
-                <% end %>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      <% else %>
-        <div class="p-8 text-center flex flex-col items-center justify-center flex-1">
-          <%= heroicon "envelope", variant: :outline, options: { class: "h-8 w-8 text-gray-300" } %>
-          <p class="mt-2 text-sm text-gray-500">No pending invitations</p>
-        </div>
       <% end %>
     </div>
-  <% else %>
-    <div class="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 p-6">
-      <%= heroicon "envelope", variant: :outline, options: { class: "mx-auto h-10 w-10 text-slate-300" } %>
-      <h3 class="mt-3 text-sm font-semibold text-slate-900 text-center">Pending Invitations</h3>
-      <p class="mt-2 text-xs text-slate-700 text-center">This panel is <strong>hidden</strong> because you're viewing as a <strong><%= current_user.role_in(@organization) %></strong>.</p>
-      <p class="mt-2 text-xs text-slate-600 text-center">Only <strong>admins</strong> and <strong>owners</strong> can manage invitations.</p>
+    <% unless is_admin_or_owner %>
+      <p class="mt-3 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+        <%= heroicon "lock-closed", variant: :solid, options: { class: "inline h-3 w-3 mr-1" } %>
+        <strong>Invite button hidden.</strong> Only <span class="font-medium">admins</span> and <span class="font-medium">owners</span> can invite new members.
+      </p>
+    <% end %>
+  </div>
+
+  <div class="divide-y divide-gray-100">
+    <% @organization.memberships.includes(:user).order(:created_at).each do |membership| %>
+      <% is_current_user = membership.user_id == current_user.id %>
+      <div class="px-6 py-5 flex items-center justify-between hover:bg-gray-50">
+        <div class="flex items-center gap-4">
+          <span class="inline-flex h-11 w-11 items-center justify-center rounded-full <%= is_current_user ? 'bg-slate-600 text-white' : 'bg-gray-100 text-gray-600' %> font-semibold text-sm">
+            <%= membership.user.email.first.upcase %>
+          </span>
+          <div>
+            <p class="text-sm font-medium text-gray-900">
+              <%= membership.user.email %>
+              <% if is_current_user %>
+                <span class="text-xs text-emerald-600 ml-1">(you)</span>
+              <% end %>
+            </p>
+            <p class="text-xs text-gray-500 mt-0.5">Joined <%= time_ago_in_words(membership.created_at) %> ago</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <div class="text-right">
+            <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
+              <%= case membership.role
+                  when 'owner' then 'bg-amber-100 text-amber-800'
+                  when 'admin' then 'bg-purple-100 text-purple-800'
+                  when 'member' then 'bg-blue-100 text-blue-800'
+                  else 'bg-gray-100 text-gray-700'
+                  end %>">
+              <%= membership.role.capitalize %>
+            </span>
+          </div>
+
+          <%# Role management for admins/owners %>
+          <% if is_admin_or_owner && !is_current_user && membership.role != 'owner' %>
+            <div class="flex items-center gap-2">
+              <%= form_with(model: membership, url: organizations.membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
+                <%= form.select :role,
+                  Organizations::Roles::HIERARCHY.reject { |r| r == :owner }.map { |role| [role.to_s.capitalize, role] },
+                  { selected: membership.role },
+                  class: "rounded-md border-gray-300 text-xs focus:border-slate-500 focus:ring-slate-500 py-1" %>
+                <%= form.submit "Update",
+                  class: "inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+              <% end %>
+
+              <%= button_to organizations.membership_path(membership),
+                method: :delete,
+                data: { turbo_confirm: "Remove #{membership.user.email} from the organization?" },
+                class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 cursor-pointer" do %>
+                <%= heroicon "trash", variant: :mini, options: { class: "h-3.5 w-3.5" } %>
+              <% end %>
+            </div>
+          <% elsif is_current_user %>
+            <span class="text-xs text-gray-400 italic">Current user</span>
+          <% elsif membership.role == 'owner' %>
+            <span class="text-xs text-gray-400 italic">Organization owner</span>
+          <% end %>
+
+          <%# Demo: Switch to this user %>
+          <% if membership.user.id != current_user.id %>
+            <%= button_to main_app.switch_user_path(email: membership.user.email),
+              method: :post,
+              data: { turbo: false },
+              class: "inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors",
+              title: "Demo: Switch to this user to see the UI from their perspective" do %>
+              <%= heroicon "arrow-path", variant: :solid, options: { class: "h-3.5 w-3.5" } %>
+              Impersonate
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="px-6 py-3 bg-gray-50 border-t border-gray-100">
+    <p class="text-xs text-gray-500">
+      <strong>Try it:</strong> Click "Impersonate" to switch users and see how the UI changes based on their role permissions.
+    </p>
+  </div>
+
+  <%# Pending invitations %>
+  <% pending = @organization.invitations.pending %>
+  <% if pending.any? && is_admin_or_owner %>
+    <div class="border-t border-gray-200 bg-gray-50 px-6 py-5">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-gray-900">Pending Invitations</h3>
+        <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-semibold text-gray-700">
+          <%= pending.count %>
+        </span>
+      </div>
+      <p class="text-xs text-gray-500 mb-4">These users have been invited but haven't accepted yet.</p>
+      <div class="space-y-3">
+        <% pending.includes(:invited_by).each do |inv| %>
+          <div class="flex items-center justify-between bg-white rounded-lg px-4 py-3 border border-gray-200">
+            <div class="flex items-center gap-3">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600 font-medium text-xs">
+                <%= inv.email.first.upcase %>
+              </span>
+              <div>
+                <span class="text-sm font-medium text-gray-900"><%= inv.email %></span>
+                <span class="ml-2 text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">will be <%= inv.role %></span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <%= button_to organizations.resend_organization_invitation_path(inv),
+                method: :post,
+                class: "p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer",
+                title: "Resend" do %>
+                <%= heroicon "arrow-path", variant: :mini, options: { class: "h-4 w-4" } %>
+              <% end %>
+              <%= button_to organizations.organization_invitation_path(inv),
+                method: :delete,
+                data: { turbo_confirm: "Revoke this invitation?" },
+                class: "p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer",
+                title: "Revoke" do %>
+                <%= heroicon "x-mark", variant: :mini, options: { class: "h-4 w-4" } %>
+              <% end %>
+              <%= button_to main_app.switch_user_path(email: inv.email),
+                method: :post,
+                data: { turbo: false },
+                class: "text-xs font-medium text-gray-600 hover:text-gray-900 cursor-pointer" do %>
+                Impersonate & Accept →
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
     </div>
   <% end %>
+</div>
+
+<%# Bottom row: Organization Settings + Danger Zone side by side %>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+  <%# Organization Settings %>
+  <div>
+    <% if is_admin_or_owner %>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-base font-semibold text-gray-900">Organization Settings</h2>
+        </div>
+        <%= form_with model: @organization, url: organizations.organization_path(@organization), method: :patch, class: "p-5 space-y-4 flex-1" do |f| %>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <%= f.text_field :name, class: "block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-slate-500 focus:ring-slate-500" %>
+            <p class="mt-1 text-xs text-gray-400">Editable because you're an <code class="bg-gray-100 px-1 rounded"><%= current_user.role_in(@organization) %></code></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-400 mb-1">Slug</label>
+            <div class="flex rounded-lg shadow-sm">
+              <span class="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-200 bg-gray-50 text-gray-400 text-sm">yourapp.com/</span>
+              <input type="text" disabled value="<%= @organization.name.parameterize %>" class="block w-full rounded-r-lg border-gray-200 bg-gray-50 text-sm text-gray-400 cursor-not-allowed" />
+            </div>
+            <p class="mt-1 text-xs text-gray-400">Placeholder field (not functional)</p>
+          </div>
+          <%= f.submit "Save Changes", class: "w-full inline-flex justify-center items-center rounded-lg bg-slate-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-500 cursor-pointer" %>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-6 h-full flex flex-col items-center justify-center">
+        <%= heroicon "lock-closed", variant: :solid, options: { class: "h-10 w-10 text-gray-300" } %>
+        <h3 class="mt-3 text-sm font-semibold text-gray-900 text-center">Organization Settings</h3>
+        <p class="mt-2 text-xs text-gray-500 text-center">Requires <code class="bg-gray-200 px-1 rounded">admin</code> role or higher.</p>
+        <p class="text-xs text-gray-400 text-center">Impersonate an admin or owner to see this.</p>
+      </div>
+    <% end %>
+  </div>
 
   <%# Danger Zone %>
   <div>
     <%= render "shared/danger_zone", organization: @organization %>
   </div>
+
 </div>
