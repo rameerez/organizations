@@ -72,9 +72,14 @@ module Organizations
   #
   # In non-Rails environments (plain Ruby, tests without Rails), use lib-based autoloading.
   #
-  # NOTE: This guard is safe because line 4 above conditionally requires the engine
-  # only when Rails::Engine is already defined (i.e., Rails is loaded). So by the time
-  # we reach this point, Rails::Engine is defined iff we're in a Rails app.
+  # NOTE on the guard: Rails::Engine is defined when `railties` has been required.
+  # In typical usage, this means a Rails app context where Zeitwerk manages app/models.
+  # Edge cases (e.g., requiring railties without a full app) are rare and would need
+  # custom setup anyway. For standard Rails apps, this correctly delegates to Zeitwerk.
+  #
+  # IMPORTANT: The app/models/*.rb entrypoints delegate to lib/ via `load`. This means
+  # Zeitwerk watches the entrypoint files, not the lib/ files. Changes to lib/ model
+  # files during gem development won't auto-reload; restart the server in that case.
   unless defined?(Rails::Engine)
     autoload :Organization, "organizations/models/organization"
     autoload :Membership, "organizations/models/membership"
