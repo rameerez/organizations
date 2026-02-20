@@ -65,8 +65,9 @@ module Organizations
         membership = @invitation.accept!(current_user)
 
         # Switch to the new organization if the controller supports it
+        # Pass explicit user to avoid stale memoization issues in auth-transition flows
         if respond_to?(:switch_to_organization!, true)
-          switch_to_organization!(@invitation.organization)
+          switch_to_organization!(@invitation.organization, user: current_user)
         elsif respond_to?(:current_organization=, true)
           self.current_organization = @invitation.organization
         end
