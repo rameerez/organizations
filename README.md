@@ -769,8 +769,8 @@ When you mount the engine, you get:
 
 ```
 POST /organizations/switch/:id  → Organizations::SwitchController#create
-GET  /invitations/:token        → Organizations::InvitationsController#show
-POST /invitations/:token/accept → Organizations::InvitationsController#accept
+GET  /invitations/:token        → Organizations::PublicInvitationsController#show
+POST /invitations/:token/accept → Organizations::PublicInvitationsController#accept
 ```
 
 ## Auto-created organizations

@@ -70,14 +70,15 @@ module Organizations
       # Handle acceptance result
       if result.nil?
         # This shouldn't happen since we pre-validated, but handle gracefully
+        # Redirect to root (not after_accepted path) since acceptance failed
         if @invitation.expired?
           respond_to do |format|
-            format.html { redirect_to redirect_path_after_invitation_accepted(@invitation, user: current_user), alert: "This invitation has expired. Please request a new one." }
+            format.html { redirect_to main_app.root_path, alert: "This invitation has expired. Please request a new one." }
             format.json { render json: { error: "Invitation expired" }, status: :gone }
           end
         else
           respond_to do |format|
-            format.html { redirect_to redirect_path_after_invitation_accepted(@invitation, user: current_user), alert: "Unable to accept this invitation." }
+            format.html { redirect_to main_app.root_path, alert: "Unable to accept this invitation." }
             format.json { render json: { error: "Acceptance failed" }, status: :unprocessable_entity }
           end
         end
