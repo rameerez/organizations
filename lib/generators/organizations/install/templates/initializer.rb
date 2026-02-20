@@ -71,4 +71,40 @@ Organizations.configure do |config|
   # Default: :current_organization_id
   # config.session_key = :current_organization_id
 
+  # ============================================================================
+  # ORGANIZATIONS CONTROLLER
+  # ============================================================================
+
+  # Additional params to permit when creating/updating organizations.
+  # Use this to add custom fields to organizations (e.g., support_email, logo).
+  # Default: [] (only :name is permitted)
+  # config.additional_organization_params = [:support_email, :billing_email]
+
+  # Where to redirect after organization is created.
+  # Can be a String path or a Proc that receives the organization.
+  # Default: nil (redirects to organization show page)
+  # config.after_organization_created_redirect_path = "/dashboard"
+  # config.after_organization_created_redirect_path = ->(org) { "/orgs/#{org.id}/setup" }
+
+  # ============================================================================
+  # REDIRECTS
+  # ============================================================================
+
+  # Where to redirect when user has no organization.
+  # Default: "/organizations/new"
+  # config.redirect_path_when_no_organization = "/onboarding"
+
+  # ============================================================================
+  # ENGINE CONTROLLERS
+  # ============================================================================
+
+  # Base controller for authenticated routes (default: ::ApplicationController)
+  # All organization management controllers inherit from this.
+  # config.parent_controller = "::ApplicationController"
+
+  # Base controller for public routes like invitation acceptance.
+  # Uses a minimal base to avoid host app filters that enforce authentication.
+  # Default: ActionController::Base
+  # config.public_controller = "ActionController::Base"
+
 end

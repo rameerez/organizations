@@ -128,17 +128,35 @@ module Organizations
     end
 
     # Switches to a different organization
-    def switch_to_organization!(org)
-      unless current_user&.is_member_of?(org)
+    # @param org [Organizations::Organization]
+    # @param user [User, nil] Explicit user to switch for (useful in auth-transition flows)
+    # @raise [Organizations::NotAMember] if user is not a member
+    def switch_to_organization!(org, user: nil)
+      acting_user = user || current_user
+
+      unless membership_exists_for?(acting_user, org)
         raise Organizations::NotAMember.new(
           "You are not a member of this organization",
           organization: org,
-          user: current_user
+          user: acting_user
         )
       end
 
       self.current_organization = org
-      mark_membership_as_recent!(current_user, org)
+      # Explicitly set acting_user's org ID in case it differs from memoized current_user
+      # (e.g., auth-transition flows where user was just signed in)
+      acting_user._current_organization_id = org.id if acting_user&.respond_to?(:_current_organization_id=)
+      mark_membership_as_recent!(acting_user, org)
+    end
+
+    # DB-authoritative membership check to avoid stale loaded association issues
+    # @param user [User, nil]
+    # @param org [Organization, nil]
+    # @return [Boolean]
+    def membership_exists_for?(user, org)
+      return false unless user && org
+
+      Membership.exists?(user_id: user.id, organization_id: org.id)
     end
 
     # Clear organization session and cached values

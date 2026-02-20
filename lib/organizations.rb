@@ -55,17 +55,35 @@ module Organizations
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers
 
-  # Models - autoload directly under Organizations namespace
-  # Model files define Organizations::Organization, etc.
-  autoload :Organization, "organizations/models/organization"
-  autoload :Membership, "organizations/models/membership"
-  autoload :Invitation, "organizations/models/invitation"
-
   # Models module kept for backwards compatibility
   module Models
     module Concerns
+      # HasOrganizations is always autoloaded from lib/ because:
+      # 1. It's extended onto ActiveRecord::Base at boot time via the engine initializer
+      # 2. It doesn't define any associations that point to reloadable classes
       autoload :HasOrganizations, "organizations/models/concerns/has_organizations"
     end
+  end
+
+  # In Rails apps, Organization/Membership/Invitation models are loaded from
+  # app/models via Zeitwerk (reload-safe). This is critical because these models
+  # define associations to other reloadable classes (like Pay::Customer), and we
+  # need the association reflections to point to current class objects after reload.
+  #
+  # In non-Rails environments (plain Ruby, tests without Rails), use lib-based autoloading.
+  #
+  # NOTE on the guard: Rails::Engine is defined when `railties` has been required.
+  # In typical usage, this means a Rails app context where Zeitwerk manages app/models.
+  # Edge cases (e.g., requiring railties without a full app) are rare and would need
+  # custom setup anyway. For standard Rails apps, this correctly delegates to Zeitwerk.
+  #
+  # IMPORTANT: The app/models/*.rb entrypoints delegate to lib/ via `load`. This means
+  # Zeitwerk watches the entrypoint files, not the lib/ files. Changes to lib/ model
+  # files during gem development won't auto-reload; restart the server in that case.
+  unless defined?(Rails::Engine)
+    autoload :Organization, "organizations/models/organization"
+    autoload :Membership, "organizations/models/membership"
+    autoload :Invitation, "organizations/models/invitation"
   end
 
   class << self

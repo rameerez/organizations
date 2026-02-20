@@ -16,6 +16,11 @@ Organizations.configure do |config|
   # How long invitations are valid
   config.invitation_expiry = 7.days
 
+  # === Engine Controllers ===
+  # Base controller for public routes (invitation acceptance, etc.)
+  # Uses minimal base to avoid host app authentication filters
+  config.public_controller = "ActionController::Base"
+
   # === Handlers ===
   # Called when authorization fails
   config.on_unauthorized do |context|

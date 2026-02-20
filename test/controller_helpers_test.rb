@@ -983,5 +983,183 @@ module Organizations
       assert_equal :manage_billing, handler_context.permission
       assert_nil handler_context.required_role
     end
+
+    # =====================
+    # Stale association resilience tests
+    # =====================
+
+    test "switch_to_organization! succeeds when memberships association is stale-loaded" do
+      # Scenario: memberships association was loaded earlier as empty,
+      # but membership was created via organization.memberships.create!
+      # The switch should still work by falling back to DB query.
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Stale Test Org")
+
+      # Pre-load memberships association as empty
+      user.memberships.to_a
+      assert user.memberships.loaded?, "memberships should be loaded"
+      assert_equal 0, user.memberships.size, "loaded memberships should be empty"
+
+      # Create membership via organization association (bypasses user.memberships cache)
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      # Verify the DB has the membership
+      assert Organizations::Membership.exists?(user_id: user.id, organization_id: org.id)
+
+      # Set up controller
+      @controller.test_current_user = user
+
+      # This should succeed, not raise NotAMember
+      @controller.switch_to_organization!(org)
+
+      assert_equal org.id, @controller.session[:current_organization_id]
+    end
+
+    test "current_organization respects valid membership even when memberships association is stale-loaded" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Stale Current Org")
+
+      # Pre-load memberships as empty
+      user.memberships.to_a
+
+      # Create membership externally
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      @controller.test_current_user = user
+      @controller.session[:current_organization_id] = org.id
+
+      # Should return org, not clear session
+      result = @controller.current_organization
+      assert_equal org, result
+      assert_equal org.id, @controller.session[:current_organization_id]
+    end
+
+    test "switch_to_organization! refreshes nil-memoized current user" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Nil User Test Org")
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      # Start with nil user
+      @controller.test_current_user = nil
+
+      # Force nil memoization
+      @controller.send(:organizations_current_user)
+
+      # Now set the actual user
+      @controller.test_current_user = user
+
+      # Switch should work because it uses refresh: true
+      @controller.switch_to_organization!(org)
+
+      assert_equal org.id, @controller.session[:current_organization_id]
+    end
+
+    test "switch_to_organization! accepts explicit user when current user method is unavailable" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Explicit User Org")
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      # Controller has no current user
+      @controller.test_current_user = nil
+
+      # But we can pass user explicitly
+      @controller.switch_to_organization!(org, user: user)
+
+      assert_equal org.id, @controller.session[:current_organization_id]
+    end
+
+    test "switch_to_organization! with explicit user sets user._current_organization_id" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Explicit User Org ID")
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      @controller.test_current_user = nil
+
+      @controller.switch_to_organization!(org, user: user)
+
+      assert_equal org.id, user._current_organization_id
+    end
+
+    test "organizations_current_user does not cache nil result" do
+      user = create_user!
+
+      # Start with nil
+      @controller.test_current_user = nil
+      result1 = @controller.send(:organizations_current_user)
+      assert_nil result1
+
+      # Set actual user
+      @controller.test_current_user = user
+
+      # Without refresh, should still return nil (sticky memoization would fail here before fix)
+      # But with our fix, nil is not sticky - it re-resolves
+      result2 = @controller.send(:organizations_current_user)
+      assert_equal user, result2
+    end
+
+    test "organizations_current_user with explicit refresh: true clears cache" do
+      user1 = create_user!(email: "user1@example.com")
+      user2 = create_user!(email: "user2@example.com")
+
+      @controller.test_current_user = user1
+      result1 = @controller.send(:organizations_current_user)
+      assert_equal user1, result1
+
+      # Change user
+      @controller.test_current_user = user2
+
+      # Without refresh, still returns cached user1
+      result2 = @controller.send(:organizations_current_user)
+      assert_equal user1, result2
+
+      # With refresh, returns new user2
+      result3 = @controller.send(:organizations_current_user, refresh: true)
+      assert_equal user2, result3
+    end
+
+    test "is_member_of? returns true when membership exists but association is stale" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Is Member Stale Org")
+
+      # Pre-load memberships as empty
+      user.memberships.to_a
+      assert user.memberships.loaded?
+
+      # Create membership externally
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      # Should return true via DB fallback
+      assert user.is_member_of?(org)
+    end
+
+    test "belongs_to_any_organization? returns true when membership exists but association is stale" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Belongs Any Stale Org")
+
+      # Pre-load memberships as empty
+      user.memberships.to_a
+      assert user.memberships.loaded?
+
+      # Create membership externally
+      Organizations::Membership.create!(user: user, organization: org, role: "member")
+
+      # Should return true via DB fallback
+      assert user.belongs_to_any_organization?
+    end
+
+    test "role_in returns correct role when membership exists but association is stale" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Role In Stale Org")
+
+      # Pre-load memberships as empty
+      user.memberships.to_a
+      assert user.memberships.loaded?
+
+      # Create membership externally with admin role
+      Organizations::Membership.create!(user: user, organization: org, role: "admin")
+
+      # Should return role via DB fallback
+      assert_equal :admin, user.role_in(org)
+    end
   end
 end

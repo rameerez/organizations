@@ -7,7 +7,8 @@ require "rubocop/rake_task"
 Rake::TestTask.new(:test) do |t|
   t.libs << "test"
   t.libs << "lib"
-  t.test_files = FileList["test/**/*_test.rb"]
+  # Exclude dummy app tests - they require Rails and are run separately
+  t.test_files = FileList["test/**/*_test.rb"].exclude("test/dummy/**/*")
 end
 
 RuboCop::RakeTask.new
