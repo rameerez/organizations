@@ -55,17 +55,26 @@ module Organizations
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers
 
-  # Models - autoload directly under Organizations namespace
-  # Model files define Organizations::Organization, etc.
-  autoload :Organization, "organizations/models/organization"
-  autoload :Membership, "organizations/models/membership"
-  autoload :Invitation, "organizations/models/invitation"
-
   # Models module kept for backwards compatibility
   module Models
     module Concerns
+      # HasOrganizations is always autoloaded from lib/ because:
+      # 1. It's extended onto ActiveRecord::Base at boot time via the engine initializer
+      # 2. It doesn't define any associations that point to reloadable classes
       autoload :HasOrganizations, "organizations/models/concerns/has_organizations"
     end
+  end
+
+  # In Rails apps, Organization/Membership/Invitation models are loaded from
+  # app/models via Zeitwerk (reload-safe). This is critical because these models
+  # define associations to other reloadable classes (like Pay::Customer), and we
+  # need the association reflections to point to current class objects after reload.
+  #
+  # In non-Rails environments (plain Ruby, tests without Rails), use lib-based autoloading.
+  unless defined?(Rails::Engine)
+    autoload :Organization, "organizations/models/organization"
+    autoload :Membership, "organizations/models/membership"
+    autoload :Invitation, "organizations/models/invitation"
   end
 
   class << self
