@@ -864,9 +864,11 @@ Organizations.configure do |config|
   # Base controller for authenticated routes (default: ::ApplicationController)
   config.parent_controller = "::ApplicationController"
 
-  # Base controller for public routes like invitation acceptance (default: ActionController::Base)
-  # Use this to avoid inheriting host app filters that enforce authentication
-  config.public_controller = "ActionController::Base"
+  # Base controller for public routes like invitation acceptance.
+  # Works with Devise out of the box - no configuration needed.
+  # Only override if using custom auth or needing specific inheritance.
+  # Default: ActionController::Base
+  # config.public_controller = "ActionController::Base"
 
   # === Handlers ===
   # Called when authorization fails

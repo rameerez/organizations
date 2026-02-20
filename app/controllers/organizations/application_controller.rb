@@ -47,19 +47,22 @@ module Organizations
     # === User Context ===
 
     # Returns the current user from the host application.
-    # Uses the configured method name (defaults to :current_user)
-    # NOTE: We call the PARENT class method to avoid infinite recursion
+    # Inherits from host's ApplicationController which provides Devise's current_user.
+    #
+    # Resolution order:
+    # 1. Custom method (if configured to something other than :current_user)
+    # 2. Parent class method (host's ApplicationController with Devise)
     def current_user
       return @_current_user if defined?(@_current_user)
 
       user_method = Organizations.configuration.current_user_method
 
-      # Avoid infinite recursion: if configured method is :current_user,
-      # call the parent implementation, not this method
-      @_current_user = if user_method == :current_user
-                         super rescue nil
-                       elsif user_method && respond_to?(user_method, true)
+      @_current_user = if user_method && user_method != :current_user && respond_to?(user_method, true)
+                         # Custom auth method (Rodauth, Sorcery, etc.)
                          send(user_method)
+                       else
+                         # Parent class (host's ApplicationController with Devise)
+                         super rescue nil
                        end
     end
 

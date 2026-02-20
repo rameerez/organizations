@@ -10,6 +10,8 @@ module Organizations
   # - Any other routes that should work for unauthenticated users
   #
   class PublicController < (Organizations.configuration.public_controller.constantize rescue ActionController::Base)
+    include CurrentUserResolution
+
     # Protect from forgery if available
     protect_from_forgery with: :exception if respond_to?(:protect_from_forgery)
 
@@ -24,7 +26,11 @@ module Organizations
     private
 
     # Returns the current user from the host application (if any).
-    # Uses the configured method name (defaults to :current_user)
+    #
+    # Resolution order:
+    # 1. Custom method (if configured to something other than :current_user)
+    # 2. Warden/Devise (works regardless of controller inheritance)
+    # 3. Parent class method (if available)
     #
     # NOTE: Nil values are intentionally not cached to handle auth-transition flows
     # where user state changes mid-request (e.g., sign_in during invitation acceptance).
@@ -32,13 +38,10 @@ module Organizations
       # Return cached value only if non-nil (avoid sticky nil memoization)
       return @_current_user if defined?(@_current_user) && !@_current_user.nil?
 
-      user_method = Organizations.configuration.current_user_method
-
-      @_current_user = if user_method && respond_to?(user_method, true) && user_method != :current_user
-                         send(user_method)
-                       elsif defined?(super)
-                         super rescue nil
-                       end
+      # Warden first (parent is ActionController::Base which has no current_user)
+      @_current_user = resolve_custom_auth_user ||
+                       warden_user ||
+                       (super rescue nil)
     end
 
     # Access main_app routes from engine views
