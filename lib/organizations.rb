@@ -71,6 +71,10 @@ module Organizations
   # need the association reflections to point to current class objects after reload.
   #
   # In non-Rails environments (plain Ruby, tests without Rails), use lib-based autoloading.
+  #
+  # NOTE: This guard is safe because line 4 above conditionally requires the engine
+  # only when Rails::Engine is already defined (i.e., Rails is loaded). So by the time
+  # we reach this point, Rails::Engine is defined iff we're in a Rails app.
   unless defined?(Rails::Engine)
     autoload :Organization, "organizations/models/organization"
     autoload :Membership, "organizations/models/membership"
