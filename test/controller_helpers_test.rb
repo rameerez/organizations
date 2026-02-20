@@ -1306,6 +1306,31 @@ module Organizations
       assert_nil @controller.session[:pending_invitation_token]
     end
 
+    test "accept_pending_organization_invitation! handles InvitationExpired race condition" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      # Simulate race condition: invitation expires after our check but before accept!
+      # We use a mock to intercept the accept! call on any invitation instance
+      original_accept = Organizations::Invitation.instance_method(:accept!)
+      Organizations::Invitation.define_method(:accept!) do |*args, **kwargs|
+        raise Organizations::InvitationExpired, "Expired during accept"
+      end
+
+      begin
+        result = @controller.accept_pending_organization_invitation!(user, token: invitation.token)
+
+        # Should return nil gracefully, not raise
+        assert_nil result
+        assert_nil @controller.session[:pending_invitation_token]
+      ensure
+        Organizations::Invitation.define_method(:accept!, original_accept)
+      end
+    end
+
     test "accept_pending_organization_invitation! returns nil for email mismatch and keeps token" do
       org, owner = create_org_with_owner!
       wrong_user = create_user!(email: "wrong@example.com")

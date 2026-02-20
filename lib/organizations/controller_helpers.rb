@@ -186,6 +186,10 @@ module Organizations
 
       begin
         membership = invitation.accept!(user, skip_email_validation: skip_email_validation)
+      rescue Organizations::InvitationExpired
+        # Race condition: invitation expired between our check and accept!
+        clear_pending_organization_invitation!
+        return nil
       rescue Organizations::InvitationAlreadyAccepted
         # Check if user is actually a member
         membership = Organizations::Membership.find_by(
