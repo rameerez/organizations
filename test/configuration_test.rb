@@ -618,5 +618,79 @@ module Organizations
       config = Configuration.new
       assert_equal true, config.validate!
     end
+
+    # ── Invitation Flow Redirects ─────────────────────────────────────
+
+    test "redirect_path_when_invitation_requires_authentication defaults to nil" do
+      assert_nil Organizations.configuration.redirect_path_when_invitation_requires_authentication
+    end
+
+    test "redirect_path_after_invitation_accepted defaults to nil" do
+      assert_nil Organizations.configuration.redirect_path_after_invitation_accepted
+    end
+
+    test "redirect_path_when_invitation_requires_authentication can be set to String" do
+      Organizations.configure do |config|
+        config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
+      end
+
+      assert_equal "/users/sign_up", Organizations.configuration.redirect_path_when_invitation_requires_authentication
+    end
+
+    test "redirect_path_after_invitation_accepted can be set to String" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = "/dashboard"
+      end
+
+      assert_equal "/dashboard", Organizations.configuration.redirect_path_after_invitation_accepted
+    end
+
+    test "redirect_path_when_invitation_requires_authentication can be set to Proc" do
+      the_proc = ->(inv, _user) { "/signup?invite=#{inv&.token}" }
+
+      Organizations.configure do |config|
+        config.redirect_path_when_invitation_requires_authentication = the_proc
+      end
+
+      assert_equal the_proc, Organizations.configuration.redirect_path_when_invitation_requires_authentication
+    end
+
+    test "redirect_path_after_invitation_accepted can be set to Proc" do
+      the_proc = ->(inv, _user) { "/org/#{inv&.organization_id}" }
+
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = the_proc
+      end
+
+      assert_equal the_proc, Organizations.configuration.redirect_path_after_invitation_accepted
+    end
+
+    test "validate! raises if redirect_path_when_invitation_requires_authentication is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.redirect_path_when_invitation_requires_authentication = 123
+        end
+      end
+    end
+
+    test "validate! raises if redirect_path_after_invitation_accepted is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.redirect_path_after_invitation_accepted = [:array]
+        end
+      end
+    end
+
+    test "reset_configuration! clears invitation redirect options" do
+      Organizations.configure do |config|
+        config.redirect_path_when_invitation_requires_authentication = "/custom"
+        config.redirect_path_after_invitation_accepted = "/custom2"
+      end
+
+      Organizations.reset_configuration!
+
+      assert_nil Organizations.configuration.redirect_path_when_invitation_requires_authentication
+      assert_nil Organizations.configuration.redirect_path_after_invitation_accepted
+    end
   end
 end

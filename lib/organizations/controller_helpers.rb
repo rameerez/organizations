@@ -26,6 +26,8 @@ module Organizations
         helper_method :current_organization
         helper_method :current_membership
         helper_method :organization_signed_in?
+        helper_method :pending_organization_invitation
+        helper_method :pending_organization_invitation?
       end
     end
 
@@ -84,6 +86,173 @@ module Organizations
     # @return [Boolean]
     def organization_signed_in?
       current_organization.present?
+    end
+
+    # === Pending Invitation Helpers ===
+
+    # Returns the pending invitation token from session
+    # @return [String, nil]
+    def pending_organization_invitation_token
+      session[pending_invitation_session_key]
+    end
+
+    # Returns the pending invitation if token is valid and invitation is usable
+    # Clears token if invitation is missing, expired, or already accepted
+    # @return [Organizations::Invitation, nil]
+    def pending_organization_invitation
+      token = pending_organization_invitation_token
+      return nil unless token
+
+      # Check memoized value (keyed by token to handle mid-request changes)
+      if defined?(@_pending_organization_invitation_token) && @_pending_organization_invitation_token == token
+        return @_pending_organization_invitation
+      end
+
+      invitation = Organizations::Invitation.find_by(token: token)
+
+      unless invitation
+        clear_pending_organization_invitation!
+        return nil
+      end
+
+      if invitation.expired? || invitation.accepted?
+        clear_pending_organization_invitation!
+        return nil
+      end
+
+      @_pending_organization_invitation_token = token
+      @_pending_organization_invitation = invitation
+    end
+
+    # Check if there's a valid pending invitation
+    # @return [Boolean]
+    def pending_organization_invitation?
+      pending_organization_invitation.present?
+    end
+
+    # Clear pending invitation token and memoized values
+    # @return [nil]
+    def clear_pending_organization_invitation!
+      session.delete(pending_invitation_session_key)
+      remove_instance_variable(:@_pending_organization_invitation) if defined?(@_pending_organization_invitation)
+      remove_instance_variable(:@_pending_organization_invitation_token) if defined?(@_pending_organization_invitation_token)
+      nil
+    end
+
+    # Accept a pending organization invitation for a user
+    # This is the canonical method for handling invitation acceptance after signup/signin.
+    #
+    # @param user [User] The user accepting the invitation
+    # @param token [String, nil] Explicit token (uses session token if not provided)
+    # @param switch [Boolean] Whether to switch to the organization after acceptance (default: true)
+    # @param skip_email_validation [Boolean] Skip email matching check (default: false)
+    # @return [Organizations::InvitationAcceptanceResult, nil] Result object or nil if not accepted
+    #
+    # @example Basic usage in after_sign_in_path_for
+    #   def after_sign_in_path_for(resource)
+    #     if (result = accept_pending_organization_invitation!(resource))
+    #       return redirect_path_after_invitation_accepted(result.invitation, user: resource)
+    #     end
+    #     super
+    #   end
+    #
+    def accept_pending_organization_invitation!(user, token: nil, switch: true, skip_email_validation: false)
+      return nil unless user
+
+      invitation_token = token.presence || pending_organization_invitation_token
+      return nil unless invitation_token
+
+      invitation = Organizations::Invitation.find_by(token: invitation_token)
+      unless invitation
+        clear_pending_organization_invitation!
+        return nil
+      end
+
+      if invitation.expired?
+        clear_pending_organization_invitation!
+        return nil
+      end
+
+      # Check email match (unless skipping validation)
+      unless skip_email_validation
+        if user.respond_to?(:email) && !invitation.for_email?(user.email)
+          # Email mismatch - keep token intact to allow switching accounts
+          return nil
+        end
+      end
+
+      status = :accepted
+      membership = nil
+
+      begin
+        membership = invitation.accept!(user, skip_email_validation: skip_email_validation)
+      rescue Organizations::InvitationAlreadyAccepted
+        # Check if user is actually a member
+        membership = Organizations::Membership.find_by(
+          user_id: user.id,
+          organization_id: invitation.organization_id
+        )
+        unless membership
+          clear_pending_organization_invitation!
+          return nil
+        end
+        status = :already_member
+      end
+
+      # Attempt to switch to the organization
+      switched = true
+      if switch
+        begin
+          switch_to_organization!(invitation.organization, user: user)
+        rescue Organizations::NotAMember
+          switched = false
+        end
+      else
+        switched = false
+      end
+
+      clear_pending_organization_invitation!
+
+      Organizations::InvitationAcceptanceResult.new(
+        status: status,
+        invitation: invitation,
+        membership: membership,
+        switched: switched
+      )
+    end
+
+    # Returns the path to redirect to when an invitation requires authentication
+    # Uses configured value or falls back to registration/root path
+    #
+    # @param invitation [Organizations::Invitation, nil] The invitation (optional)
+    # @param user [User, nil] The user (optional)
+    # @return [String] The redirect path
+    def redirect_path_when_invitation_requires_authentication(invitation = nil, user: nil)
+      config_value = Organizations.configuration.redirect_path_when_invitation_requires_authentication
+
+      resolve_invitation_redirect_path(
+        config_value,
+        invitation,
+        user,
+        default: -> { default_auth_required_redirect_path }
+      )
+    end
+
+    # Returns the path to redirect to after invitation is accepted
+    # Uses configured value or falls back to root path
+    #
+    # @param invitation [Organizations::Invitation] The invitation that was accepted
+    # @param user [User, nil] The user who accepted (optional)
+    # @return [String] The redirect path
+    def redirect_path_after_invitation_accepted(invitation, user: nil)
+      config_value = Organizations.configuration.redirect_path_after_invitation_accepted
+
+      resolve_invitation_redirect_path(
+        config_value,
+        invitation,
+        user,
+        default: -> { default_after_accept_redirect_path }
+      )
     end
 
     # === Switching ===
@@ -317,6 +486,67 @@ module Organizations
           redirect_to path, alert: "Please select or create an organization."
         end
         format.json { render json: { error: "Organization required" }, status: :forbidden }
+      end
+    end
+
+    # Session key for pending invitation token
+    # @return [Symbol]
+    def pending_invitation_session_key
+      :pending_invitation_token
+    end
+
+    # Resolve a redirect path from config value (nil, String, or Proc)
+    # @param config_value [nil, String, Proc] The configured value
+    # @param invitation [Organizations::Invitation, nil] Invitation for proc context
+    # @param user [User, nil] User for proc context
+    # @param default [Proc] Lambda returning default path
+    # @return [String]
+    def resolve_invitation_redirect_path(config_value, invitation, user, default:)
+      return default.call if config_value.nil?
+      return config_value if config_value.is_a?(String)
+
+      if config_value.is_a?(Proc)
+        begin
+          # Execute proc in controller context with appropriate arguments
+          case config_value.arity
+          when 0
+            instance_exec(&config_value)
+          when 1
+            instance_exec(invitation, &config_value)
+          else
+            instance_exec(invitation, user, &config_value)
+          end
+        rescue StandardError => e
+          # Log error and fall back to default
+          if defined?(Rails) && Rails.respond_to?(:logger)
+            Rails.logger.error "[Organizations] Redirect path proc failed: #{e.message}"
+          end
+          default.call
+        end
+      else
+        default.call
+      end
+    end
+
+    # Default path when invitation requires authentication
+    # @return [String]
+    def default_auth_required_redirect_path
+      if main_app.respond_to?(:new_user_registration_path)
+        main_app.new_user_registration_path
+      elsif main_app.respond_to?(:root_path)
+        main_app.root_path
+      else
+        "/"
+      end
+    end
+
+    # Default path after invitation acceptance
+    # @return [String]
+    def default_after_accept_redirect_path
+      if main_app.respond_to?(:root_path)
+        main_app.root_path
+      else
+        "/"
       end
     end
   end

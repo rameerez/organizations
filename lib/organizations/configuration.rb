@@ -71,6 +71,17 @@ module Organizations
     # Can be a String ("/dashboard") or Proc (->(org) { "/orgs/#{org.id}" })
     attr_accessor :after_organization_created_redirect_path
 
+    # === Invitation Flow Redirects ===
+    # Where to redirect unauthenticated users when they try to accept an invitation
+    # Can be nil (use default: new_user_registration_path or root_path),
+    # a String ("/users/sign_up"), or a Proc receiving (invitation, user)
+    attr_accessor :redirect_path_when_invitation_requires_authentication
+
+    # Where to redirect after invitation is accepted
+    # Can be nil (use default: root_path), a String ("/dashboard"),
+    # or a Proc receiving (invitation, user)
+    attr_accessor :redirect_path_after_invitation_accepted
+
     # === Organizations Controller ===
     # Additional params to permit when creating/updating organizations
     # @example [:support_email, :billing_email, :logo]
@@ -127,6 +138,10 @@ module Organizations
       # Redirects
       @redirect_path_when_no_organization = "/organizations/new"
       @after_organization_created_redirect_path = nil
+
+      # Invitation flow redirects
+      @redirect_path_when_invitation_requires_authentication = nil
+      @redirect_path_after_invitation_accepted = nil
 
       # Organizations controller
       @additional_organization_params = []
@@ -267,6 +282,7 @@ module Organizations
       validate_authentication_methods!
       validate_invitation_settings!
       validate_limits!
+      validate_invitation_redirects!
       true
     end
 
@@ -300,6 +316,24 @@ module Organizations
       if @max_organizations_per_user && @max_organizations_per_user < 1
         raise ConfigurationError, "max_organizations_per_user must be at least 1"
       end
+    end
+
+    def validate_invitation_redirects!
+      validate_redirect_option!(
+        @redirect_path_when_invitation_requires_authentication,
+        "redirect_path_when_invitation_requires_authentication"
+      )
+      validate_redirect_option!(
+        @redirect_path_after_invitation_accepted,
+        "redirect_path_after_invitation_accepted"
+      )
+    end
+
+    def validate_redirect_option!(value, option_name)
+      return if value.nil? || value.is_a?(String) || value.is_a?(Proc)
+
+      raise ConfigurationError,
+            "#{option_name} must be nil, a String, or a Proc"
     end
   end
 end
