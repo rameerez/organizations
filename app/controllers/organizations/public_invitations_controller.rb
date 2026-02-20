@@ -63,36 +63,41 @@ module Organizations
 
       begin
         membership = @invitation.accept!(current_user)
-
-        # Switch to the new organization if the controller supports it
-        # Pass explicit user to avoid stale memoization issues in auth-transition flows
-        if respond_to?(:switch_to_organization!, true)
-          switch_to_organization!(@invitation.organization, user: current_user)
-        elsif respond_to?(:current_organization=, true)
-          self.current_organization = @invitation.organization
-        end
-
-        respond_to do |format|
-          format.html { redirect_to after_accept_path, notice: "Welcome to #{@invitation.organization.name}!" }
-          format.json { render json: { membership: membership_json(membership) }, status: :created }
-        end
       rescue ::Organizations::InvitationExpired
         respond_to do |format|
           format.html { redirect_to main_app.root_path, alert: "This invitation has expired. Please request a new one." }
           format.json { render json: { error: "Invitation expired" }, status: :gone }
         end
+        return
       rescue ::Organizations::InvitationAlreadyAccepted
         respond_to do |format|
           format.html { redirect_to after_accept_path, notice: "You're already a member of #{@invitation.organization.name}." }
           format.json { render json: { message: "Already accepted" }, status: :ok }
         end
+        return
+      end
+
+      # Switch to the new organization if the controller supports it
+      # Pass explicit user to avoid stale memoization issues in auth-transition flows
+      begin
+        if respond_to?(:switch_to_organization!, true)
+          switch_to_organization!(@invitation.organization, user: current_user)
+        elsif respond_to?(:current_organization=, true)
+          self.current_organization = @invitation.organization
+        end
       rescue ::Organizations::NotAMember
-        # Membership was created but context switch failed (rare edge case)
-        # Redirect to root - user is a member, just needs to navigate to the org
+        # Rare edge case: membership was created but context switch failed
+        # User is a member, just needs to navigate to the org manually
         respond_to do |format|
           format.html { redirect_to after_accept_path, notice: "You've joined #{@invitation.organization.name}! Navigate to the organization to get started." }
-          format.json { render json: { error: "Joined but could not switch context automatically" }, status: :ok }
+          format.json { render json: { membership: membership_json(membership), warning: "Could not switch context automatically" }, status: :created }
         end
+        return
+      end
+
+      respond_to do |format|
+        format.html { redirect_to after_accept_path, notice: "Welcome to #{@invitation.organization.name}!" }
+        format.json { render json: { membership: membership_json(membership) }, status: :created }
       end
     end
 
