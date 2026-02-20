@@ -381,7 +381,8 @@ require_organization_owner!     # Same as require_organization_role!(:owner)
 require_organization_admin!     # Same as require_organization_role!(:admin)
 
 # Switching
-switch_to_organization!(org)       # Change active org in session
+switch_to_organization!(org)              # Change active org in session
+switch_to_organization!(org, user: user)  # Explicit user (for auth-transition flows)
 ```
 
 ### Protecting resources
@@ -631,20 +632,31 @@ The gem handles **both existing users and new signups** with a single invitation
 2. User clicks link → Sees invitation details + "Sign up to accept" button
 3. User registers → Token stored in session, your app calls `invitation.accept!(user)` post-signup
 
-The gem stores the invitation token in `session[:pending_invitation_token]` when an unauthenticated user tries to accept. In your registration callback, check for this token and accept the invitation:
+The gem stores the invitation token in `session[:pending_invitation_token]` when an unauthenticated user tries to accept. In your registration controller, check for this token and accept the invitation:
 
 ```ruby
-# In your User model or registration controller
-after_create :accept_pending_invitation
+# In your Devise RegistrationsController (recommended approach)
+def after_sign_up_path_for(resource)
+  accept_pending_invitation_for(resource)
+  super
+end
 
-def accept_pending_invitation
+private
+
+def accept_pending_invitation_for(user)
   token = session.delete(:pending_invitation_token)
   return unless token
 
   invitation = Organizations::Invitation.find_by(token: token)
-  invitation&.accept!(self, skip_email_validation: true)
+  return unless invitation
+
+  invitation.accept!(user, skip_email_validation: true)
+  # Pass explicit user to avoid stale memoization in auth-transition flows
+  switch_to_organization!(invitation.organization, user: user)
 end
 ```
+
+> **Note:** When accepting invitations in custom auth flows (Devise overrides, `bypass_sign_in`, etc.), always pass the explicit `user:` argument to `switch_to_organization!`. This avoids stale memoization issues that can occur when authentication state changes mid-request.
 
 ### Invitation emails
 
