@@ -1,3 +1,7 @@
+## [0.2.0] - 2026-02-20
+
+- Namespaced all tables with `organizations_` prefix to prevent collisions with host apps
+
 ## [0.1.1] - 2026-02-19
 
 - Removed `slugifiable` dependency (deferred to host app)
