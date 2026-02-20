@@ -18,7 +18,7 @@ module Organizations
   #   invitation.expired?   # => false
   #
   class Invitation < ActiveRecord::Base
-    self.table_name = "organization_invitations"
+    self.table_name = "organizations_invitations"
 
     # === Associations ===
 

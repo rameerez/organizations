@@ -25,4 +25,7 @@ group :development, :test do
   gem "sqlite3", ">= 2.1"
   gem "ostruct"
   gem "simplecov", require: false
+  gem "activejob"
+  gem "actionmailer"
+  gem "globalid"
 end

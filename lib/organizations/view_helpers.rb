@@ -258,8 +258,8 @@ module Organizations
       memberships = user.memberships
                         .includes(:organization)
                         .joins(:organization)
-                        .select("memberships.id, memberships.organization_id, memberships.role, " \
-                                "organizations.id AS org_id, organizations.name AS org_name")
+                        .select("organizations_memberships.id, organizations_memberships.organization_id, organizations_memberships.role, " \
+                                "organizations_organizations.id AS org_id, organizations_organizations.name AS org_name")
 
       current_data = nil
       others = []

@@ -42,25 +42,25 @@ ActiveRecord::Schema.define do
   end
   add_index :users, :email, unique: true
 
-  create_table :organizations, force: :cascade do |t|
+  create_table :organizations_organizations, force: :cascade do |t|
     t.string :name, null: false
     t.text :metadata, default: "{}"
     t.timestamps
   end
 
-  create_table :memberships, force: :cascade do |t|
+  create_table :organizations_memberships, force: :cascade do |t|
     t.references :user, null: false, foreign_key: true
-    t.references :organization, null: false, foreign_key: true
+    t.references :organization, null: false, foreign_key: { to_table: :organizations_organizations }
     t.references :invited_by, null: true, foreign_key: { to_table: :users }
     t.string :role, null: false, default: "member"
     t.text :metadata, default: "{}"
     t.timestamps
   end
-  add_index :memberships, [:user_id, :organization_id], unique: true
-  add_index :memberships, :role
+  add_index :organizations_memberships, [:user_id, :organization_id], unique: true
+  add_index :organizations_memberships, :role
 
-  create_table :organization_invitations, force: :cascade do |t|
-    t.references :organization, null: false, foreign_key: true
+  create_table :organizations_invitations, force: :cascade do |t|
+    t.references :organization, null: false, foreign_key: { to_table: :organizations_organizations }
     t.references :invited_by, null: true, foreign_key: { to_table: :users }
     t.string :email, null: false
     t.string :token, null: false
@@ -69,9 +69,9 @@ ActiveRecord::Schema.define do
     t.datetime :expires_at
     t.timestamps
   end
-  add_index :organization_invitations, :token, unique: true
-  add_index :organization_invitations, :email
-  add_index :organization_invitations, [:organization_id, :email]
+  add_index :organizations_invitations, :token, unique: true
+  add_index :organizations_invitations, :email
+  add_index :organizations_invitations, [:organization_id, :email]
 end
 
 # Test User model with has_organizations

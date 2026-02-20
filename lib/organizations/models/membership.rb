@@ -16,7 +16,7 @@ module Organizations
   #   membership.demote_to!(:member)
   #
   class Membership < ActiveRecord::Base
-    self.table_name = "memberships"
+    self.table_name = "organizations_memberships"
 
     # Error raised when trying to demote below current role
     class CannotDemoteOwner < Organizations::Error; end
