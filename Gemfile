@@ -25,7 +25,8 @@ group :development, :test do
   gem "sqlite3", ">= 2.1"
   gem "ostruct"
   gem "simplecov", require: false
-  gem "activejob"
-  gem "actionmailer"
-  gem "globalid"
+  # Required explicitly for tests since we don't load the full Rails stack
+  gem "activejob", ">= 7.1.0", "< 9.0"
+  gem "actionmailer", ">= 7.1.0", "< 9.0"
+  gem "globalid" # ActiveJob dependency for GlobalID::Identification
 end

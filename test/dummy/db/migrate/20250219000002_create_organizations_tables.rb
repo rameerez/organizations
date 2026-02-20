@@ -28,13 +28,8 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
     add_index :organizations_memberships, :role
 
     # Enforce "at most one owner membership per organization" at DB level where possible.
-    if adapter.include?("postgresql")
-      execute <<-SQL
-        CREATE UNIQUE INDEX index_organizations_memberships_single_owner
-        ON organizations_memberships (organization_id)
-        WHERE role = 'owner'
-      SQL
-    elsif adapter.include?("sqlite")
+    # Both PostgreSQL and SQLite support partial indexes with identical syntax.
+    if adapter.include?("postgresql") || adapter.include?("sqlite")
       execute <<-SQL
         CREATE UNIQUE INDEX index_organizations_memberships_single_owner
         ON organizations_memberships (organization_id)
@@ -60,15 +55,8 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
     add_index :organizations_invitations, :email
 
     # Unique partial index: only one pending (non-accepted) invitation per email per org
-    # Both PostgreSQL and SQLite support partial indexes
-    if adapter.include?("postgresql")
-      execute <<-SQL
-        CREATE UNIQUE INDEX index_organizations_invitations_pending_unique
-        ON organizations_invitations (organization_id, LOWER(email))
-        WHERE accepted_at IS NULL
-      SQL
-    elsif adapter.include?("sqlite")
-      # SQLite supports partial indexes since 3.8.0
+    # Both PostgreSQL and SQLite (3.8.0+) support partial indexes with identical syntax.
+    if adapter.include?("postgresql") || adapter.include?("sqlite")
       execute <<-SQL
         CREATE UNIQUE INDEX index_organizations_invitations_pending_unique
         ON organizations_invitations (organization_id, LOWER(email))
