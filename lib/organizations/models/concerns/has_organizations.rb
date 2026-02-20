@@ -369,11 +369,18 @@ module Organizations
 
           # Creates a new organization with this user as owner
           # Sets the new organization as the current organization
-          # @param name_or_options [String, Hash] Organization name or options hash
+          # @param name_or_attributes [String, Hash] Organization name or attributes hash
           # @return [Organizations::Organization]
           # @raise [OrganizationLimitReached] if user has reached their organization limit
-          def create_organization!(name_or_options)
-            name = name_or_options.is_a?(Hash) ? name_or_options[:name] : name_or_options
+          #
+          # @example With just a name
+          #   user.create_organization!("Acme Corp")
+          #
+          # @example With additional attributes
+          #   user.create_organization!(name: "Acme Corp", support_email: "support@acme.com")
+          #
+          def create_organization!(name_or_attributes)
+            attributes = name_or_attributes.is_a?(Hash) ? name_or_attributes : { name: name_or_attributes }
 
             # Check max organizations limit
             settings = self.class.organization_settings
@@ -384,7 +391,7 @@ module Organizations
 
             org = nil
             ActiveRecord::Base.transaction do
-              org = Organizations::Organization.create!(name: name)
+              org = Organizations::Organization.create!(attributes)
 
               Organizations::Membership.create!(
                 user: self,
