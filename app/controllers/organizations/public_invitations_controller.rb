@@ -87,10 +87,11 @@ module Organizations
           format.json { render json: { message: "Already accepted" }, status: :ok }
         end
       rescue ::Organizations::NotAMember
-        # Membership was created but context switch failed (rare race condition)
+        # Membership was created but context switch failed (rare edge case)
+        # Redirect to root - user is a member, just needs to navigate to the org
         respond_to do |format|
-          format.html { redirect_to after_accept_path, alert: "Joined #{@invitation.organization.name} but could not switch context. Please try again." }
-          format.json { render json: { error: "Could not switch organization context" }, status: :unprocessable_entity }
+          format.html { redirect_to after_accept_path, notice: "You've joined #{@invitation.organization.name}! Navigate to the organization to get started." }
+          format.json { render json: { error: "Joined but could not switch context automatically" }, status: :ok }
         end
       end
     end

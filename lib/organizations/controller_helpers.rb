@@ -122,9 +122,12 @@ module Organizations
       end
 
       self.current_organization = org
-      # current_organization= updates the memoized user's _current_organization_id,
-      # but when an explicit user: is passed (auth-transition flows), acting_user
-      # may differ from the memoized user. Ensure acting_user is also updated.
+      # current_organization= calls organizations_current_user (without refresh) and
+      # updates that user's _current_organization_id. But in auth-transition flows:
+      # 1. The memoized user may still be nil (sign-in just happened)
+      # 2. An explicit user: was passed that differs from the memoized user
+      # In either case, acting_user won't be updated by current_organization=.
+      # This explicit assignment ensures acting_user always gets the correct org ID.
       acting_user._current_organization_id = org.id if acting_user.respond_to?(:_current_organization_id=)
       mark_membership_as_recent!(acting_user, org)
     end
