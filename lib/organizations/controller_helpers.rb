@@ -206,6 +206,10 @@ module Organizations
           organization_id: invitation.organization_id
         )
         unless membership
+          # Data integrity anomaly: invitation marked accepted but membership missing
+          if defined?(Rails) && Rails.respond_to?(:logger)
+            Rails.logger.warn "[Organizations] InvitationAlreadyAccepted raised but no membership found for user=#{user.id} org=#{invitation.organization_id}"
+          end
           clear_pending_organization_invitation! unless using_different_explicit_token
           return nil
         end
@@ -244,7 +248,7 @@ module Organizations
     def redirect_path_when_invitation_requires_authentication(invitation = nil, user: nil)
       config_value = Organizations.configuration.redirect_path_when_invitation_requires_authentication
 
-      resolve_invitation_redirect_path(
+      resolve_controller_redirect_path(
         config_value,
         invitation,
         user,
@@ -261,7 +265,7 @@ module Organizations
     def redirect_path_after_invitation_accepted(invitation, user: nil)
       config_value = Organizations.configuration.redirect_path_after_invitation_accepted
 
-      resolve_invitation_redirect_path(
+      resolve_controller_redirect_path(
         config_value,
         invitation,
         user,
@@ -506,41 +510,39 @@ module Organizations
     # Session key for pending invitation token
     # @return [Symbol]
     def pending_invitation_session_key
-      :pending_invitation_token
+      :organizations_pending_invitation_token
     end
 
     # Resolve a redirect path from config value (nil, String, or Proc)
     # @param config_value [nil, String, Proc] The configured value
-    # @param invitation [Organizations::Invitation, nil] Invitation for proc context
-    # @param user [User, nil] User for proc context
+    # @param args [Array] Optional proc arguments
     # @param default [Proc] Lambda returning default path
     # @return [String]
-    def resolve_invitation_redirect_path(config_value, invitation, user, default:)
+    def resolve_controller_redirect_path(config_value, *args, default:)
       return default.call if config_value.nil?
       return config_value if config_value.is_a?(String)
+      return default.call unless config_value.is_a?(Proc)
 
-      if config_value.is_a?(Proc)
-        begin
-          # Execute proc in controller context with appropriate arguments
-          case config_value.arity
-          when 0
-            instance_exec(&config_value)
-          when 1
-            instance_exec(invitation, &config_value)
-          else
-            instance_exec(invitation, user, &config_value)
-          end
-        rescue StandardError => e
-          # Re-raise in dev/test to surface misconfigurations; fall back in production
-          if defined?(Rails) && Rails.respond_to?(:env) && (Rails.env.development? || Rails.env.test?)
-            raise
-          end
-          if defined?(Rails) && Rails.respond_to?(:logger)
-            Rails.logger.error "[Organizations] Redirect path proc failed: #{e.message}"
-          end
-          default.call
+      begin
+        case config_value.arity
+        when 0
+          instance_exec(&config_value)
+        when 1
+          instance_exec(args[0], &config_value)
+        when 2
+          instance_exec(args[0], args[1], &config_value)
+        else
+          exec_args = config_value.arity.negative? ? args : args.first(config_value.arity)
+          instance_exec(*exec_args, &config_value)
         end
-      else
+      rescue StandardError => e
+        # Re-raise in dev/test to surface misconfigurations; fall back in production
+        if defined?(Rails) && Rails.respond_to?(:env) && (Rails.env.development? || Rails.env.test?)
+          raise
+        end
+        if defined?(Rails) && Rails.respond_to?(:logger)
+          Rails.logger.error "[Organizations] Redirect path proc failed: #{e.message}"
+        end
         default.call
       end
     end

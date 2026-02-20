@@ -648,7 +648,7 @@ The gem handles **both existing users and new signups** with a single invitation
 2. User clicks link → Sees invitation details + "Sign up to accept" button
 3. User registers → Token stored in session, your app calls `invitation.accept!(user)` post-signup
 
-The gem stores the invitation token in `session[:pending_invitation_token]` when an unauthenticated user tries to accept. Use the built-in helper to accept the invitation in your auth callbacks:
+The gem stores the invitation token in `session[:organizations_pending_invitation_token]` when an unauthenticated user tries to accept. Use the built-in helper to accept the invitation in your auth callbacks:
 
 ```ruby
 # In your ApplicationController (works with Devise or any auth system)

@@ -44,9 +44,5 @@ module Organizations
     def switched?
       !!@switched
     end
-
-    private
-
-    attr_reader :switched
   end
 end

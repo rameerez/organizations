@@ -1167,7 +1167,7 @@ module Organizations
     # =====================
 
     test "pending_organization_invitation_token returns session token" do
-      @controller.session[:pending_invitation_token] = "test_token_123"
+      @controller.session[:organizations_pending_invitation_token] = "test_token_123"
 
       assert_equal "test_token_123", @controller.pending_organization_invitation_token
     end
@@ -1179,7 +1179,7 @@ module Organizations
     test "pending_organization_invitation returns invitation when token valid" do
       org, owner = create_org_with_owner!
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
 
       result = @controller.pending_organization_invitation
 
@@ -1187,24 +1187,24 @@ module Organizations
     end
 
     test "pending_organization_invitation returns nil and clears token when invitation missing" do
-      @controller.session[:pending_invitation_token] = "nonexistent_token"
+      @controller.session[:organizations_pending_invitation_token] = "nonexistent_token"
 
       result = @controller.pending_organization_invitation
 
       assert_nil result
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
     end
 
     test "pending_organization_invitation returns nil and clears token when invitation expired" do
       org, owner = create_org_with_owner!
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
       invitation.update!(expires_at: 1.day.ago)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
 
       result = @controller.pending_organization_invitation
 
       assert_nil result
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
     end
 
     test "pending_organization_invitation returns nil and clears token when invitation accepted" do
@@ -1212,18 +1212,18 @@ module Organizations
       user = create_user!(email: "test@example.com")
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
       invitation.accept!(user)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
 
       result = @controller.pending_organization_invitation
 
       assert_nil result
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
     end
 
     test "pending_organization_invitation? returns true when valid invitation exists" do
       org, owner = create_org_with_owner!
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
 
       assert @controller.pending_organization_invitation?
     end
@@ -1235,14 +1235,14 @@ module Organizations
     test "clear_pending_organization_invitation! clears token and memo" do
       org, owner = create_org_with_owner!
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
 
       # Cache the invitation first
       @controller.pending_organization_invitation
 
       @controller.clear_pending_organization_invitation!
 
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
       assert_nil @controller.pending_organization_invitation_token
     end
 
@@ -1271,7 +1271,7 @@ module Organizations
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
 
       # Set a different (invalid) token in session
-      @controller.session[:pending_invitation_token] = "wrong_token"
+      @controller.session[:organizations_pending_invitation_token] = "wrong_token"
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user, token: invitation.token)
@@ -1283,13 +1283,13 @@ module Organizations
 
     test "accept_pending_organization_invitation! returns nil for missing invitation" do
       user = create_user!
-      @controller.session[:pending_invitation_token] = "nonexistent"
+      @controller.session[:organizations_pending_invitation_token] = "nonexistent"
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user)
 
       assert_nil result
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
     end
 
     test "accept_pending_organization_invitation! returns nil for expired invitation" do
@@ -1297,20 +1297,20 @@ module Organizations
       user = create_user!(email: "test@example.com")
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
       invitation.update!(expires_at: 1.day.ago)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user)
 
       assert_nil result
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
     end
 
     test "accept_pending_organization_invitation! handles InvitationExpired race condition" do
       org, owner = create_org_with_owner!
       user = create_user!(email: "test@example.com")
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
       @controller.test_current_user = user
 
       # Simulate race condition: invitation expires after our check but before accept!
@@ -1325,7 +1325,7 @@ module Organizations
 
         # Should return nil gracefully, not raise
         assert_nil result
-        assert_nil @controller.session[:pending_invitation_token]
+        assert_nil @controller.session[:organizations_pending_invitation_token]
       ensure
         Organizations::Invitation.define_method(:accept!, original_accept)
       end
@@ -1335,21 +1335,21 @@ module Organizations
       org, owner = create_org_with_owner!
       wrong_user = create_user!(email: "wrong@example.com")
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
       @controller.test_current_user = wrong_user
 
       result = @controller.accept_pending_organization_invitation!(wrong_user)
 
       assert_nil result
       # Token should be preserved so user can switch accounts
-      assert_equal invitation.token, @controller.session[:pending_invitation_token]
+      assert_equal invitation.token, @controller.session[:organizations_pending_invitation_token]
     end
 
     test "accept_pending_organization_invitation! with different explicit token preserves session token" do
       org, owner = create_org_with_owner!
       user = create_user!(email: "test@example.com")
       session_invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = session_invitation.token
+      @controller.session[:organizations_pending_invitation_token] = session_invitation.token
       @controller.test_current_user = user
 
       # Pass a different explicit token that doesn't exist
@@ -1357,14 +1357,14 @@ module Organizations
 
       assert_nil result
       # Session token should be preserved (not cleared by failing explicit token)
-      assert_equal session_invitation.token, @controller.session[:pending_invitation_token]
+      assert_equal session_invitation.token, @controller.session[:organizations_pending_invitation_token]
     end
 
     test "accept_pending_organization_invitation! returns result with accepted status" do
       org, owner = create_org_with_owner!
       user = create_user!(email: "test@example.com")
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user)
@@ -1376,7 +1376,7 @@ module Organizations
       assert_equal invitation, result.invitation
       assert_not_nil result.membership
       assert_equal org.id, result.membership.organization_id
-      assert_nil @controller.session[:pending_invitation_token]
+      assert_nil @controller.session[:organizations_pending_invitation_token]
     end
 
     test "accept_pending_organization_invitation! returns accepted status when user already a member" do
@@ -1399,7 +1399,7 @@ module Organizations
         invited_by: owner
       )
 
-      @controller.session[:pending_invitation_token] = second_invitation.token
+      @controller.session[:organizations_pending_invitation_token] = second_invitation.token
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user)
@@ -1414,7 +1414,7 @@ module Organizations
       org, owner = create_org_with_owner!
       user = create_user!(email: "test@example.com")
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user, switch: false)
@@ -1430,7 +1430,7 @@ module Organizations
       org, owner = create_org_with_owner!
       user = create_user!(email: "different@example.com")
       invitation = org.send_invite_to!("invited@example.com", invited_by: owner)
-      @controller.session[:pending_invitation_token] = invitation.token
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
       @controller.test_current_user = user
 
       result = @controller.accept_pending_organization_invitation!(user, skip_email_validation: true)
