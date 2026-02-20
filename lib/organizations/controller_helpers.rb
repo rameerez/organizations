@@ -46,6 +46,7 @@ module Organizations
       org_id = session[session_key]
 
       # Find organization AND verify membership
+      # Use is_member_of? which has DB fallback for stale loaded associations
       org = org_id ? Organizations::Organization.find_by(id: org_id) : nil
 
       if org && user.is_member_of?(org)
@@ -107,20 +108,28 @@ module Organizations
 
     # Switches to a different organization
     # @param org [Organizations::Organization]
+    # @param user [User, nil] Explicit user to switch for (useful in auth-transition flows)
     # @raise [Organizations::NotAMember] if user is not a member
-    def switch_to_organization!(org)
-      user = organizations_current_user
+    def switch_to_organization!(org, user: nil)
+      acting_user = user || organizations_current_user(refresh: true)
 
-      unless user&.is_member_of?(org)
+      unless membership_exists_for?(acting_user, org)
         raise Organizations::NotAMember.new(
           "You are not a member of this organization",
           organization: org,
-          user: user
+          user: acting_user
         )
       end
 
       self.current_organization = org
-      mark_membership_as_recent!(user, org)
+      # current_organization= calls organizations_current_user (without refresh) and
+      # updates that user's _current_organization_id. But in auth-transition flows:
+      # 1. The memoized user may still be nil (sign-in just happened)
+      # 2. An explicit user: was passed that differs from the memoized user
+      # In either case, acting_user won't be updated by current_organization=.
+      # This explicit assignment ensures acting_user always gets the correct org ID.
+      acting_user._current_organization_id = org.id if acting_user.respond_to?(:_current_organization_id=)
+      mark_membership_as_recent!(acting_user, org)
     end
 
     # === Permission Guards ===
@@ -186,8 +195,20 @@ module Organizations
 
     # Get the current user using the configured method
     # NOTE: This method safely calls the host app's current_user method
-    def organizations_current_user
-      return @_organizations_current_user if defined?(@_organizations_current_user)
+    # @param refresh [Boolean] Force re-resolution (clears cached value)
+    # @return [User, nil]
+    #
+    # Nil values are intentionally not cached to handle auth-transition flows where
+    # user state changes mid-request (e.g., sign_in during invitation acceptance).
+    # This is safe because Devise memoizes current_user at the Warden level.
+    def organizations_current_user(refresh: false)
+      # Clear cache if refresh requested
+      remove_instance_variable(:@_organizations_current_user) if refresh && defined?(@_organizations_current_user)
+
+      # Return cached value only if non-nil (avoid sticky nil memoization)
+      if defined?(@_organizations_current_user) && !@_organizations_current_user.nil?
+        return @_organizations_current_user
+      end
 
       method_name = Organizations.configuration.current_user_method
 
@@ -216,6 +237,16 @@ module Organizations
 
     def mark_membership_as_recent!(user, org)
       user.memberships.where(organization_id: org.id).update_all(updated_at: Time.current)
+    end
+
+    # DB-authoritative membership check to avoid stale loaded association issues
+    # @param user [User, nil]
+    # @param org [Organization, nil]
+    # @return [Boolean]
+    def membership_exists_for?(user, org)
+      return false unless user && org
+
+      Organizations::Membership.exists?(user_id: user.id, organization_id: org.id)
     end
 
     # Handle unauthorized access
