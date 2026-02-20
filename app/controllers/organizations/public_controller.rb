@@ -25,8 +25,12 @@ module Organizations
 
     # Returns the current user from the host application (if any).
     # Uses the configured method name (defaults to :current_user)
+    #
+    # NOTE: Nil values are intentionally not cached to handle auth-transition flows
+    # where user state changes mid-request (e.g., sign_in during invitation acceptance).
     def current_user
-      return @_current_user if defined?(@_current_user)
+      # Return cached value only if non-nil (avoid sticky nil memoization)
+      return @_current_user if defined?(@_current_user) && !@_current_user.nil?
 
       user_method = Organizations.configuration.current_user_method
 
