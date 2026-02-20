@@ -531,7 +531,10 @@ module Organizations
             instance_exec(invitation, user, &config_value)
           end
         rescue StandardError => e
-          # Log error and fall back to default
+          # Re-raise in dev/test to surface misconfigurations; fall back in production
+          if defined?(Rails) && Rails.respond_to?(:env) && (Rails.env.development? || Rails.env.test?)
+            raise
+          end
           if defined?(Rails) && Rails.respond_to?(:logger)
             Rails.logger.error "[Organizations] Redirect path proc failed: #{e.message}"
           end

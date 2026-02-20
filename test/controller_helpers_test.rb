@@ -1520,13 +1520,15 @@ module Organizations
 
     test "redirect_path_after_invitation_accepted falls back on proc error" do
       Organizations.configure do |config|
-        config.redirect_path_after_invitation_accepted = ->(_inv, _user) { raise "boom" }
+        config.redirect_path_after_invitation_accepted = ->(_inv, _user) { raise RuntimeError, "boom" }
       end
 
       org, owner = create_org_with_owner!
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
 
-      # Should not raise, should fall back to default
+      # In production (or when Rails.env is unavailable), proc errors are logged and fallback is used
+      # In real Rails dev/test environments, proc errors are re-raised to surface misconfigurations
+      # This gem test suite doesn't have Rails.env, so we get fallback behavior
       result = @controller.redirect_path_after_invitation_accepted(invitation)
 
       assert_equal "/", result

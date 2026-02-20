@@ -13,13 +13,13 @@ module Organizations
   class InvitationAcceptanceResult
     STATUSES = %i[accepted already_member].freeze
 
-    attr_reader :status, :invitation, :membership, :switched
+    attr_reader :status, :invitation, :membership
 
     # @param status [Symbol] :accepted or :already_member
     # @param invitation [Organizations::Invitation] The invitation that was accepted
     # @param membership [Organizations::Membership] The resulting membership
-    # @param switched [Boolean] Whether organization context was switched (default: true)
-    def initialize(status:, invitation:, membership:, switched: true)
+    # @param switched [Boolean] Whether organization context was switched (default: false)
+    def initialize(status:, invitation:, membership:, switched: false)
       unless STATUSES.include?(status)
         raise ArgumentError, "Invalid status: #{status.inspect}. Must be one of: #{STATUSES.join(', ')}"
       end
@@ -42,7 +42,11 @@ module Organizations
 
     # @return [Boolean] true if organization context was switched
     def switched?
-      !!switched
+      !!@switched
     end
+
+    private
+
+    attr_reader :switched
   end
 end

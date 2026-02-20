@@ -23,17 +23,17 @@ module Organizations
       assert_equal :accepted, result.status
       assert_equal @invitation, result.invitation
       assert_equal @membership, result.membership
-      assert_equal true, result.switched
+      assert result.switched?
     end
 
-    test "switched defaults to true" do
+    test "switched defaults to false" do
       result = InvitationAcceptanceResult.new(
         status: :accepted,
         invitation: @invitation,
         membership: @membership
       )
 
-      assert_equal true, result.switched
+      refute result.switched?
     end
 
     test "raises ArgumentError for invalid status" do
