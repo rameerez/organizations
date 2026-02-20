@@ -6,17 +6,15 @@ module Organizations
   class Engine < ::Rails::Engine
     isolate_namespace Organizations
 
-    # Load models when ActiveRecord is ready
-    # Note: We use explicit requires instead of autoload_paths because the models
-    # are namespaced under Organizations:: but live in lib/organizations/models/
+    # Make has_organizations available on all ActiveRecord models.
+    #
+    # NOTE: We intentionally avoid explicit `require` calls for models here.
+    # In Rails apps, Organizations models are loaded through Zeitwerk from app/models,
+    # which keeps them reload-safe in development. Explicit requires would create
+    # non-reloadable class references that cause STI errors with gems like Pay
+    # after code reloads.
     initializer "organizations.active_record" do
       ActiveSupport.on_load(:active_record) do
-        require "organizations/models/organization"
-        require "organizations/models/membership"
-        require "organizations/models/invitation"
-        require "organizations/models/concerns/has_organizations"
-
-        # Make has_organizations available on all AR models
         extend Organizations::Models::Concerns::HasOrganizations::ClassMethods
       end
     end

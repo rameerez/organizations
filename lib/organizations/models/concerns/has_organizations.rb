@@ -204,9 +204,12 @@ module Organizations
 
           # Check if user belongs to any organization
           # Uses efficient EXISTS query
+          # Falls back to DB query when loaded association is empty to avoid stale false negatives
           # @return [Boolean]
           def belongs_to_any_organization?
-            memberships.loaded? ? memberships.any? : memberships.exists?
+            return true if memberships.loaded? && memberships.any?
+
+            memberships.exists?
           end
 
           # Check if user has pending invitations
@@ -271,31 +274,35 @@ module Organizations
           # === Role Checks (specific organization) ===
 
           # Get user's role in a specific organization
-          # Smart about reusing loaded associations
+          # Smart about reusing loaded associations, with DB fallback for stale caches
           # @param org [Organization] The organization
           # @return [Symbol, nil]
           def role_in(org)
             return nil unless org
 
+            # Try org's loaded memberships first
             if org.respond_to?(:association) && org.association(:memberships).loaded?
               membership = org.memberships.find { |m| m.user_id == id }
-              return membership&.role&.to_sym
+              return membership.role.to_sym if membership
             end
 
-            # Try to use already-loaded association first
+            # Try user's loaded memberships
             if memberships.loaded?
               membership = memberships.find { |m| m.organization_id == org.id }
-              return membership&.role&.to_sym
+              return membership.role.to_sym if membership
             end
 
+            # Try loaded organizations' memberships
             if organizations.loaded?
               loaded_org = organizations.find { |candidate| candidate.id == org.id }
               if loaded_org && loaded_org.respond_to?(:association) && loaded_org.association(:memberships).loaded?
                 membership = loaded_org.memberships.find { |m| m.user_id == id }
-                return membership&.role&.to_sym
+                return membership.role.to_sym if membership
               end
             end
 
+            # DB fallback - loaded associations may be stale if membership was created
+            # via another association path (e.g., organization.memberships.create!)
             memberships.find_by(organization_id: org.id)&.role&.to_sym
           end
 
@@ -318,16 +325,15 @@ module Organizations
 
           # Check if user is a member of specific organization
           # Uses efficient EXISTS query
+          # Falls back to DB query when loaded association misses to avoid stale false negatives
+          # (e.g., membership created via organization.memberships.create! bypasses user cache)
           # @param org [Organization] The organization
           # @return [Boolean]
           def is_member_of?(org)
             return false unless org
+            return true if memberships.loaded? && memberships.any? { |m| m.organization_id == org.id }
 
-            if memberships.loaded?
-              memberships.any? { |membership| membership.organization_id == org.id }
-            else
-              memberships.exists?(organization_id: org.id)
-            end
+            memberships.exists?(organization_id: org.id)
           end
 
           # Check if user is viewer (or higher) of specific organization
