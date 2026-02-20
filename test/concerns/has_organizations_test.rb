@@ -581,6 +581,19 @@ module Organizations
       assert org.persisted?
     end
 
+    test "create_organization! with additional attributes hash" do
+      user = create_user!
+      # Passing additional attributes beyond just name should work
+      org = user.create_organization!(name: "Extended Org", metadata: { "custom" => "value" })
+
+      assert_equal "Extended Org", org.name
+      assert org.persisted?
+      assert_equal :owner, user.role_in(org)
+      # Metadata column is text in test schema, verify the value was passed through
+      assert_includes org.metadata, "custom"
+      assert_includes org.metadata, "value"
+    end
+
     test "create_organization! sets current_organization context" do
       user = create_user!
       org = user.create_organization!("Context Org")
