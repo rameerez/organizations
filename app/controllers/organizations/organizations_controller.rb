@@ -40,7 +40,7 @@ module Organizations
     # Create a new organization
     def create
       begin
-        @organization = current_user.create_organization!(organization_params[:name])
+        @organization = current_user.create_organization!(organization_params.to_h)
 
         # Switch to the new organization
         switch_to_organization!(@organization)
