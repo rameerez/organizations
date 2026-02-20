@@ -159,17 +159,26 @@ module Organizations
     def accept_pending_organization_invitation!(user, token: nil, switch: true, skip_email_validation: false)
       return nil unless user
 
-      invitation_token = token.presence || pending_organization_invitation_token
+      # Track whether we're using an explicit token that differs from session
+      # Only skip session clearing if explicit token fails and differs from session
+      explicit_token = token.presence
+      session_token = pending_organization_invitation_token
+      invitation_token = explicit_token || session_token
       return nil unless invitation_token
+
+      # When explicit token differs from session, don't clear session on failure
+      using_different_explicit_token = explicit_token && explicit_token != session_token
 
       invitation = Organizations::Invitation.find_by(token: invitation_token)
       unless invitation
-        clear_pending_organization_invitation!
+        # Only clear session if we were using the session token (or same token)
+        clear_pending_organization_invitation! unless using_different_explicit_token
         return nil
       end
 
       if invitation.expired?
-        clear_pending_organization_invitation!
+        # Only clear session if we were using the session token (or same token)
+        clear_pending_organization_invitation! unless using_different_explicit_token
         return nil
       end
 
@@ -188,7 +197,7 @@ module Organizations
         membership = invitation.accept!(user, skip_email_validation: skip_email_validation)
       rescue Organizations::InvitationExpired
         # Race condition: invitation expired between our check and accept!
-        clear_pending_organization_invitation!
+        clear_pending_organization_invitation! unless using_different_explicit_token
         return nil
       rescue Organizations::InvitationAlreadyAccepted
         # Check if user is actually a member
@@ -197,7 +206,7 @@ module Organizations
           organization_id: invitation.organization_id
         )
         unless membership
-          clear_pending_organization_invitation!
+          clear_pending_organization_invitation! unless using_different_explicit_token
           return nil
         end
         status = :already_member
@@ -215,6 +224,7 @@ module Organizations
         switched = false
       end
 
+      # Always clear session token on successful acceptance
       clear_pending_organization_invitation!
 
       Organizations::InvitationAcceptanceResult.new(

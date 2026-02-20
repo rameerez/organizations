@@ -1345,6 +1345,21 @@ module Organizations
       assert_equal invitation.token, @controller.session[:pending_invitation_token]
     end
 
+    test "accept_pending_organization_invitation! with different explicit token preserves session token" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      session_invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:pending_invitation_token] = session_invitation.token
+      @controller.test_current_user = user
+
+      # Pass a different explicit token that doesn't exist
+      result = @controller.accept_pending_organization_invitation!(user, token: "nonexistent_token")
+
+      assert_nil result
+      # Session token should be preserved (not cleared by failing explicit token)
+      assert_equal session_invitation.token, @controller.session[:pending_invitation_token]
+    end
+
     test "accept_pending_organization_invitation! returns result with accepted status" do
       org, owner = create_org_with_owner!
       user = create_user!(email: "test@example.com")

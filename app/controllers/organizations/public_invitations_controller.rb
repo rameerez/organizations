@@ -60,18 +60,20 @@ module Organizations
       end
 
       # Use canonical accept helper with explicit token
+      # Skip email validation since we already checked above
       result = accept_pending_organization_invitation!(
         current_user,
         token: @invitation.token,
         switch: true,
-        skip_email_validation: false
+        skip_email_validation: true
       )
 
       # Handle acceptance result
       if result.nil?
         # This shouldn't happen since we pre-validated, but handle gracefully
         # Redirect to root (not after_accepted path) since acceptance failed
-        if @invitation.expired?
+        # Reload to get fresh state (invitation may have expired during accept)
+        if @invitation.reload.expired?
           respond_to do |format|
             format.html { redirect_to main_app.root_path, alert: "This invitation has expired. Please request a new one." }
             format.json { render json: { error: "Invitation expired" }, status: :gone }
