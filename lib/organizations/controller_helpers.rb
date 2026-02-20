@@ -45,10 +45,11 @@ module Organizations
       session_key = Organizations.configuration.session_key
       org_id = session[session_key]
 
-      # Find organization AND verify membership (DB-authoritative to avoid stale cache)
+      # Find organization AND verify membership
+      # Use is_member_of? which has DB fallback for stale loaded associations
       org = org_id ? Organizations::Organization.find_by(id: org_id) : nil
 
-      if org && membership_exists_for?(user, org)
+      if org && user.is_member_of?(org)
         # Valid membership - use this org
         user._current_organization_id = org.id
         @_current_organization = org

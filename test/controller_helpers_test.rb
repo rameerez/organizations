@@ -1146,5 +1146,20 @@ module Organizations
       # Should return true via DB fallback
       assert user.belongs_to_any_organization?
     end
+
+    test "role_in returns correct role when membership exists but association is stale" do
+      user = create_user!
+      org = Organizations::Organization.create!(name: "Role In Stale Org")
+
+      # Pre-load memberships as empty
+      user.memberships.to_a
+      assert user.memberships.loaded?
+
+      # Create membership externally with admin role
+      Organizations::Membership.create!(user: user, organization: org, role: "admin")
+
+      # Should return role via DB fallback
+      assert_equal :admin, user.role_in(org)
+    end
   end
 end
