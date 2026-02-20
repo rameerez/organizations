@@ -21,6 +21,34 @@ module Organizations
   #   </div>
   #
   module ViewHelpers
+    # === Host App Route Helper Delegation ===
+    #
+    # When views are rendered from engine controllers, route helpers like `root_path`
+    # resolve to the engine's routes, not the host app's routes. This delegation
+    # forwards missing route methods to `main_app` so host app routes work transparently.
+    #
+    # Instead of requiring `main_app.root_path` everywhere, you can just use `root_path`.
+    #
+    def method_missing(method, *args, &block)
+      if _organizations_route_helper?(method) && respond_to?(:main_app) && main_app.respond_to?(method)
+        main_app.public_send(method, *args, &block)
+      else
+        super
+      end
+    end
+
+    def respond_to_missing?(method, include_private = false)
+      (_organizations_route_helper?(method) && respond_to?(:main_app) && main_app.respond_to?(method)) || super
+    end
+
+    private
+
+    def _organizations_route_helper?(method)
+      method_name = method.to_s
+      method_name.end_with?("_path") || method_name.end_with?("_url")
+    end
+
+    public
     # === Organization Switcher ===
 
     # Returns optimized data for building an organization switcher
