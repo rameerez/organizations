@@ -121,6 +121,9 @@ module Organizations
       end
 
       self.current_organization = org
+      # current_organization= updates the memoized user's _current_organization_id,
+      # but when an explicit user: is passed (auth-transition flows), acting_user
+      # may differ from the memoized user. Ensure acting_user is also updated.
       acting_user._current_organization_id = org.id if acting_user.respond_to?(:_current_organization_id=)
       mark_membership_as_recent!(acting_user, org)
     end
@@ -190,6 +193,10 @@ module Organizations
     # NOTE: This method safely calls the host app's current_user method
     # @param refresh [Boolean] Force re-resolution (clears cached value)
     # @return [User, nil]
+    #
+    # Nil values are intentionally not cached to handle auth-transition flows where
+    # user state changes mid-request (e.g., sign_in during invitation acceptance).
+    # This is safe because Devise memoizes current_user at the Warden level.
     def organizations_current_user(refresh: false)
       # Clear cache if refresh requested
       remove_instance_variable(:@_organizations_current_user) if refresh && defined?(@_organizations_current_user)

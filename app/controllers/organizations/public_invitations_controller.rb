@@ -86,6 +86,12 @@ module Organizations
           format.html { redirect_to after_accept_path, notice: "You're already a member of #{@invitation.organization.name}." }
           format.json { render json: { message: "Already accepted" }, status: :ok }
         end
+      rescue ::Organizations::NotAMember
+        # Membership was created but context switch failed (rare race condition)
+        respond_to do |format|
+          format.html { redirect_to after_accept_path, alert: "Joined #{@invitation.organization.name} but could not switch context. Please try again." }
+          format.json { render json: { error: "Could not switch organization context" }, status: :unprocessable_entity }
+        end
       end
     end
 

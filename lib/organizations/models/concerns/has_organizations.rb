@@ -207,11 +207,9 @@ module Organizations
           # Falls back to DB query when loaded association is empty to avoid stale false negatives
           # @return [Boolean]
           def belongs_to_any_organization?
-            if memberships.loaded?
-              memberships.any? || memberships.exists?
-            else
-              memberships.exists?
-            end
+            return true if memberships.loaded? && memberships.any?
+
+            memberships.exists?
           end
 
           # Check if user has pending invitations
@@ -324,22 +322,14 @@ module Organizations
           # Check if user is a member of specific organization
           # Uses efficient EXISTS query
           # Falls back to DB query when loaded association misses to avoid stale false negatives
+          # (e.g., membership created via organization.memberships.create! bypasses user cache)
           # @param org [Organization] The organization
           # @return [Boolean]
           def is_member_of?(org)
             return false unless org
+            return true if memberships.loaded? && memberships.any? { |m| m.organization_id == org.id }
 
-            if memberships.loaded?
-              # Fast path: check in-memory first
-              return true if memberships.any? { |membership| membership.organization_id == org.id }
-
-              # Loaded association can be stale if membership was created via another
-              # association path (e.g., organization.memberships.create!).
-              # Fall back to DB to avoid false negatives.
-              memberships.exists?(organization_id: org.id)
-            else
-              memberships.exists?(organization_id: org.id)
-            end
+            memberships.exists?(organization_id: org.id)
           end
 
           # Check if user is viewer (or higher) of specific organization

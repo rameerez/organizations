@@ -1080,7 +1080,7 @@ module Organizations
       assert_equal org.id, user._current_organization_id
     end
 
-    test "organizations_current_user with refresh clears nil cache" do
+    test "organizations_current_user does not cache nil result" do
       user = create_user!
 
       # Start with nil
