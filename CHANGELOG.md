@@ -23,6 +23,7 @@
 ### Changed
 
 - `PublicInvitationsController` now uses configurable redirect paths and the canonical acceptance helper
+- **DRY refactor**: Engine's `ApplicationController` now delegates to `ControllerHelpers` instead of duplicating logic (~200 lines removed)
 
 ## [0.2.0] - 2026-02-20
 

@@ -60,12 +60,12 @@ module Organizations
       end
 
       # Use canonical accept helper with explicit token
-      # Skip email validation since we already checked above
+      # Keep email validation enabled for defense-in-depth
       result = accept_pending_organization_invitation!(
         current_user,
         token: @invitation.token,
         switch: true,
-        skip_email_validation: true
+        skip_email_validation: false
       )
 
       # Handle acceptance result
