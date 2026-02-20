@@ -124,14 +124,11 @@ module Organizations
 
     def after_create_redirect_path(organization)
       custom_path = Organizations.configuration.after_organization_created_redirect_path
-      case custom_path
-      when Proc
-        instance_exec(organization, &custom_path)
-      when String
-        custom_path
-      else
-        organization_path(organization)
-      end
+      resolve_controller_redirect_path(
+        custom_path,
+        organization,
+        default: -> { organization_path(organization) }
+      )
     end
 
     def authorize_manage_settings!

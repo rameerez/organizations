@@ -371,6 +371,22 @@ current_organization            # Active organization (from session)
 current_membership              # Current user's membership in active org
 organization_signed_in?         # Is there an active organization?
 
+# Pending invitation helpers
+pending_organization_invitation_token   # Get pending invitation token from session
+pending_organization_invitation         # Get pending invitation (clears if expired)
+pending_organization_invitation?        # Check if valid pending invitation exists
+clear_pending_organization_invitation!  # Clear invitation token and cache
+
+# Invitation acceptance (canonical helper for post-signup flows)
+accept_pending_organization_invitation!(user)                    # Accept with session token
+accept_pending_organization_invitation!(user, token: token)      # Explicit token
+accept_pending_organization_invitation!(user, switch: false)     # Don't auto-switch org
+# Returns InvitationAcceptanceResult or nil
+
+# Invitation redirect helpers
+redirect_path_when_invitation_requires_authentication(invitation)  # Get auth redirect
+redirect_path_after_invitation_accepted(invitation, user: user)    # Get post-accept redirect
+
 # Authorization
 require_organization!                               # Redirect if no active org
 require_organization_role!(:admin)                  # Require at least admin role
@@ -632,31 +648,58 @@ The gem handles **both existing users and new signups** with a single invitation
 2. User clicks link → Sees invitation details + "Sign up to accept" button
 3. User registers → Token stored in session, your app calls `invitation.accept!(user)` post-signup
 
-The gem stores the invitation token in `session[:pending_invitation_token]` when an unauthenticated user tries to accept. In your registration controller, check for this token and accept the invitation:
+The gem stores the invitation token in `session[:organizations_pending_invitation_token]` when an unauthenticated user tries to accept. Use the built-in helper to accept the invitation in your auth callbacks:
 
 ```ruby
-# In your Devise RegistrationsController (recommended approach)
-def after_sign_up_path_for(resource)
-  accept_pending_invitation_for(resource)
+# In your ApplicationController (works with Devise or any auth system)
+def after_sign_in_path_for(resource)
+  if (result = accept_pending_organization_invitation!(resource))
+    return redirect_path_after_invitation_accepted(result.invitation, user: resource)
+  end
   super
 end
 
-private
-
-def accept_pending_invitation_for(user)
-  token = session.delete(:pending_invitation_token)
-  return unless token
-
-  invitation = Organizations::Invitation.find_by(token: token)
-  return unless invitation
-
-  invitation.accept!(user, skip_email_validation: true)
-  # Pass explicit user to avoid stale memoization in auth-transition flows
-  switch_to_organization!(invitation.organization, user: user)
+def after_sign_up_path_for(resource)
+  if (result = accept_pending_organization_invitation!(resource))
+    return redirect_path_after_invitation_accepted(result.invitation, user: resource)
+  end
+  super
 end
 ```
 
-> **Note:** When accepting invitations in custom auth flows (Devise overrides, `bypass_sign_in`, etc.), always pass the explicit `user:` argument to `switch_to_organization!`. This avoids stale memoization issues that can occur when authentication state changes mid-request.
+The `accept_pending_organization_invitation!` helper handles:
+- Token lookup from session
+- Invitation validation (expired, already accepted, email match)
+- Membership creation
+- Organization context switching
+- Session cleanup
+
+It returns an `InvitationAcceptanceResult` object or `nil`:
+
+```ruby
+result = accept_pending_organization_invitation!(user)
+result.accepted?      # => true if freshly accepted
+result.already_member? # => true if user was already a member
+result.switched?      # => true if org context was switched
+result.invitation     # => the invitation record
+result.membership     # => the membership record
+```
+
+Configure redirects in your initializer:
+
+```ruby
+Organizations.configure do |config|
+  config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
+  config.redirect_path_after_invitation_accepted = "/dashboard"
+
+  # Or use procs for dynamic paths:
+  config.redirect_path_after_invitation_accepted = ->(inv, user) {
+    "/org/#{inv.organization_id}/welcome"
+  }
+end
+```
+
+> **Note:** When accepting invitations in custom auth flows (Devise overrides, `bypass_sign_in`, etc.), the gem handles stale memoization issues automatically by passing the explicit user to `switch_to_organization!`.
 
 ### Invitation emails
 
@@ -726,8 +769,8 @@ When you mount the engine, you get:
 
 ```
 POST /organizations/switch/:id  → Organizations::SwitchController#create
-GET  /invitations/:token        → Organizations::InvitationsController#show
-POST /invitations/:token/accept → Organizations::InvitationsController#accept
+GET  /invitations/:token        → Organizations::PublicInvitationsController#show
+POST /invitations/:token/accept → Organizations::PublicInvitationsController#accept
 ```
 
 ## Auto-created organizations
@@ -854,6 +897,17 @@ Organizations.configure do |config|
   # Where to redirect after organization is created (nil = default show page)
   # Can be a String or Proc: ->(org) { "/orgs/#{org.id}/setup" }
   config.after_organization_created_redirect_path = "/dashboard"
+
+  # === Invitation Flow Redirects ===
+  # Where to redirect unauthenticated users when they try to accept an invitation
+  # Default: nil (uses new_user_registration_path or root_path)
+  config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
+  # Or use a Proc: ->(invitation, user) { "/signup?invite=#{invitation.token}" }
+
+  # Where to redirect after an invitation is accepted
+  # Default: nil (uses root_path)
+  config.redirect_path_after_invitation_accepted = "/dashboard"
+  # Or use a Proc: ->(invitation, user) { "/org/#{invitation.organization_id}/welcome" }
 
   # === Organizations Controller ===
   # Additional params to permit when creating/updating organizations
