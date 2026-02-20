@@ -38,3 +38,7 @@ test/dummy/log/
 test/dummy/tmp/
 test/dummy/storage/*.sqlite3*
 test/dummy/app/assets/builds/
+
+# Dummy app deployment secrets
+test/dummy/config/deploy.yml
+test/dummy/.kamal/secrets
