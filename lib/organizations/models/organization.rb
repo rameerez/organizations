@@ -16,7 +16,7 @@ module Organizations
   #   org.member_count # => 5
   #
   class Organization < ActiveRecord::Base
-    self.table_name = "organizations"
+    self.table_name = "organizations_organizations"
 
     # Error raised when trying to perform invalid operations on organization
     class CannotRemoveOwner < Organizations::Error; end
@@ -54,7 +54,7 @@ module Organizations
     # @param user [User] The user
     # @return [ActiveRecord::Relation]
     scope :with_member, ->(user) {
-      joins(:memberships).where(memberships: { user_id: user.id })
+      joins(:memberships).where(organizations_memberships: { user_id: user.id })
     }
 
     # === Member Query Methods ===
@@ -75,7 +75,7 @@ module Organizations
     # Uses efficient JOIN query to avoid N+1
     # @return [ActiveRecord::Relation<User>]
     def admins
-      users.where(memberships: { role: %w[owner admin] }).distinct
+      users.where(organizations_memberships: { role: %w[owner admin] }).distinct
     end
 
     # Alias for users (semantic convenience)

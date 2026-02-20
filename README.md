@@ -1064,9 +1064,9 @@ The gem provides `Organizations::Organization` as the base model. You can extend
 # db/migrate/xxx_add_custom_fields_to_organizations.rb
 class AddCustomFieldsToOrganizations < ActiveRecord::Migration[8.0]
   def change
-    add_column :organizations, :support_email, :string
-    add_column :organizations, :billing_address, :text
-    add_column :organizations, :settings, :jsonb, default: {}
+    add_column :organizations_organizations, :support_email, :string
+    add_column :organizations_organizations, :billing_address, :text
+    add_column :organizations_organizations, :settings, :jsonb, default: {}
   end
 end
 ```
@@ -1110,10 +1110,10 @@ This is standard Rails practice — the gem provides the foundation (memberships
 
 The gem creates three tables:
 
-### organizations
+### organizations_organizations
 
 ```sql
-organizations
+organizations_organizations
   - id (primary key, auto-detects UUID or integer from your app)
   - name (string, required)
   - metadata (jsonb, default: {})
@@ -1123,10 +1123,10 @@ organizations
 
 > **Note:** The gem automatically detects your app's primary key type (UUID or integer) and uses it for all tables.
 
-### memberships
+### organizations_memberships
 
 ```sql
-memberships
+organizations_memberships
   - id (primary key)
   - user_id (foreign key, indexed)
   - organization_id (foreign key, indexed)
@@ -1138,10 +1138,10 @@ memberships
   unique index: [user_id, organization_id]
 ```
 
-### organization_invitations
+### organizations_invitations
 
 ```sql
-organization_invitations
+organizations_invitations
   - id (primary key)
   - organization_id (foreign key, indexed)
   - email (string, required, indexed)
@@ -1254,7 +1254,7 @@ If you display member counts frequently (pricing pages, org listings), consider 
 
 ```ruby
 # In a migration
-add_column :organizations, :memberships_count, :integer, default: 0, null: false
+add_column :organizations_organizations, :memberships_count, :integer, default: 0, null: false
 
 # Reset existing counts
 Organization.find_each do |org|
@@ -1275,9 +1275,9 @@ org.member_count
 Boolean checks use efficient SQL `EXISTS` queries:
 
 ```ruby
-user.belongs_to_any_organization?     # SELECT 1 FROM memberships WHERE ... LIMIT 1
-user.has_pending_organization_invitations?  # SELECT 1 FROM organization_invitations WHERE ... LIMIT 1
-org.has_any_members?                  # SELECT 1 FROM memberships WHERE ... LIMIT 1
+user.belongs_to_any_organization?     # SELECT 1 FROM organizations_memberships WHERE ... LIMIT 1
+user.has_pending_organization_invitations?  # SELECT 1 FROM organizations_invitations WHERE ... LIMIT 1
+org.has_any_members?                  # SELECT 1 FROM organizations_memberships WHERE ... LIMIT 1
 ```
 
 ### Scoped associations use JOINs
@@ -1287,13 +1287,13 @@ Methods like `org.admins` and `user.owned_organizations` use proper SQL JOINs:
 ```ruby
 org.admins
 # SELECT users.* FROM users
-# INNER JOIN memberships ON memberships.user_id = users.id
-# WHERE memberships.organization_id = ? AND memberships.role IN ('admin', 'owner')
+# INNER JOIN organizations_memberships ON organizations_memberships.user_id = users.id
+# WHERE organizations_memberships.organization_id = ? AND organizations_memberships.role IN ('admin', 'owner')
 
 user.owned_organizations
-# SELECT organizations.* FROM organizations
-# INNER JOIN memberships ON memberships.organization_id = organizations.id
-# WHERE memberships.user_id = ? AND memberships.role = 'owner'
+# SELECT organizations_organizations.* FROM organizations_organizations
+# INNER JOIN organizations_memberships ON organizations_memberships.organization_id = organizations_organizations.id
+# WHERE organizations_memberships.user_id = ? AND organizations_memberships.role = 'owner'
 ```
 
 ### Current organization memoization
@@ -1445,14 +1445,14 @@ The gem creates these indexes automatically:
 
 ```sql
 -- Fast membership lookups
-CREATE UNIQUE INDEX index_memberships_on_user_and_org ON memberships (user_id, organization_id);
-CREATE INDEX index_memberships_on_organization_id ON memberships (organization_id);
-CREATE INDEX index_memberships_on_role ON memberships (role);
+CREATE UNIQUE INDEX index_organizations_memberships_on_user_and_org ON organizations_memberships (user_id, organization_id);
+CREATE INDEX index_organizations_memberships_on_organization_id ON organizations_memberships (organization_id);
+CREATE INDEX index_organizations_memberships_on_role ON organizations_memberships (role);
 
 -- Fast invitation lookups
-CREATE UNIQUE INDEX index_invitations_on_token ON organization_invitations (token);
-CREATE INDEX index_invitations_on_email ON organization_invitations (email);
-CREATE UNIQUE INDEX index_invitations_pending ON organization_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL;
+CREATE UNIQUE INDEX index_organizations_invitations_on_token ON organizations_invitations (token);
+CREATE INDEX index_organizations_invitations_on_email ON organizations_invitations (email);
+CREATE UNIQUE INDEX index_organizations_invitations_pending ON organizations_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL;
 ```
 
 ## Migration from 1:1 relationships

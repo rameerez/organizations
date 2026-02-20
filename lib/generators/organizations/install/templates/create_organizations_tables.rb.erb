@@ -6,7 +6,7 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     adapter = connection.adapter_name.downcase
 
     # Organizations table
-    create_table :organizations, id: primary_key_type do |t|
+    create_table :organizations_organizations, id: primary_key_type do |t|
       t.string :name, null: false
       t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
 
@@ -14,9 +14,9 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
     end
 
     # Memberships join table (User ↔ Organization)
-    create_table :memberships, id: primary_key_type do |t|
+    create_table :organizations_memberships, id: primary_key_type do |t|
       t.references :user, null: false, type: foreign_key_type, foreign_key: true
-      t.references :organization, null: false, type: foreign_key_type, foreign_key: true
+      t.references :organization, null: false, type: foreign_key_type, foreign_key: { to_table: :organizations_organizations }
       t.references :invited_by, null: true, type: foreign_key_type, foreign_key: { to_table: :users }
       t.string :role, null: false, default: "member"
       t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
@@ -24,27 +24,22 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
       t.timestamps
     end
 
-    add_index :memberships, [:user_id, :organization_id], unique: true
-    add_index :memberships, :role
+    add_index :organizations_memberships, [:user_id, :organization_id], unique: true
+    add_index :organizations_memberships, :role
 
     # Enforce "at most one owner membership per organization" at DB level where possible.
-    if adapter.include?("postgresql")
+    # Both PostgreSQL and SQLite support partial indexes with identical syntax.
+    if adapter.include?("postgresql") || adapter.include?("sqlite")
       execute <<-SQL
-        CREATE UNIQUE INDEX index_memberships_single_owner
-        ON memberships (organization_id)
-        WHERE role = 'owner'
-      SQL
-    elsif adapter.include?("sqlite")
-      execute <<-SQL
-        CREATE UNIQUE INDEX index_memberships_single_owner
-        ON memberships (organization_id)
+        CREATE UNIQUE INDEX index_organizations_memberships_single_owner
+        ON organizations_memberships (organization_id)
         WHERE role = 'owner'
       SQL
     end
 
     # Invitations table
-    create_table :organization_invitations, id: primary_key_type do |t|
-      t.references :organization, null: false, type: foreign_key_type, foreign_key: true
+    create_table :organizations_invitations, id: primary_key_type do |t|
+      t.references :organization, null: false, type: foreign_key_type, foreign_key: { to_table: :organizations_organizations }
       # invited_by is nullable to support dependent: :nullify when user is deleted
       t.references :invited_by, null: true, type: foreign_key_type, foreign_key: { to_table: :users }
       t.string :email, null: false
@@ -56,29 +51,22 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
       t.timestamps
     end
 
-    add_index :organization_invitations, :token, unique: true
-    add_index :organization_invitations, :email
+    add_index :organizations_invitations, :token, unique: true
+    add_index :organizations_invitations, :email
 
     # Unique partial index: only one pending (non-accepted) invitation per email per org
-    # Both PostgreSQL and SQLite support partial indexes
-    if adapter.include?("postgresql")
+    # Both PostgreSQL and SQLite (3.8.0+) support partial indexes with identical syntax.
+    if adapter.include?("postgresql") || adapter.include?("sqlite")
       execute <<-SQL
-        CREATE UNIQUE INDEX index_invitations_pending_unique
-        ON organization_invitations (organization_id, LOWER(email))
-        WHERE accepted_at IS NULL
-      SQL
-    elsif adapter.include?("sqlite")
-      # SQLite supports partial indexes since 3.8.0
-      execute <<-SQL
-        CREATE UNIQUE INDEX index_invitations_pending_unique
-        ON organization_invitations (organization_id, LOWER(email))
+        CREATE UNIQUE INDEX index_organizations_invitations_pending_unique
+        ON organizations_invitations (organization_id, LOWER(email))
         WHERE accepted_at IS NULL
       SQL
     elsif adapter.include?("mysql")
       # MySQL doesn't support partial indexes, so we use a generated column that is
       # only non-NULL for pending invitations and enforce uniqueness on that value.
       execute <<-SQL
-        ALTER TABLE organization_invitations
+        ALTER TABLE organizations_invitations
         ADD COLUMN pending_email VARCHAR(255)
         GENERATED ALWAYS AS (
           CASE
@@ -88,10 +76,10 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
         ) STORED
       SQL
 
-      add_index :organization_invitations, [:organization_id, :pending_email], unique: true, name: "index_invitations_pending_unique"
+      add_index :organizations_invitations, [:organization_id, :pending_email], unique: true, name: "index_organizations_invitations_pending_unique"
     else
       # For other adapters, fall back to app-level validation.
-      add_index :organization_invitations, [:organization_id, :email], name: "index_invitations_on_org_and_email"
+      add_index :organizations_invitations, [:organization_id, :email], name: "index_organizations_invitations_on_org_and_email"
     end
   end
 

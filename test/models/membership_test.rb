@@ -805,8 +805,8 @@ module Organizations
       end
     end
 
-    test "table_name is memberships" do
-      assert_equal "memberships", Organizations::Membership.table_name
+    test "table_name is organizations_memberships" do
+      assert_equal "organizations_memberships", Organizations::Membership.table_name
     end
 
     # ─── Error class hierarchy ───────────────────────────────────────────

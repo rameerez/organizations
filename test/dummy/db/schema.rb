@@ -11,23 +11,7 @@
 # It's strongly recommended that you check this file into your version control system.
 
 ActiveRecord::Schema[8.0].define(version: 2025_02_19_000002) do
-  create_table "memberships", force: :cascade do |t|
-    t.bigint "user_id", null: false
-    t.bigint "organization_id", null: false
-    t.bigint "invited_by_id"
-    t.string "role", default: "member", null: false
-    t.json "metadata", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["invited_by_id"], name: "index_memberships_on_invited_by_id"
-    t.index ["organization_id"], name: "index_memberships_on_organization_id"
-    t.index ["organization_id"], name: "index_memberships_single_owner", unique: true, where: "role = 'owner'"
-    t.index ["role"], name: "index_memberships_on_role"
-    t.index ["user_id", "organization_id"], name: "index_memberships_on_user_id_and_organization_id", unique: true
-    t.index ["user_id"], name: "index_memberships_on_user_id"
-  end
-
-  create_table "organization_invitations", force: :cascade do |t|
+  create_table "organizations_invitations", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.bigint "invited_by_id"
     t.string "email", null: false
@@ -37,14 +21,30 @@ ActiveRecord::Schema[8.0].define(version: 2025_02_19_000002) do
     t.datetime "expires_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index "organization_id, LOWER(email)", name: "index_invitations_pending_unique", unique: true, where: "accepted_at IS NULL"
-    t.index ["email"], name: "index_organization_invitations_on_email"
-    t.index ["invited_by_id"], name: "index_organization_invitations_on_invited_by_id"
-    t.index ["organization_id"], name: "index_organization_invitations_on_organization_id"
-    t.index ["token"], name: "index_organization_invitations_on_token", unique: true
+    t.index "organization_id, LOWER(email)", name: "index_organizations_invitations_pending_unique", unique: true, where: "accepted_at IS NULL"
+    t.index ["email"], name: "index_organizations_invitations_on_email"
+    t.index ["invited_by_id"], name: "index_organizations_invitations_on_invited_by_id"
+    t.index ["organization_id"], name: "index_organizations_invitations_on_organization_id"
+    t.index ["token"], name: "index_organizations_invitations_on_token", unique: true
   end
 
-  create_table "organizations", force: :cascade do |t|
+  create_table "organizations_memberships", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "organization_id", null: false
+    t.bigint "invited_by_id"
+    t.string "role", default: "member", null: false
+    t.json "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["invited_by_id"], name: "index_organizations_memberships_on_invited_by_id"
+    t.index ["organization_id"], name: "index_organizations_memberships_on_organization_id"
+    t.index ["organization_id"], name: "index_organizations_memberships_single_owner", unique: true, where: "role = 'owner'"
+    t.index ["role"], name: "index_organizations_memberships_on_role"
+    t.index ["user_id", "organization_id"], name: "index_organizations_memberships_on_user_id_and_organization_id", unique: true
+    t.index ["user_id"], name: "index_organizations_memberships_on_user_id"
+  end
+
+  create_table "organizations_organizations", force: :cascade do |t|
     t.string "name", null: false
     t.json "metadata", default: {}, null: false
     t.datetime "created_at", null: false
@@ -58,9 +58,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_02_19_000002) do
     t.datetime "updated_at", null: false
   end
 
-  add_foreign_key "memberships", "organizations"
-  add_foreign_key "memberships", "users"
-  add_foreign_key "memberships", "users", column: "invited_by_id"
-  add_foreign_key "organization_invitations", "organizations"
-  add_foreign_key "organization_invitations", "users", column: "invited_by_id"
+  add_foreign_key "organizations_invitations", "organizations_organizations", column: "organization_id"
+  add_foreign_key "organizations_invitations", "users", column: "invited_by_id"
+  add_foreign_key "organizations_memberships", "organizations_organizations", column: "organization_id"
+  add_foreign_key "organizations_memberships", "users"
+  add_foreign_key "organizations_memberships", "users", column: "invited_by_id"
 end

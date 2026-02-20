@@ -74,7 +74,7 @@ module Organizations
 
             # Organizations where user is owner (efficient JOIN)
             has_many :owned_organizations,
-                     -> { where(memberships: { role: "owner" }) },
+                     -> { where(organizations_memberships: { role: "owner" }) },
                      through: :memberships,
                      source: :organization,
                      class_name: "Organizations::Organization"

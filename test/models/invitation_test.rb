@@ -5,6 +5,14 @@ require "test_helper"
 module Organizations
   class InvitationTest < Organizations::Test
     # =========================================================================
+    # Table Configuration
+    # =========================================================================
+
+    test "table_name is organizations_invitations" do
+      assert_equal "organizations_invitations", Organizations::Invitation.table_name
+    end
+
+    # =========================================================================
     # Setup
     # =========================================================================
 
