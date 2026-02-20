@@ -839,6 +839,15 @@ Organizations.configure do |config|
   # Where to redirect when user has no organization
   config.redirect_path_when_no_organization = "/organizations/new"
 
+  # Where to redirect after organization is created (nil = default show page)
+  # Can be a String or Proc: ->(org) { "/orgs/#{org.id}/setup" }
+  config.after_organization_created_redirect_path = "/dashboard"
+
+  # === Organizations Controller ===
+  # Additional params to permit when creating/updating organizations
+  # Use this to add custom fields like support_email, billing_email, logo
+  config.additional_organization_params = [:support_email]
+
   # === Engine Controllers ===
   # Base controller for authenticated routes (default: ::ApplicationController)
   config.parent_controller = "::ApplicationController"

@@ -67,6 +67,15 @@ module Organizations
     # Where to redirect when user has no organization
     attr_accessor :redirect_path_when_no_organization
 
+    # Where to redirect after organization is created (nil = default show page)
+    # Can be a String ("/dashboard") or Proc (->(org) { "/orgs/#{org.id}" })
+    attr_accessor :after_organization_created_redirect_path
+
+    # === Organizations Controller ===
+    # Additional params to permit when creating/updating organizations
+    # @example [:support_email, :billing_email, :logo]
+    attr_accessor :additional_organization_params
+
     # === Engine configuration ===
     # Base controller for authenticated routes (default: ::ApplicationController)
     attr_accessor :parent_controller
@@ -117,6 +126,10 @@ module Organizations
 
       # Redirects
       @redirect_path_when_no_organization = "/organizations/new"
+      @after_organization_created_redirect_path = nil
+
+      # Organizations controller
+      @additional_organization_params = []
 
       # Engine
       @parent_controller = "::ApplicationController"

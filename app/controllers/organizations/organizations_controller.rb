@@ -46,7 +46,7 @@ module Organizations
         switch_to_organization!(@organization)
 
         respond_to do |format|
-          format.html { redirect_to organization_path(@organization), notice: "Organization created successfully." }
+          format.html { redirect_to after_create_redirect_path(@organization), notice: "Organization created successfully." }
           format.json { render json: organization_json(@organization), status: :created }
         end
       rescue Organizations::Models::Concerns::HasOrganizations::OrganizationLimitReached => e
@@ -117,7 +117,21 @@ module Organizations
     end
 
     def organization_params
-      params.require(:organization).permit(:name)
+      base_params = [:name]
+      additional_params = Organizations.configuration.additional_organization_params || []
+      params.require(:organization).permit(base_params + additional_params)
+    end
+
+    def after_create_redirect_path(organization)
+      custom_path = Organizations.configuration.after_organization_created_redirect_path
+      case custom_path
+      when Proc
+        instance_exec(organization, &custom_path)
+      when String
+        custom_path
+      else
+        organization_path(organization)
+      end
     end
 
     def authorize_manage_settings!
