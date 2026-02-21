@@ -41,10 +41,11 @@ module Organizations
         current_user,
         token: @invitation.token,
         switch: true,
-        skip_email_validation: false
+        skip_email_validation: false,
+        return_failure: true
       )
 
-      return respond_invitation_acceptance_failure unless result
+      return respond_invitation_acceptance_failure(result) if result.failure?
 
       respond_invitation_acceptance_success(result)
     end
@@ -63,56 +64,48 @@ module Organizations
       end
     end
 
-    def respond_invitation_acceptance_failure
-      return respond_invitation_email_mismatch if invitation_email_mismatch_for_current_user?
-      return respond_invitation_expired if @invitation.reload.expired?
-
-      respond_to do |format|
-        format.html { redirect_to main_app.root_path, alert: "Unable to accept this invitation." }
-        format.json { render json: { error: "Acceptance failed" }, status: :unprocessable_entity }
+    def respond_invitation_acceptance_failure(failure)
+      case failure.failure_reason
+      when :email_mismatch
+        return respond_invitation_email_mismatch
+      when :invitation_expired
+        return respond_invitation_expired
       end
+
+      respond_invitation_error(
+        html_path: main_app.root_path,
+        alert: "Unable to accept this invitation.",
+        json_error: "Acceptance failed",
+        status: :unprocessable_entity
+      )
     end
 
     def respond_invitation_email_mismatch
-      respond_to do |format|
-        format.html { redirect_to invitation_path(@invitation.token), alert: "This invitation was sent to a different email address." }
-        format.json { render json: { error: "Email mismatch" }, status: :forbidden }
-      end
+      respond_invitation_error(
+        html_path: invitation_path(@invitation.token),
+        alert: "This invitation was sent to a different email address.",
+        json_error: "Email mismatch",
+        status: :forbidden
+      )
     end
 
     def respond_invitation_expired
-      respond_to do |format|
-        format.html { redirect_to main_app.root_path, alert: "This invitation has expired. Please request a new one." }
-        format.json { render json: { error: "Invitation expired" }, status: :gone }
-      end
+      respond_invitation_error(
+        html_path: main_app.root_path,
+        alert: "This invitation has expired. Please request a new one.",
+        json_error: "Invitation expired",
+        status: :gone
+      )
     end
 
     def respond_invitation_acceptance_success(result)
-      membership = result.membership
-      invitation = result.invitation
-      after_path = redirect_path_after_invitation_accepted(invitation, user: current_user)
+      after_path = redirect_path_after_invitation_accepted(result.invitation, user: current_user)
+      payload, status = invitation_acceptance_json_response(result)
 
-      if result.already_member?
-        respond_to do |format|
-          format.html { redirect_to after_path, notice: "You're already a member of #{invitation.organization.name}." }
-          format.json { render json: { message: "Already accepted" }, status: :ok }
-        end
-      elsif !result.switched?
-        # Rare edge case: membership was created but context switch failed
-        respond_to do |format|
-          format.html { redirect_to after_path, notice: "You've joined #{invitation.organization.name}! Navigate to the organization to get started." }
-          format.json { render json: { membership: membership_json(membership), warning: "Could not switch context automatically" }, status: :created }
-        end
-      else
-        respond_to do |format|
-          format.html { redirect_to after_path, notice: "Welcome to #{invitation.organization.name}!" }
-          format.json { render json: { membership: membership_json(membership) }, status: :created }
-        end
+      respond_to do |format|
+        format.html { redirect_to after_path, notice: invitation_acceptance_notice(result) }
+        format.json { render json: payload, status: status }
       end
-    end
-
-    def invitation_email_mismatch_for_current_user?
-      !@invitation.for_email?(current_user.email)
     end
 
     def set_invitation
@@ -162,6 +155,37 @@ module Organizations
         role: membership.role,
         created_at: membership.created_at
       }
+    end
+
+    def respond_invitation_error(html_path:, alert:, json_error:, status:)
+      respond_to do |format|
+        format.html { redirect_to html_path, alert: alert }
+        format.json { render json: { error: json_error }, status: status }
+      end
+    end
+
+    def invitation_acceptance_notice(result)
+      org_name = result.invitation.organization.name
+
+      if result.already_member?
+        "You're already a member of #{org_name}."
+      elsif result.switched?
+        "Welcome to #{org_name}!"
+      else
+        # Rare edge case: membership was created but context switch failed
+        "You've joined #{org_name}! Navigate to the organization to get started."
+      end
+    end
+
+    def invitation_acceptance_json_response(result)
+      if result.already_member?
+        [{ message: "Already accepted" }, :ok]
+      elsif result.switched?
+        [{ membership: membership_json(result.membership) }, :created]
+      else
+        # Rare edge case: membership was created but context switch failed
+        [{ membership: membership_json(result.membership), warning: "Could not switch context automatically" }, :created]
+      end
     end
 
     # Route helpers for engine routes
