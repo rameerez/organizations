@@ -169,6 +169,33 @@ module Organizations
       assert_equal "owner", membership.role
     end
 
+    test "owner_membership avoids SQL when memberships are preloaded" do
+      org, owner = create_org_with_owner!
+      preloaded_org = Organization.includes(:memberships).find(org.id)
+
+      assert preloaded_org.association(:memberships).loaded?
+
+      queries = capture_non_schema_queries do
+        membership = preloaded_org.owner_membership
+        assert_equal owner.id, membership.user_id
+      end
+
+      assert_empty queries
+    end
+
+    test "owner avoids SQL when memberships and users are preloaded" do
+      org, owner = create_org_with_owner!
+      preloaded_org = Organization.includes(memberships: :user).find(org.id)
+
+      assert preloaded_org.association(:memberships).loaded?
+
+      queries = capture_non_schema_queries do
+        assert_equal owner, preloaded_org.owner
+      end
+
+      assert_empty queries
+    end
+
     # =========================================================================
     # Query Methods: admins
     # =========================================================================
@@ -593,6 +620,23 @@ module Organizations
       # member_count falls back to COUNT(*)
       assert_not org.has_attribute?(:memberships_count)
       assert_equal 1, org.member_count
+    end
+
+    private
+
+    def capture_non_schema_queries
+      queries = []
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+        next if payload[:name] == "SCHEMA" || payload[:name] == "TRANSACTION"
+        next if payload[:cached]
+
+        queries << payload[:sql]
+      end
+
+      yield
+      queries
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
   end
 end

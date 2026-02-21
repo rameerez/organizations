@@ -68,7 +68,11 @@ module Organizations
     # Get the owner's membership
     # @return [Membership, nil]
     def owner_membership
-      memberships.find_by(role: "owner")
+      if association(:memberships).loaded?
+        memberships.find { |membership| membership.role == "owner" }
+      else
+        memberships.find_by(role: "owner")
+      end
     end
 
     # Get all admins (users with admin role or higher)
