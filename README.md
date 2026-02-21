@@ -399,6 +399,7 @@ redirect_to_no_organization!(alert: "...", notice: "...")         # Redirect and
 
 # Organization creation helper
 create_organization_and_switch!(current_user, name: "Acme")       # Create and set context in one call
+create_organization_with_context!(current_user, name: "Acme")     # Backward-compatible alias
 
 # Authorization
 require_organization!                               # Redirect if no active org
@@ -696,6 +697,10 @@ result.already_member? # => true if user was already a member
 result.switched?      # => true if org context was switched
 result.invitation     # => the invitation record
 result.membership     # => the membership record
+
+# Default flash notice (when using pending_invitation_acceptance_redirect_path_for)
+# accepted?       -> "Welcome to <organization>!"
+# already_member? -> "You're already a member of <organization>."
 ```
 
 If you want structured failure reasons instead of `nil`, pass `return_failure: true`:
@@ -963,6 +968,7 @@ Organizations.configure do |config|
   config.public_controller = "ActionController::Base"
 
   # Layout overrides for engine controllers (optional)
+  # Resolved at request-time, so runtime config changes are respected.
   config.authenticated_controller_layout = "dashboard"
   config.public_controller_layout = "devise"
 

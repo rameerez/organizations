@@ -40,7 +40,7 @@ module Organizations
 
     def respond_unauthorized
       respond_to do |format|
-        format.html { redirect_to main_app.root_path, alert: "You need to sign in before continuing." }
+        format.html { redirect_to main_app.root_path, alert: "You need to sign in to switch organizations." }
         format.json { render json: { error: "Unauthorized" }, status: :unauthorized }
       end
     end

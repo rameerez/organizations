@@ -45,7 +45,7 @@ module Organizations
       return nil unless super_method
 
       super_method.call
-    rescue NoMethodError
+    rescue NoMethodError, NameError
       nil
     end
   end

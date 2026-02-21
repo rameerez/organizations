@@ -1680,6 +1680,23 @@ module Organizations
       assert_equal "Welcome to #{org.name}!", @controller.flash[:notice]
     end
 
+    test "default pending invitation acceptance notice handles already_member status" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      membership = org.add_member!(user, role: :member)
+
+      result = Organizations::InvitationAcceptanceResult.new(
+        status: :already_member,
+        invitation: invitation,
+        membership: membership
+      )
+
+      message = @controller.send(:default_pending_invitation_acceptance_notice, result)
+
+      assert_equal "You're already a member of #{org.name}.", message
+    end
+
     test "pending_invitation_acceptance_redirect_path_for supports notice: false" do
       Organizations.configure do |config|
         config.redirect_path_after_invitation_accepted = "/dashboard"

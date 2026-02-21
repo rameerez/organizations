@@ -26,7 +26,7 @@
 
 - **InvitationAcceptanceResult** - Value object returned by `accept_pending_organization_invitation!` with:
   - `status` (`:accepted` or `:already_member`)
-  - `invitation`, `membership`, `switched` attributes
+  - `invitation`, `membership` attributes
   - `accepted?`, `already_member?`, `switched?` predicates
 
 - **InvitationAcceptanceFailure** - Structured failure object for `accept_pending_organization_invitation!` when called with `return_failure: true`

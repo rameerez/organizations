@@ -58,6 +58,29 @@ module Organizations
       assert_equal user, resolver.current_user
     end
 
+    test "current user resolver gracefully handles NameError from parent current_user" do
+      base_class = Class.new do
+        def current_user
+          UndefinedAuthNamespace::User
+        end
+      end
+
+      resolver_class = Class.new(base_class) do
+        include Organizations::CurrentUserResolution
+
+        def current_user
+          resolve_organizations_current_user(
+            cache_ivar: :@_resolved_user,
+            cache_nil: true,
+            prefer_super_for_current_user: true
+          )
+        end
+      end
+
+      resolver = resolver_class.new
+      assert_nil resolver.current_user
+    end
+
     # Regression: Round 1, Critical #2
     # The Membership model depends on an `invited_by_id` column (belongs_to :invited_by).
     # The original migration template was missing this column. Verify the schema

@@ -15,8 +15,9 @@ module Organizations
     # Protect from forgery if available
     protect_from_forgery with: :exception if respond_to?(:protect_from_forgery)
 
-    if respond_to?(:layout) && Organizations.configuration.public_controller_layout
-      layout Organizations.configuration.public_controller_layout
+    if respond_to?(:layout)
+      # Resolve layout at request-time so runtime config changes are respected.
+      layout :organizations_public_layout
     end
 
     # Include main app route helpers so host app layouts work correctly
@@ -40,6 +41,14 @@ module Organizations
         cache_nil: false,
         prefer_super_for_current_user: true
       )
+    end
+
+    def organizations_public_layout
+      configured_layout = Organizations.configuration.public_controller_layout
+      return nil if configured_layout.nil?
+      return configured_layout unless configured_layout.is_a?(Symbol)
+
+      send(configured_layout)
     end
 
     # Access main_app routes from engine views

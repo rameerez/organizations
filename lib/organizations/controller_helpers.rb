@@ -672,7 +672,7 @@ module Organizations
 
       message = case notice
                 when true
-                  default_pending_invitation_acceptance_notice(result.invitation)
+                  default_pending_invitation_acceptance_notice(result)
                 when Proc
                   resolve_pending_invitation_notice_message(notice, result, user)
                 when String
@@ -702,7 +702,7 @@ module Organizations
       if defined?(Rails) && Rails.respond_to?(:logger)
         Rails.logger.error "[Organizations] Invitation notice proc failed: #{e.message}"
       end
-      default_pending_invitation_acceptance_notice(result.invitation)
+      default_pending_invitation_acceptance_notice(result)
     end
 
     # Session key for pending invitation token
@@ -777,8 +777,11 @@ module Organizations
       end
     end
 
-    def default_pending_invitation_acceptance_notice(invitation)
-      "Welcome to #{invitation.organization.name}!"
+    def default_pending_invitation_acceptance_notice(result)
+      organization_name = result.invitation.organization.name
+      return "You're already a member of #{organization_name}." if result.already_member?
+
+      "Welcome to #{organization_name}!"
     end
   end
 end

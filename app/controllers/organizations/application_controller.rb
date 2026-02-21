@@ -15,13 +15,13 @@ module Organizations
     # This provides: current_organization, current_membership, organization_signed_in?,
     # switch_to_organization!, require_organization!, require_organization_admin!, etc.
     include Organizations::ControllerHelpers
-    include Organizations::CurrentUserResolution
 
     # Protect from forgery if the parent controller does
     protect_from_forgery with: :exception if respond_to?(:protect_from_forgery)
 
-    if respond_to?(:layout) && Organizations.configuration.authenticated_controller_layout
-      layout Organizations.configuration.authenticated_controller_layout
+    if respond_to?(:layout)
+      # Resolve layout at request-time so runtime config changes are respected.
+      layout :organizations_authenticated_layout
     end
 
     # Ensure user is authenticated for all actions
@@ -66,5 +66,13 @@ module Organizations
 
     # Alias for compatibility
     alias_method :current_organizations_user, :current_user
+
+    def organizations_authenticated_layout
+      configured_layout = Organizations.configuration.authenticated_controller_layout
+      return nil if configured_layout.nil?
+      return configured_layout unless configured_layout.is_a?(Symbol)
+
+      send(configured_layout)
+    end
   end
 end
