@@ -35,73 +35,85 @@ module Organizations
     # POST /invitations/:token/accept
     # Accept an invitation (public route)
     def accept
-      # Require authentication to accept
-      unless current_user
-        # Store invitation token in session for post-signup acceptance
-        session[:pending_invitation_token] = @invitation.token
+      return respond_invitation_authentication_required unless current_user
 
-        respond_to do |format|
-          format.html do
-            redirect_to main_app.respond_to?(:new_user_registration_path) ?
-              main_app.new_user_registration_path :
-              main_app.root_path,
-              alert: "Please sign in or create an account to accept this invitation."
-          end
-          format.json { render json: { error: "Authentication required" }, status: :unauthorized }
-        end
-        return
-      end
+      result = accept_pending_organization_invitation!(
+        current_user,
+        token: @invitation.token,
+        switch: true,
+        skip_email_validation: false
+      )
 
-      # Verify email matches (for security)
-      unless current_user.email.downcase == @invitation.email.downcase
-        respond_to do |format|
-          format.html { redirect_to invitation_path(@invitation.token), alert: "This invitation was sent to a different email address." }
-          format.json { render json: { error: "Email mismatch" }, status: :forbidden }
-        end
-        return
-      end
+      return respond_invitation_acceptance_failure unless result
 
-      begin
-        membership = @invitation.accept!(current_user)
-      rescue ::Organizations::InvitationExpired
-        respond_to do |format|
-          format.html { redirect_to main_app.root_path, alert: "This invitation has expired. Please request a new one." }
-          format.json { render json: { error: "Invitation expired" }, status: :gone }
-        end
-        return
-      rescue ::Organizations::InvitationAlreadyAccepted
-        respond_to do |format|
-          format.html { redirect_to after_accept_path, notice: "You're already a member of #{@invitation.organization.name}." }
-          format.json { render json: { message: "Already accepted" }, status: :ok }
-        end
-        return
-      end
-
-      # Switch to the new organization if the controller supports it
-      # Pass explicit user to avoid stale memoization issues in auth-transition flows
-      begin
-        if respond_to?(:switch_to_organization!, true)
-          switch_to_organization!(@invitation.organization, user: current_user)
-        elsif respond_to?(:current_organization=, true)
-          self.current_organization = @invitation.organization
-        end
-      rescue ::Organizations::NotAMember
-        # Rare edge case: membership was created but context switch failed
-        # User is a member, just needs to navigate to the org manually
-        respond_to do |format|
-          format.html { redirect_to after_accept_path, notice: "You've joined #{@invitation.organization.name}! Navigate to the organization to get started." }
-          format.json { render json: { membership: membership_json(membership), warning: "Could not switch context automatically" }, status: :created }
-        end
-        return
-      end
-
-      respond_to do |format|
-        format.html { redirect_to after_accept_path, notice: "Welcome to #{@invitation.organization.name}!" }
-        format.json { render json: { membership: membership_json(membership) }, status: :created }
-      end
+      respond_invitation_acceptance_success(result)
     end
 
     private
+
+    def respond_invitation_authentication_required
+      session[pending_invitation_session_key] = @invitation.token
+
+      respond_to do |format|
+        format.html do
+          redirect_to redirect_path_when_invitation_requires_authentication(@invitation),
+                      alert: "Please sign in or create an account to accept this invitation."
+        end
+        format.json { render json: { error: "Authentication required" }, status: :unauthorized }
+      end
+    end
+
+    def respond_invitation_acceptance_failure
+      return respond_invitation_email_mismatch if invitation_email_mismatch_for_current_user?
+      return respond_invitation_expired if @invitation.reload.expired?
+
+      respond_to do |format|
+        format.html { redirect_to main_app.root_path, alert: "Unable to accept this invitation." }
+        format.json { render json: { error: "Acceptance failed" }, status: :unprocessable_entity }
+      end
+    end
+
+    def respond_invitation_email_mismatch
+      respond_to do |format|
+        format.html { redirect_to invitation_path(@invitation.token), alert: "This invitation was sent to a different email address." }
+        format.json { render json: { error: "Email mismatch" }, status: :forbidden }
+      end
+    end
+
+    def respond_invitation_expired
+      respond_to do |format|
+        format.html { redirect_to main_app.root_path, alert: "This invitation has expired. Please request a new one." }
+        format.json { render json: { error: "Invitation expired" }, status: :gone }
+      end
+    end
+
+    def respond_invitation_acceptance_success(result)
+      membership = result.membership
+      invitation = result.invitation
+      after_path = redirect_path_after_invitation_accepted(invitation, user: current_user)
+
+      if result.already_member?
+        respond_to do |format|
+          format.html { redirect_to after_path, notice: "You're already a member of #{invitation.organization.name}." }
+          format.json { render json: { message: "Already accepted" }, status: :ok }
+        end
+      elsif !result.switched?
+        # Rare edge case: membership was created but context switch failed
+        respond_to do |format|
+          format.html { redirect_to after_path, notice: "You've joined #{invitation.organization.name}! Navigate to the organization to get started." }
+          format.json { render json: { membership: membership_json(membership), warning: "Could not switch context automatically" }, status: :created }
+        end
+      else
+        respond_to do |format|
+          format.html { redirect_to after_path, notice: "Welcome to #{invitation.organization.name}!" }
+          format.json { render json: { membership: membership_json(membership) }, status: :created }
+        end
+      end
+    end
+
+    def invitation_email_mismatch_for_current_user?
+      !@invitation.for_email?(current_user.email)
+    end
 
     def set_invitation
       @invitation = ::Organizations::Invitation.find_by!(token: params[:token])
@@ -118,10 +130,6 @@ module Organizations
       else
         false
       end
-    end
-
-    def after_accept_path
-      main_app.respond_to?(:root_path) ? main_app.root_path : "/"
     end
 
     # JSON serialization helpers

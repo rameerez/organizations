@@ -169,6 +169,41 @@ module Organizations
       assert_equal "owner", membership.role
     end
 
+    test "owner_membership avoids SQL when memberships are preloaded" do
+      org, owner = create_org_with_owner!
+      preloaded_org = Organization.includes(:memberships).find(org.id)
+
+      assert preloaded_org.association(:memberships).loaded?
+
+      queries = capture_non_schema_queries do
+        membership = preloaded_org.owner_membership
+        assert_equal owner.id, membership.user_id
+      end
+
+      assert_empty queries
+    end
+
+    test "owner_membership returns nil when memberships are preloaded but no owner exists" do
+      org = Organization.create!(name: "No Owner Org")
+      preloaded_org = Organization.includes(:memberships).find(org.id)
+
+      assert preloaded_org.association(:memberships).loaded?
+      assert_nil preloaded_org.owner_membership
+    end
+
+    test "owner avoids SQL when memberships and users are preloaded" do
+      org, owner = create_org_with_owner!
+      preloaded_org = Organization.includes(memberships: :user).find(org.id)
+
+      assert preloaded_org.association(:memberships).loaded?
+
+      queries = capture_non_schema_queries do
+        assert_equal owner, preloaded_org.owner
+      end
+
+      assert_empty queries
+    end
+
     # =========================================================================
     # Query Methods: admins
     # =========================================================================
@@ -459,6 +494,26 @@ module Organizations
       end
     end
 
+    test "transfer_ownership_to! uses fresh owner lookup when memberships are preloaded and stale" do
+      org, original_owner = create_org_with_owner!
+      first_admin = create_user!(email: "first-admin@example.com")
+      second_admin = create_user!(email: "second-admin@example.com")
+      org.add_member!(first_admin, role: :admin)
+      org.add_member!(second_admin, role: :admin)
+
+      stale_org = Organization.includes(:memberships).find(org.id)
+      assert stale_org.association(:memberships).loaded?
+
+      Organization.find(org.id).transfer_ownership_to!(first_admin)
+      stale_org.transfer_ownership_to!(second_admin)
+
+      org.reload
+      assert_equal second_admin, org.owner
+      assert_equal "admin", Membership.find_by!(organization: org, user: original_owner).role
+      assert_equal "admin", Membership.find_by!(organization: org, user: first_admin).role
+      assert_equal "owner", Membership.find_by!(organization: org, user: second_admin).role
+    end
+
     # =========================================================================
     # Invitation Methods: send_invite_to!
     # =========================================================================
@@ -593,6 +648,23 @@ module Organizations
       # member_count falls back to COUNT(*)
       assert_not org.has_attribute?(:memberships_count)
       assert_equal 1, org.member_count
+    end
+
+    private
+
+    def capture_non_schema_queries
+      queries = []
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+        next if payload[:name] == "SCHEMA" || payload[:name] == "TRANSACTION"
+        next if payload[:cached]
+
+        queries << payload[:sql]
+      end
+
+      yield
+      queries
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
   end
 end

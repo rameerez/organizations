@@ -68,7 +68,11 @@ module Organizations
     # Get the owner's membership
     # @return [Membership, nil]
     def owner_membership
-      memberships.find_by(role: "owner")
+      if association(:memberships).loaded?
+        memberships.find { |membership| membership.role == "owner" }
+      else
+        memberships.find_by(role: "owner")
+      end
     end
 
     # Get all admins (users with admin role or higher)
@@ -244,7 +248,9 @@ module Organizations
         # Lock organization first to prevent concurrent operations
         lock!
 
-        old_owner_membership = owner_membership
+        # Always perform a fresh read in this write path, even if memberships
+        # are preloaded on this instance, to avoid stale-owner selection.
+        old_owner_membership = memberships.find_by(role: "owner")
         new_owner_membership = memberships.find_by(user_id: new_owner.id)
 
         unless old_owner_membership

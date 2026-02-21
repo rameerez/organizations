@@ -95,6 +95,23 @@ Organizations.configure do |config|
   # config.redirect_path_when_no_organization = "/onboarding"
 
   # ============================================================================
+  # INVITATION FLOW REDIRECTS
+  # ============================================================================
+
+  # Where to redirect unauthenticated users when they try to accept an invitation.
+  # Use this to customize the signup/login page for invited users.
+  # Can be a String path or a Proc receiving (invitation, user).
+  # Default: nil (uses new_user_registration_path or root_path)
+  # config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
+  # config.redirect_path_when_invitation_requires_authentication = ->(inv, _user) { "/signup?invite=#{inv.token}" }
+
+  # Where to redirect after an invitation is accepted.
+  # Can be a String path or a Proc receiving (invitation, user).
+  # Default: nil (uses root_path)
+  # config.redirect_path_after_invitation_accepted = "/dashboard"
+  # config.redirect_path_after_invitation_accepted = ->(inv, user) { "/org/#{inv.organization_id}/welcome" }
+
+  # ============================================================================
   # ENGINE CONTROLLERS
   # ============================================================================
 

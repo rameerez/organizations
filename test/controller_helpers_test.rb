@@ -1161,5 +1161,403 @@ module Organizations
       # Should return role via DB fallback
       assert_equal :admin, user.role_in(org)
     end
+
+    # =====================
+    # Pending invitation helpers
+    # =====================
+
+    test "pending_organization_invitation_token returns session token" do
+      @controller.session[:organizations_pending_invitation_token] = "test_token_123"
+
+      assert_equal "test_token_123", @controller.pending_organization_invitation_token
+    end
+
+    test "pending_organization_invitation_token returns nil when no token" do
+      assert_nil @controller.pending_organization_invitation_token
+    end
+
+    test "pending_organization_invitation returns invitation when token valid" do
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+
+      result = @controller.pending_organization_invitation
+
+      assert_equal invitation, result
+    end
+
+    test "pending_organization_invitation returns nil and clears token when invitation missing" do
+      @controller.session[:organizations_pending_invitation_token] = "nonexistent_token"
+
+      result = @controller.pending_organization_invitation
+
+      assert_nil result
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "pending_organization_invitation returns nil and clears token when invitation expired" do
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      invitation.update!(expires_at: 1.day.ago)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+
+      result = @controller.pending_organization_invitation
+
+      assert_nil result
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "pending_organization_invitation returns nil and clears token when invitation accepted" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      invitation.accept!(user)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+
+      result = @controller.pending_organization_invitation
+
+      assert_nil result
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "pending_organization_invitation? returns true when valid invitation exists" do
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+
+      assert @controller.pending_organization_invitation?
+    end
+
+    test "pending_organization_invitation? returns false when no invitation" do
+      refute @controller.pending_organization_invitation?
+    end
+
+    test "clear_pending_organization_invitation! clears token and memo" do
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+
+      # Cache the invitation first
+      @controller.pending_organization_invitation
+
+      @controller.clear_pending_organization_invitation!
+
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+      assert_nil @controller.pending_organization_invitation_token
+    end
+
+    # =====================
+    # accept_pending_organization_invitation! helper
+    # =====================
+
+    test "accept_pending_organization_invitation! returns nil without user" do
+      result = @controller.accept_pending_organization_invitation!(nil)
+
+      assert_nil result
+    end
+
+    test "accept_pending_organization_invitation! returns nil without token" do
+      user = create_user!
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user)
+
+      assert_nil result
+    end
+
+    test "accept_pending_organization_invitation! uses explicit token over session" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      # Set a different (invalid) token in session
+      @controller.session[:organizations_pending_invitation_token] = "wrong_token"
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user, token: invitation.token)
+
+      assert_not_nil result
+      assert result.accepted?
+      assert_equal invitation, result.invitation
+    end
+
+    test "accept_pending_organization_invitation! returns nil for missing invitation" do
+      user = create_user!
+      @controller.session[:organizations_pending_invitation_token] = "nonexistent"
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user)
+
+      assert_nil result
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "accept_pending_organization_invitation! returns nil for expired invitation" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      invitation.update!(expires_at: 1.day.ago)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user)
+
+      assert_nil result
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "accept_pending_organization_invitation! handles InvitationExpired race condition" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      # Simulate race condition: invitation expires after our check but before accept!
+      # We use a mock to intercept the accept! call on any invitation instance
+      original_accept = Organizations::Invitation.instance_method(:accept!)
+      Organizations::Invitation.define_method(:accept!) do |*args, **kwargs|
+        raise Organizations::InvitationExpired, "Expired during accept"
+      end
+
+      begin
+        result = @controller.accept_pending_organization_invitation!(user, token: invitation.token)
+
+        # Should return nil gracefully, not raise
+        assert_nil result
+        assert_nil @controller.session[:organizations_pending_invitation_token]
+      ensure
+        Organizations::Invitation.define_method(:accept!, original_accept)
+      end
+    end
+
+    test "accept_pending_organization_invitation! returns nil for email mismatch and keeps token" do
+      org, owner = create_org_with_owner!
+      wrong_user = create_user!(email: "wrong@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = wrong_user
+
+      result = @controller.accept_pending_organization_invitation!(wrong_user)
+
+      assert_nil result
+      # Token should be preserved so user can switch accounts
+      assert_equal invitation.token, @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "accept_pending_organization_invitation! with different explicit token preserves session token" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      session_invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = session_invitation.token
+      @controller.test_current_user = user
+
+      # Pass a different explicit token that doesn't exist
+      result = @controller.accept_pending_organization_invitation!(user, token: "nonexistent_token")
+
+      assert_nil result
+      # Session token should be preserved (not cleared by failing explicit token)
+      assert_equal session_invitation.token, @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "accept_pending_organization_invitation! returns result with accepted status" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user)
+
+      assert_not_nil result
+      assert result.accepted?
+      refute result.already_member?
+      assert result.switched?
+      assert_equal invitation, result.invitation
+      assert_not_nil result.membership
+      assert_equal org.id, result.membership.organization_id
+      assert_nil @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "accept_pending_organization_invitation! returns accepted status when user already a member" do
+      # When the user is already a member, the model's accept! is idempotent
+      # and returns the existing membership without raising. This results in
+      # :accepted status rather than :already_member (which is reserved for
+      # edge cases where InvitationAlreadyAccepted is raised but user has membership)
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+
+      # Create first invitation that gets accepted
+      first_invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      first_invitation.accept!(user)
+
+      # Create second invitation to same email (would be duplicate but we force it for test)
+      second_invitation = org.invitations.create!(
+        email: "test@example.com",
+        token: SecureRandom.hex(16),
+        role: "admin",
+        invited_by: owner
+      )
+
+      @controller.session[:organizations_pending_invitation_token] = second_invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user)
+
+      # Model returns existing membership without raising, so status is :accepted
+      assert_not_nil result
+      assert result.accepted?
+      assert_not_nil result.membership
+    end
+
+    test "accept_pending_organization_invitation! with switch: false does not switch org" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user, switch: false)
+
+      assert_not_nil result
+      assert result.accepted?
+      refute result.switched?
+      # Session org should not be set
+      assert_nil @controller.session[:current_organization_id]
+    end
+
+    test "accept_pending_organization_invitation! with skip_email_validation: true accepts any email" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "different@example.com")
+      invitation = org.send_invite_to!("invited@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user, skip_email_validation: true)
+
+      assert_not_nil result
+      assert result.accepted?
+    end
+
+    # =====================
+    # Redirect path helpers
+    # =====================
+
+    test "redirect_path_when_invitation_requires_authentication returns default path" do
+      # Add registration path to controller
+      @controller.define_singleton_method(:new_user_registration_path) { "/users/sign_up" }
+      @controller.main_app.define_singleton_method(:new_user_registration_path) { "/users/sign_up" }
+
+      result = @controller.redirect_path_when_invitation_requires_authentication
+
+      assert_equal "/users/sign_up", result
+    end
+
+    test "redirect_path_when_invitation_requires_authentication falls back to root" do
+      # No registration path defined, main_app only has root_path
+      result = @controller.redirect_path_when_invitation_requires_authentication
+
+      assert_equal "/", result
+    end
+
+    test "redirect_path_when_invitation_requires_authentication uses string config" do
+      Organizations.configure do |config|
+        config.redirect_path_when_invitation_requires_authentication = "/custom/signup"
+      end
+
+      result = @controller.redirect_path_when_invitation_requires_authentication
+
+      assert_equal "/custom/signup", result
+    end
+
+    test "redirect_path_when_invitation_requires_authentication executes proc in controller context" do
+      Organizations.configure do |config|
+        config.redirect_path_when_invitation_requires_authentication = ->(inv, _user) { "/signup?token=#{inv&.token}" }
+      end
+
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      result = @controller.redirect_path_when_invitation_requires_authentication(invitation)
+
+      assert_equal "/signup?token=#{invitation.token}", result
+    end
+
+    test "redirect_path_after_invitation_accepted returns default root path" do
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      result = @controller.redirect_path_after_invitation_accepted(invitation)
+
+      assert_equal "/", result
+    end
+
+    test "redirect_path_after_invitation_accepted uses string config" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = "/dashboard"
+      end
+
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      result = @controller.redirect_path_after_invitation_accepted(invitation)
+
+      assert_equal "/dashboard", result
+    end
+
+    test "redirect_path_after_invitation_accepted executes proc with invitation" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = ->(inv, _user) { "/org/#{inv.organization_id}" }
+      end
+
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      result = @controller.redirect_path_after_invitation_accepted(invitation)
+
+      assert_equal "/org/#{org.id}", result
+    end
+
+    test "redirect_path_after_invitation_accepted falls back on proc error" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = ->(_inv, _user) { raise RuntimeError, "boom" }
+      end
+
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      # In production (or when Rails.env is unavailable), proc errors are logged and fallback is used
+      # In real Rails dev/test environments, proc errors are re-raised to surface misconfigurations
+      # This gem test suite doesn't have Rails.env, so we get fallback behavior
+      result = @controller.redirect_path_after_invitation_accepted(invitation)
+
+      assert_equal "/", result
+    end
+
+    test "redirect path proc with arity 0 works" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = -> { "/zero-arity" }
+      end
+
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      result = @controller.redirect_path_after_invitation_accepted(invitation)
+
+      assert_equal "/zero-arity", result
+    end
+
+    test "redirect path proc with arity 1 works" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = ->(inv) { "/one-arity/#{inv.token}" }
+      end
+
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+
+      result = @controller.redirect_path_after_invitation_accepted(invitation)
+
+      assert_equal "/one-arity/#{invitation.token}", result
+    end
   end
 end
