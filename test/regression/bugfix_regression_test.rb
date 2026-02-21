@@ -81,6 +81,82 @@ module Organizations
       assert_nil resolver.current_user
     end
 
+    test "current user resolver uses warden fallback before super for public controllers" do
+      user = Struct.new(:id).new(42)
+
+      warden_proxy = Class.new do
+        attr_reader :scopes
+
+        def initialize(user)
+          @user = user
+          @scopes = []
+        end
+
+        def user(scope)
+          @scopes << scope
+          @user
+        end
+      end.new(user)
+
+      base_class = Class.new do
+        def current_user
+          :from_super
+        end
+      end
+
+      resolver_class = Class.new(base_class) do
+        include Organizations::CurrentUserResolution
+
+        def initialize(warden_proxy)
+          @warden_proxy = warden_proxy
+        end
+
+        def current_user
+          resolve_organizations_current_user(
+            cache_ivar: :@_resolved_user,
+            cache_nil: false,
+            prefer_super_for_current_user: true,
+            prefer_warden_for_current_user: true
+          )
+        end
+
+        private
+
+        def warden
+          @warden_proxy
+        end
+      end
+
+      resolver = resolver_class.new(warden_proxy)
+
+      assert_equal user, resolver.current_user
+      assert_equal [:user], warden_proxy.scopes
+    end
+
+    test "current user resolver handles nil warden middleware safely" do
+      resolver_class = Class.new do
+        include Organizations::CurrentUserResolution
+
+        def current_user
+          resolve_organizations_current_user(
+            cache_ivar: :@_resolved_user,
+            cache_nil: true,
+            prefer_super_for_current_user: true,
+            prefer_warden_for_current_user: true
+          )
+        end
+
+        private
+
+        def warden
+          nil
+        end
+      end
+
+      resolver = resolver_class.new
+      assert_nil resolver.current_user
+    end
+
     # Regression: Round 1, Critical #2
     # The Membership model depends on an `invited_by_id` column (belongs_to :invited_by).
     # The original migration template was missing this column. Verify the schema

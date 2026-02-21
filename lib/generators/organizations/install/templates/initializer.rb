@@ -133,6 +133,8 @@ Organizations.configure do |config|
 
   # Base controller for public routes like invitation acceptance.
   # Uses a minimal base to avoid host app filters that enforce authentication.
+  # Works with Devise out of the box - no configuration needed.
+  # Only override if using custom auth or needing specific inheritance.
   # Default: ActionController::Base
   # config.public_controller = "ActionController::Base"
 

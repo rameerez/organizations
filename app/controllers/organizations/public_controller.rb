@@ -39,7 +39,8 @@ module Organizations
       resolve_organizations_current_user(
         cache_ivar: :@_current_user,
         cache_nil: false,
-        prefer_super_for_current_user: true
+        prefer_super_for_current_user: true,
+        prefer_warden_for_current_user: true
       )
     end
 
