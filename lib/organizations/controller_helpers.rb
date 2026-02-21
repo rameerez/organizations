@@ -19,6 +19,7 @@ module Organizations
   #
   module ControllerHelpers
     extend ActiveSupport::Concern
+    include Organizations::CurrentUserResolution
 
     included do
       # Make helpers available in views
@@ -28,6 +29,7 @@ module Organizations
         helper_method :organization_signed_in?
         helper_method :pending_organization_invitation
         helper_method :pending_organization_invitation?
+        helper_method :pending_organization_invitation_email
       end
     end
 
@@ -130,6 +132,12 @@ module Organizations
       pending_organization_invitation.present?
     end
 
+    # Returns the email from the pending invitation, if present
+    # @return [String, nil]
+    def pending_organization_invitation_email
+      pending_organization_invitation&.email
+    end
+
     # Clear pending invitation token and memoized values
     # @return [nil]
     def clear_pending_organization_invitation!
@@ -139,6 +147,67 @@ module Organizations
       nil
     end
 
+    # Accept pending invitation (if present) and return post-accept redirect path.
+    # Returns nil when there is no pending/acceptable invitation.
+    #
+    # @param user [User] The user accepting the invitation
+    # @param token [String, nil] Explicit invitation token (optional)
+    # @param switch [Boolean] Whether to switch organization context
+    # @param skip_email_validation [Boolean] Whether to skip invitation email checks
+    # @param notice [Boolean, String, Proc] Flash notice behavior (default: true)
+    # @return [String, nil] Redirect path or nil
+    def pending_invitation_acceptance_redirect_path_for(
+      user,
+      token: nil,
+      switch: true,
+      skip_email_validation: false,
+      notice: true
+    )
+      result = accept_pending_organization_invitation!(
+        user,
+        token: token,
+        switch: switch,
+        skip_email_validation: skip_email_validation
+      )
+      return nil unless result
+
+      set_pending_invitation_acceptance_notice!(result, user: user, notice: notice)
+      redirect_path_after_invitation_accepted(result.invitation, user: user)
+    end
+
+    # Accept pending invitation and either return redirect path or perform redirect.
+    #
+    # @param user [User] The user accepting the invitation
+    # @param redirect [Boolean] When true, performs redirect_to and returns true/false
+    # @param token [String, nil] Explicit invitation token (optional)
+    # @param switch [Boolean] Whether to switch organization context
+    # @param skip_email_validation [Boolean] Whether to skip invitation email checks
+    # @param notice [Boolean, String, Proc] Flash notice behavior (default: true)
+    # @return [String, Boolean, nil]
+    def handle_pending_invitation_acceptance_for(
+      user,
+      redirect: false,
+      token: nil,
+      switch: true,
+      skip_email_validation: false,
+      notice: true
+    )
+      path = pending_invitation_acceptance_redirect_path_for(
+        user,
+        token: token,
+        switch: switch,
+        skip_email_validation: skip_email_validation,
+        notice: notice
+      )
+
+      return false if redirect && path.nil?
+      return nil unless path
+      return path unless redirect
+
+      redirect_to path
+      true
+    end
+
     # Accept a pending organization invitation for a user
     # This is the canonical method for handling invitation acceptance after signup/signin.
     #
@@ -146,7 +215,8 @@ module Organizations
     # @param token [String, nil] Explicit token (uses session token if not provided)
     # @param switch [Boolean] Whether to switch to the organization after acceptance (default: true)
     # @param skip_email_validation [Boolean] Skip email matching check (default: false)
-    # @return [Organizations::InvitationAcceptanceResult, nil] Result object or nil if not accepted
+    # @param return_failure [Boolean] Return a structured failure object instead of nil
+    # @return [Organizations::InvitationAcceptanceResult, Organizations::InvitationAcceptanceFailure, nil]
     #
     # @example Basic usage in after_sign_in_path_for
     #   def after_sign_in_path_for(resource)
@@ -156,15 +226,21 @@ module Organizations
     #     super
     #   end
     #
-    def accept_pending_organization_invitation!(user, token: nil, switch: true, skip_email_validation: false)
-      return nil unless user
+    def accept_pending_organization_invitation!(
+      user,
+      token: nil,
+      switch: true,
+      skip_email_validation: false,
+      return_failure: false
+    )
+      return invitation_acceptance_failure(:missing_user, return_failure: return_failure) unless user
 
       # Track whether we're using an explicit token that differs from session
       # Only skip session clearing if explicit token fails and differs from session
       explicit_token = token.presence
       session_token = pending_organization_invitation_token
       invitation_token = explicit_token || session_token
-      return nil unless invitation_token
+      return invitation_acceptance_failure(:missing_token, return_failure: return_failure) unless invitation_token
 
       # When explicit token differs from session, don't clear session on failure
       using_different_explicit_token = explicit_token && explicit_token != session_token
@@ -173,20 +249,28 @@ module Organizations
       unless invitation
         # Only clear session if we were using the session token (or same token)
         clear_pending_organization_invitation! unless using_different_explicit_token
-        return nil
+        return invitation_acceptance_failure(:invitation_not_found, return_failure: return_failure)
       end
 
       if invitation.expired?
         # Only clear session if we were using the session token (or same token)
         clear_pending_organization_invitation! unless using_different_explicit_token
-        return nil
+        return invitation_acceptance_failure(
+          :invitation_expired,
+          return_failure: return_failure,
+          invitation: invitation
+        )
       end
 
       # Check email match (unless skipping validation)
       unless skip_email_validation
         if user.respond_to?(:email) && !invitation.for_email?(user.email)
           # Email mismatch - keep token intact to allow switching accounts
-          return nil
+          return invitation_acceptance_failure(
+            :email_mismatch,
+            return_failure: return_failure,
+            invitation: invitation
+          )
         end
       end
 
@@ -198,7 +282,11 @@ module Organizations
       rescue Organizations::InvitationExpired
         # Race condition: invitation expired between our check and accept!
         clear_pending_organization_invitation! unless using_different_explicit_token
-        return nil
+        return invitation_acceptance_failure(
+          :invitation_expired,
+          return_failure: return_failure,
+          invitation: invitation
+        )
       rescue Organizations::InvitationAlreadyAccepted
         # Check if user is actually a member
         membership = Organizations::Membership.find_by(
@@ -211,7 +299,11 @@ module Organizations
             Rails.logger.warn "[Organizations] InvitationAlreadyAccepted raised but no membership found for user=#{user.id} org=#{invitation.organization_id}"
           end
           clear_pending_organization_invitation! unless using_different_explicit_token
-          return nil
+          return invitation_acceptance_failure(
+            :already_accepted_without_membership,
+            return_failure: return_failure,
+            invitation: invitation
+          )
         end
         status = :already_member
       end
@@ -272,6 +364,80 @@ module Organizations
         default: -> { default_after_accept_redirect_path }
       )
     end
+
+    # Returns the path to redirect to after organization switch
+    # Uses configured value or falls back to root path
+    #
+    # @param organization [Organizations::Organization] The organization switched to
+    # @param user [User, nil] The user who switched (optional)
+    # @return [String] The redirect path
+    def redirect_path_after_organization_switched(organization, user: nil)
+      config_value = Organizations.configuration.redirect_path_after_organization_switched
+
+      resolve_controller_redirect_path(
+        config_value,
+        organization,
+        user,
+        default: -> { default_after_switch_redirect_path }
+      )
+    end
+
+    # Returns the redirect path used when the user has no active organization.
+    # Uses configured value or falls back to /organizations/new.
+    #
+    # @param user [User, nil] Optional user context for Proc redirects
+    # @return [String]
+    def redirect_path_when_no_organization(user: nil)
+      config_value = Organizations.configuration.redirect_path_when_no_organization
+      redirect_user = user || organizations_current_user
+
+      resolve_controller_redirect_path(
+        config_value,
+        redirect_user,
+        default: -> { "/organizations/new" }
+      )
+    end
+
+    # Alias used in many host apps for readability.
+    #
+    # @param user [User, nil] Optional user context for Proc redirects
+    # @return [String]
+    def no_organization_redirect_path(user: nil)
+      redirect_path_when_no_organization(user: user)
+    end
+
+    # Redirect helper for no-organization flows.
+    #
+    # When both alert and notice are nil, uses the default alert message.
+    #
+    # @param alert [String, nil] Flash alert message
+    # @param notice [String, nil] Flash notice message
+    # @return [false]
+    def redirect_to_no_organization!(alert: nil, notice: nil)
+      flash_options = {}
+      flash_options[:alert] = alert unless alert.nil?
+      flash_options[:notice] = notice unless notice.nil?
+
+      # Keep current behavior for existing apps when nothing is configured/passed.
+      flash_options[:alert] = "Please select or create an organization." if flash_options.empty?
+
+      redirect_to no_organization_redirect_path, **flash_options
+      false
+    end
+
+    # Creates an organization and switches context in one call.
+    #
+    # @param user [User] The user who will own the created organization
+    # @param attributes [Hash] Attributes passed to create_organization!
+    # @return [Organizations::Organization] The created organization
+    def create_organization_and_switch!(user, attributes = {})
+      organization = user.create_organization!(attributes)
+      switch_to_organization!(organization, user: user)
+      organization
+    end
+
+    # Alias for readability in host apps.
+    alias_method :create_organization_with_context!, :create_organization_and_switch!
 
     # === Switching ===
 
@@ -380,30 +546,21 @@ module Organizations
 
     private
 
-    # Get the current user using the configured method
-    # NOTE: This method safely calls the host app's current_user method
-    # @param refresh [Boolean] Force re-resolution (clears cached value)
-    # @return [User, nil]
-    #
-    # Nil values are intentionally not cached to handle auth-transition flows where
-    # user state changes mid-request (e.g., sign_in during invitation acceptance).
-    # This is safe because Devise memoizes current_user at the Warden level.
     def organizations_current_user(refresh: false)
-      # Clear cache if refresh requested
-      remove_instance_variable(:@_organizations_current_user) if refresh && defined?(@_organizations_current_user)
+      resolve_organizations_current_user(
+        cache_ivar: :@_organizations_current_user,
+        refresh: refresh,
+        cache_nil: false
+      )
+    end
 
-      # Return cached value only if non-nil (avoid sticky nil memoization)
-      if defined?(@_organizations_current_user) && !@_organizations_current_user.nil?
-        return @_organizations_current_user
-      end
+    def invitation_acceptance_failure(reason, return_failure:, invitation: nil)
+      return nil unless return_failure
 
-      method_name = Organizations.configuration.current_user_method
-
-      # The configured method should exist on the host controller
-      # (e.g., Devise's current_user). We call it directly.
-      @_organizations_current_user = if respond_to?(method_name, true)
-                                       send(method_name)
-                                     end
+      Organizations::InvitationAcceptanceFailure.new(
+        reason: reason,
+        invitation: invitation
+      )
     end
 
     # Clear organization session and cached values
@@ -500,11 +657,52 @@ module Organizations
       # Default behavior
       respond_to do |format|
         format.html do
-          path = config.redirect_path_when_no_organization
-          redirect_to path, alert: "Please select or create an organization."
+          redirect_to_no_organization!(
+            alert: config.no_organization_alert,
+            notice: config.no_organization_notice
+          )
         end
         format.json { render json: { error: "Organization required" }, status: :forbidden }
       end
+    end
+
+    def set_pending_invitation_acceptance_notice!(result, user:, notice:)
+      return unless notice
+      return unless respond_to?(:flash) && flash
+
+      message = case notice
+                when true
+                  default_pending_invitation_acceptance_notice(result.invitation)
+                when Proc
+                  resolve_pending_invitation_notice_message(notice, result, user)
+                when String
+                  notice
+                else
+                  notice.to_s
+                end
+
+      flash[:notice] = message if message.present?
+    end
+
+    def resolve_pending_invitation_notice_message(notice_proc, result, user)
+      case notice_proc.arity
+      when 0
+        instance_exec(&notice_proc)
+      when 1
+        instance_exec(result, &notice_proc)
+      when 2
+        instance_exec(result.invitation, user, &notice_proc)
+      else
+        instance_exec(result, result.invitation, user, &notice_proc)
+      end
+    rescue StandardError => e
+      if defined?(Rails) && Rails.respond_to?(:env) && (Rails.env.development? || Rails.env.test?)
+        raise
+      end
+      if defined?(Rails) && Rails.respond_to?(:logger)
+        Rails.logger.error "[Organizations] Invitation notice proc failed: #{e.message}"
+      end
+      default_pending_invitation_acceptance_notice(result.invitation)
     end
 
     # Session key for pending invitation token
@@ -567,6 +765,20 @@ module Organizations
       else
         "/"
       end
+    end
+
+    # Default path after organization switch
+    # @return [String]
+    def default_after_switch_redirect_path
+      if main_app.respond_to?(:root_path)
+        main_app.root_path
+      else
+        "/"
+      end
+    end
+
+    def default_pending_invitation_acceptance_notice(invitation)
+      "Welcome to #{invitation.organization.name}!"
     end
   end
 end

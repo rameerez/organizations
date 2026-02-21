@@ -12,13 +12,16 @@ module Organizations
     # Switch to a different organization
     # POST /organizations/switch/:id
     def create
-      org = current_user.organizations.find_by(id: params[:id])
+      user = organizations_current_user(refresh: true)
+      return respond_unauthorized unless user
+
+      org = user.organizations.find_by(id: params[:id])
 
       if org
-        switch_to_organization!(org)
+        switch_to_organization!(org, user: user)
 
         respond_to do |format|
-          format.html { redirect_to after_switch_path, notice: "Switched to #{org.name}" }
+          format.html { redirect_to after_switch_path(org, user: user), notice: "Switched to #{org.name}" }
           format.json { render json: { organization: { id: org.id, name: org.name } } }
         end
       else
@@ -31,8 +34,15 @@ module Organizations
 
     private
 
-    def after_switch_path
-      main_app.respond_to?(:root_path) ? main_app.root_path : "/"
+    def after_switch_path(organization, user:)
+      redirect_path_after_organization_switched(organization, user: user)
+    end
+
+    def respond_unauthorized
+      respond_to do |format|
+        format.html { redirect_to main_app.root_path, alert: "You need to sign in before continuing." }
+        format.json { render json: { error: "Unauthorized" }, status: :unauthorized }
+      end
     end
   end
 end

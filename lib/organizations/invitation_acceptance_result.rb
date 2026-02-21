@@ -35,6 +35,18 @@ module Organizations
       status == :accepted
     end
 
+    def success?
+      true
+    end
+
+    def failure?
+      false
+    end
+
+    def failure_reason
+      nil
+    end
+
     # @return [Boolean] true if user was already a member
     def already_member?
       status == :already_member

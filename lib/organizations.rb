@@ -51,7 +51,9 @@ module Organizations
   autoload :CallbackContext, "organizations/callback_context"
   autoload :ActsAsTenantIntegration, "organizations/acts_as_tenant_integration"
   autoload :TestHelpers, "organizations/test_helpers"
+  autoload :CurrentUserResolution, "organizations/current_user_resolution"
   autoload :InvitationAcceptanceResult, "organizations/invitation_acceptance_result"
+  autoload :InvitationAcceptanceFailure, "organizations/invitation_acceptance_failure"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers

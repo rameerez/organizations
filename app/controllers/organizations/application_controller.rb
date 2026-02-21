@@ -15,9 +15,14 @@ module Organizations
     # This provides: current_organization, current_membership, organization_signed_in?,
     # switch_to_organization!, require_organization!, require_organization_admin!, etc.
     include Organizations::ControllerHelpers
+    include Organizations::CurrentUserResolution
 
     # Protect from forgery if the parent controller does
     protect_from_forgery with: :exception if respond_to?(:protect_from_forgery)
+
+    if respond_to?(:layout) && Organizations.configuration.authenticated_controller_layout
+      layout Organizations.configuration.authenticated_controller_layout
+    end
 
     # Ensure user is authenticated for all actions
     before_action :authenticate_organizations_user!
@@ -52,17 +57,11 @@ module Organizations
     # Uses the configured method name (defaults to :current_user)
     # NOTE: We call the PARENT class method to avoid infinite recursion
     def current_user
-      return @_current_user if defined?(@_current_user)
-
-      user_method = Organizations.configuration.current_user_method
-
-      # Avoid infinite recursion: if configured method is :current_user,
-      # call the parent implementation, not this method
-      @_current_user = if user_method == :current_user
-                         super rescue nil
-                       elsif user_method && respond_to?(user_method, true)
-                         send(user_method)
-                       end
+      resolve_organizations_current_user(
+        cache_ivar: :@_current_user,
+        cache_nil: true,
+        prefer_super_for_current_user: true
+      )
     end
 
     # Alias for compatibility

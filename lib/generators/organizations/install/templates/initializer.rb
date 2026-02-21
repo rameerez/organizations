@@ -94,6 +94,12 @@ Organizations.configure do |config|
   # Default: "/organizations/new"
   # config.redirect_path_when_no_organization = "/onboarding"
 
+  # Optional flash messages used by the built-in no-organization handler.
+  # Leave both nil to keep the default alert:
+  # "Please select or create an organization."
+  # config.no_organization_alert = "Please create an organization first."
+  # config.no_organization_notice = "Please create or join an organization to continue."
+
   # ============================================================================
   # INVITATION FLOW REDIRECTS
   # ============================================================================
@@ -111,6 +117,12 @@ Organizations.configure do |config|
   # config.redirect_path_after_invitation_accepted = "/dashboard"
   # config.redirect_path_after_invitation_accepted = ->(inv, user) { "/org/#{inv.organization_id}/welcome" }
 
+  # Where to redirect after switching organizations.
+  # Can be a String path or a Proc receiving (organization, user).
+  # Default: nil (uses root_path)
+  # config.redirect_path_after_organization_switched = "/dashboard"
+  # config.redirect_path_after_organization_switched = ->(org, user) { "/orgs/#{org.id}?user=#{user.id}" }
+
   # ============================================================================
   # ENGINE CONTROLLERS
   # ============================================================================
@@ -123,5 +135,14 @@ Organizations.configure do |config|
   # Uses a minimal base to avoid host app filters that enforce authentication.
   # Default: ActionController::Base
   # config.public_controller = "ActionController::Base"
+
+  # Layout override for authenticated engine controllers.
+  # Use this to avoid host-side layout monkey patches.
+  # Default: nil (inherits host controller defaults)
+  # config.authenticated_controller_layout = "dashboard"
+
+  # Layout override for public engine controllers (invitation pages).
+  # Default: nil (inherits host controller defaults)
+  # config.public_controller_layout = "devise"
 
 end

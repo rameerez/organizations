@@ -9,13 +9,15 @@ module Organizations
     class MockController
       include Organizations::ControllerHelpers
 
-      attr_reader :session, :redirected_to, :redirect_alert, :rendered_json, :rendered_status
+      attr_reader :session, :flash, :redirected_to, :redirect_alert, :redirect_notice, :rendered_json, :rendered_status
       attr_accessor :test_current_user
 
       def initialize
         @session = {}
+        @flash = {}
         @redirected_to = nil
         @redirect_alert = nil
+        @redirect_notice = nil
         @rendered_json = nil
         @rendered_status = nil
         @test_current_user = nil
@@ -43,9 +45,10 @@ module Organizations
         @redirect_alert = alert
       end
 
-      def redirect_to(path, alert: nil)
+      def redirect_to(path, alert: nil, notice: nil)
         @redirected_to = path
         @redirect_alert = alert
+        @redirect_notice = notice
       end
 
       def render(json: nil, status: nil)
@@ -69,8 +72,10 @@ module Organizations
         remove_instance_variable(:@_organizations_current_user) if defined?(@_organizations_current_user)
         @redirected_to = nil
         @redirect_alert = nil
+        @redirect_notice = nil
         @rendered_json = nil
         @rendered_status = nil
+        @flash.clear
       end
 
       # A simple format responder to handle respond_to blocks
@@ -407,6 +412,21 @@ module Organizations
 
       assert_equal "/organizations/new", @controller.redirected_to
       assert_equal "Please select or create an organization.", @controller.redirect_alert
+    end
+
+    test "require_organization! default handler can use configured no_organization_notice" do
+      Organizations.configure do |config|
+        config.no_organization_notice = "Please create or join an organization."
+      end
+
+      @controller.test_current_user = create_user!
+      @controller.set_format(:html)
+
+      @controller.require_organization!
+
+      assert_equal "/organizations/new", @controller.redirected_to
+      assert_nil @controller.redirect_alert
+      assert_equal "Please create or join an organization.", @controller.redirect_notice
     end
 
     test "require_organization! renders json when no org (default handler, json)" do
@@ -1232,6 +1252,18 @@ module Organizations
       refute @controller.pending_organization_invitation?
     end
 
+    test "pending_organization_invitation_email returns invitation email when present" do
+      org, owner = create_org_with_owner!
+      invitation = org.send_invite_to!("teammate@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+
+      assert_equal "teammate@example.com", @controller.pending_organization_invitation_email
+    end
+
+    test "pending_organization_invitation_email returns nil when there is no invitation" do
+      assert_nil @controller.pending_organization_invitation_email
+    end
+
     test "clear_pending_organization_invitation! clears token and memo" do
       org, owner = create_org_with_owner!
       invitation = org.send_invite_to!("test@example.com", invited_by: owner)
@@ -1256,6 +1288,15 @@ module Organizations
       assert_nil result
     end
 
+    test "accept_pending_organization_invitation! with return_failure returns missing_user failure" do
+      result = @controller.accept_pending_organization_invitation!(nil, return_failure: true)
+
+      assert_instance_of Organizations::InvitationAcceptanceFailure, result
+      assert result.missing_user?
+      assert result.failure?
+      assert_nil result.invitation
+    end
+
     test "accept_pending_organization_invitation! returns nil without token" do
       user = create_user!
       @controller.test_current_user = user
@@ -1263,6 +1304,17 @@ module Organizations
       result = @controller.accept_pending_organization_invitation!(user)
 
       assert_nil result
+    end
+
+    test "accept_pending_organization_invitation! with return_failure returns missing_token failure" do
+      user = create_user!
+      @controller.test_current_user = user
+
+      result = @controller.accept_pending_organization_invitation!(user, return_failure: true)
+
+      assert_instance_of Organizations::InvitationAcceptanceFailure, result
+      assert result.missing_token?
+      assert result.failure?
     end
 
     test "accept_pending_organization_invitation! uses explicit token over session" do
@@ -1342,6 +1394,20 @@ module Organizations
 
       assert_nil result
       # Token should be preserved so user can switch accounts
+      assert_equal invitation.token, @controller.session[:organizations_pending_invitation_token]
+    end
+
+    test "accept_pending_organization_invitation! with return_failure returns email_mismatch and keeps token" do
+      org, owner = create_org_with_owner!
+      wrong_user = create_user!(email: "wrong@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = wrong_user
+
+      result = @controller.accept_pending_organization_invitation!(wrong_user, return_failure: true)
+
+      assert_instance_of Organizations::InvitationAcceptanceFailure, result
+      assert result.email_mismatch?
       assert_equal invitation.token, @controller.session[:organizations_pending_invitation_token]
     end
 
@@ -1437,6 +1503,33 @@ module Organizations
 
       assert_not_nil result
       assert result.accepted?
+    end
+
+    test "accept_pending_organization_invitation! with return_failure returns integrity anomaly reason" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      original_accept = Organizations::Invitation.instance_method(:accept!)
+      Organizations::Invitation.define_method(:accept!) do |_user, **_kwargs|
+        raise Organizations::InvitationAlreadyAccepted, "already accepted"
+      end
+
+      begin
+        result = @controller.accept_pending_organization_invitation!(
+          user,
+          token: invitation.token,
+          return_failure: true
+        )
+
+        assert_instance_of Organizations::InvitationAcceptanceFailure, result
+        assert result.already_accepted_without_membership?
+        assert_nil @controller.session[:organizations_pending_invitation_token]
+      ensure
+        Organizations::Invitation.define_method(:accept!, original_accept)
+      end
     end
 
     # =====================
@@ -1558,6 +1651,197 @@ module Organizations
       result = @controller.redirect_path_after_invitation_accepted(invitation)
 
       assert_equal "/one-arity/#{invitation.token}", result
+    end
+
+    test "pending_invitation_acceptance_redirect_path_for returns nil when no pending invitation exists" do
+      user = create_user!
+      @controller.test_current_user = user
+
+      result = @controller.pending_invitation_acceptance_redirect_path_for(user)
+
+      assert_nil result
+      assert_nil @controller.flash[:notice]
+    end
+
+    test "pending_invitation_acceptance_redirect_path_for accepts and returns redirect path with default notice" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = "/dashboard"
+      end
+
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.pending_invitation_acceptance_redirect_path_for(user)
+
+      assert_equal "/dashboard", result
+      assert_equal "Welcome to #{org.name}!", @controller.flash[:notice]
+    end
+
+    test "pending_invitation_acceptance_redirect_path_for supports notice: false" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = "/dashboard"
+      end
+
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.pending_invitation_acceptance_redirect_path_for(user, notice: false)
+
+      assert_equal "/dashboard", result
+      assert_nil @controller.flash[:notice]
+    end
+
+    test "handle_pending_invitation_acceptance_for returns path when invitation is accepted" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = "/dashboard"
+      end
+
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.handle_pending_invitation_acceptance_for(user)
+
+      assert_equal "/dashboard", result
+      assert_equal "Welcome to #{org.name}!", @controller.flash[:notice]
+    end
+
+    test "handle_pending_invitation_acceptance_for with redirect: true redirects and returns true" do
+      Organizations.configure do |config|
+        config.redirect_path_after_invitation_accepted = "/dashboard"
+      end
+
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      result = @controller.handle_pending_invitation_acceptance_for(user, redirect: true)
+
+      assert_equal true, result
+      assert_equal "/dashboard", @controller.redirected_to
+    end
+
+    test "handle_pending_invitation_acceptance_for with redirect: true returns false when no invitation" do
+      user = create_user!
+      @controller.test_current_user = user
+
+      result = @controller.handle_pending_invitation_acceptance_for(user, redirect: true)
+
+      assert_equal false, result
+      assert_nil @controller.redirected_to
+    end
+
+    test "redirect_path_when_no_organization returns configured path" do
+      Organizations.configure do |config|
+        config.redirect_path_when_no_organization = "/onboarding/create_organization"
+      end
+
+      result = @controller.redirect_path_when_no_organization
+
+      assert_equal "/onboarding/create_organization", result
+      assert_equal "/onboarding/create_organization", @controller.no_organization_redirect_path
+    end
+
+    test "redirect_path_when_no_organization supports proc" do
+      user = create_user!
+      @controller.test_current_user = user
+      Organizations.configure do |config|
+        config.redirect_path_when_no_organization = ->(u) { "/orgs/new?user=#{u.id}" }
+      end
+
+      result = @controller.redirect_path_when_no_organization
+
+      assert_equal "/orgs/new?user=#{user.id}", result
+    end
+
+    test "redirect_to_no_organization! redirects and returns false" do
+      Organizations.configure do |config|
+        config.redirect_path_when_no_organization = "/onboarding/create_organization"
+      end
+
+      result = @controller.redirect_to_no_organization!(alert: "Please create an org")
+
+      assert_equal false, result
+      assert_equal "/onboarding/create_organization", @controller.redirected_to
+      assert_equal "Please create an org", @controller.redirect_alert
+    end
+
+    test "redirect_to_no_organization! supports notice" do
+      Organizations.configure do |config|
+        config.redirect_path_when_no_organization = "/onboarding/create_organization"
+      end
+
+      result = @controller.redirect_to_no_organization!(notice: "Please create or join an organization.")
+
+      assert_equal false, result
+      assert_equal "/onboarding/create_organization", @controller.redirected_to
+      assert_nil @controller.redirect_alert
+      assert_equal "Please create or join an organization.", @controller.redirect_notice
+    end
+
+    test "create_organization_and_switch! creates organization and sets context" do
+      user = create_user!(email: "new-owner@example.com")
+      @controller.test_current_user = user
+
+      organization = @controller.create_organization_and_switch!(user, name: "New Org")
+
+      assert_equal "New Org", organization.name
+      assert_equal organization.id, @controller.session[:current_organization_id]
+      assert_equal organization.id, user._current_organization_id
+      assert Organizations::Membership.exists?(user_id: user.id, organization_id: organization.id)
+    end
+
+    test "create_organization_with_context! aliases create_organization_and_switch!" do
+      user = create_user!(email: "alias-owner@example.com")
+      @controller.test_current_user = user
+
+      organization = @controller.create_organization_with_context!(user, name: "Alias Org")
+
+      assert_equal "Alias Org", organization.name
+      assert_equal organization.id, @controller.session[:current_organization_id]
+    end
+
+    test "redirect_path_after_organization_switched returns default root path" do
+      org, = create_org_with_owner!
+
+      result = @controller.redirect_path_after_organization_switched(org)
+
+      assert_equal "/", result
+    end
+
+    test "redirect_path_after_organization_switched uses string config" do
+      Organizations.configure do |config|
+        config.redirect_path_after_organization_switched = "/dashboard"
+      end
+
+      org, = create_org_with_owner!
+      user = create_user!
+
+      result = @controller.redirect_path_after_organization_switched(org, user: user)
+
+      assert_equal "/dashboard", result
+    end
+
+    test "redirect_path_after_organization_switched executes proc with org and user" do
+      Organizations.configure do |config|
+        config.redirect_path_after_organization_switched = ->(org, user) { "/orgs/#{org.id}?user=#{user.id}" }
+      end
+
+      org, owner = create_org_with_owner!
+
+      result = @controller.redirect_path_after_organization_switched(org, user: owner)
+
+      assert_equal "/orgs/#{org.id}?user=#{owner.id}", result
     end
   end
 end

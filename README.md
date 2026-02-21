@@ -375,17 +375,30 @@ organization_signed_in?         # Is there an active organization?
 pending_organization_invitation_token   # Get pending invitation token from session
 pending_organization_invitation         # Get pending invitation (clears if expired)
 pending_organization_invitation?        # Check if valid pending invitation exists
+pending_organization_invitation_email   # Get invited email (for signup prefill)
 clear_pending_organization_invitation!  # Clear invitation token and cache
 
 # Invitation acceptance (canonical helper for post-signup flows)
 accept_pending_organization_invitation!(user)                    # Accept with session token
 accept_pending_organization_invitation!(user, token: token)      # Explicit token
 accept_pending_organization_invitation!(user, switch: false)     # Don't auto-switch org
+accept_pending_organization_invitation!(user, return_failure: true) # Returns failure object on rejection
+pending_invitation_acceptance_redirect_path_for(user)            # Accept + resolve redirect path
+handle_pending_invitation_acceptance_for(user, redirect: true)   # Accept + optionally redirect
 # Returns InvitationAcceptanceResult or nil
 
 # Invitation redirect helpers
 redirect_path_when_invitation_requires_authentication(invitation)  # Get auth redirect
 redirect_path_after_invitation_accepted(invitation, user: user)    # Get post-accept redirect
+redirect_path_after_organization_switched(org, user: user)         # Get post-switch redirect
+
+# No-organization helpers
+redirect_path_when_no_organization(user: nil)                     # Resolve configured no-org redirect path
+no_organization_redirect_path                                     # Alias
+redirect_to_no_organization!(alert: "...", notice: "...")         # Redirect and return false
+
+# Organization creation helper
+create_organization_and_switch!(current_user, name: "Acme")       # Create and set context in one call
 
 # Authorization
 require_organization!                               # Redirect if no active org
@@ -653,15 +666,15 @@ The gem stores the invitation token in `session[:organizations_pending_invitatio
 ```ruby
 # In your ApplicationController (works with Devise or any auth system)
 def after_sign_in_path_for(resource)
-  if (result = accept_pending_organization_invitation!(resource))
-    return redirect_path_after_invitation_accepted(result.invitation, user: resource)
+  if (path = pending_invitation_acceptance_redirect_path_for(resource))
+    return path
   end
   super
 end
 
 def after_sign_up_path_for(resource)
-  if (result = accept_pending_organization_invitation!(resource))
-    return redirect_path_after_invitation_accepted(result.invitation, user: resource)
+  if (path = pending_invitation_acceptance_redirect_path_for(resource))
+    return path
   end
   super
 end
@@ -685,16 +698,33 @@ result.invitation     # => the invitation record
 result.membership     # => the membership record
 ```
 
+If you want structured failure reasons instead of `nil`, pass `return_failure: true`:
+
+```ruby
+result = accept_pending_organization_invitation!(user, return_failure: true)
+
+if result.success?
+  # InvitationAcceptanceResult
+else
+  # InvitationAcceptanceFailure
+  result.failure_reason # => :missing_token, :email_mismatch, :invitation_expired, etc.
+end
+```
+
 Configure redirects in your initializer:
 
 ```ruby
 Organizations.configure do |config|
   config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
   config.redirect_path_after_invitation_accepted = "/dashboard"
+  config.redirect_path_after_organization_switched = "/dashboard"
 
   # Or use procs for dynamic paths:
   config.redirect_path_after_invitation_accepted = ->(inv, user) {
     "/org/#{inv.organization_id}/welcome"
+  }
+  config.redirect_path_after_organization_switched = ->(org, user) {
+    "/orgs/#{org.id}?user=#{user.id}"
   }
 end
 ```
@@ -909,6 +939,16 @@ Organizations.configure do |config|
   config.redirect_path_after_invitation_accepted = "/dashboard"
   # Or use a Proc: ->(invitation, user) { "/org/#{invitation.organization_id}/welcome" }
 
+  # Where to redirect after organization switch
+  # Default: nil (uses root_path)
+  config.redirect_path_after_organization_switched = "/dashboard"
+  # Or use a Proc: ->(organization, user) { "/orgs/#{organization.id}" }
+
+  # Optional flash messages for built-in no-organization redirects.
+  # Leave nil to keep default alert behavior.
+  config.no_organization_alert = "Please create an organization first."
+  config.no_organization_notice = "Please create or join an organization to continue."
+
   # === Organizations Controller ===
   # Additional params to permit when creating/updating organizations
   # Use this to add custom fields like support_email, billing_email, logo
@@ -921,6 +961,10 @@ Organizations.configure do |config|
   # Base controller for public routes like invitation acceptance (default: ActionController::Base)
   # Use this to avoid inheriting host app filters that enforce authentication
   config.public_controller = "ActionController::Base"
+
+  # Layout overrides for engine controllers (optional)
+  config.authenticated_controller_layout = "dashboard"
+  config.public_controller_layout = "devise"
 
   # === Handlers ===
   # Called when authorization fails
