@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require File.expand_path("../../app/controllers/concerns/organizations/current_user_resolution", __dir__)
 
 module Organizations
   # Regression tests for all issues documented in REVIEW.md.
@@ -27,6 +28,81 @@ module Organizations
       # to prevent infinite recursion when the configured method matches
       # the controller's own current_user method.
       assert_equal :current_user, Organizations.configuration.current_user_method
+    end
+
+    # Regression: PR #8
+    # PublicController inherits from ActionController::Base by default, so it
+    # must resolve current_user via Warden when Devise is present.
+    test "public current_user resolves signed-in user via warden with base parent" do
+      user = create_user!
+
+      warden_proxy = Class.new do
+        attr_reader :scopes
+
+        def initialize(user)
+          @user = user
+          @scopes = []
+        end
+
+        def user(scope)
+          @scopes << scope
+          @user
+        end
+      end.new(user)
+
+      parent = Class.new
+
+      resolver = Class.new(parent) do
+        include Organizations::CurrentUserResolution
+
+        def initialize(warden_proxy)
+          @warden_proxy = warden_proxy
+        end
+
+        def current_user
+          return @_current_user if defined?(@_current_user) && !@_current_user.nil?
+
+          @_current_user = resolve_custom_auth_user ||
+                           warden_user ||
+                           (super rescue nil)
+        end
+
+        private
+
+        def warden
+          @warden_proxy
+        end
+      end.new(warden_proxy)
+
+      assert_equal user, resolver.current_user
+      assert_equal [:user], warden_proxy.scopes
+    end
+
+    # Regression: PR #8
+    # A warden helper can exist even when middleware is absent (returns nil).
+    # That path must not raise and should gracefully return nil.
+    test "public current_user handles nil warden middleware safely" do
+      parent = Class.new
+
+      resolver = Class.new(parent) do
+        include Organizations::CurrentUserResolution
+
+        def current_user
+          return @_current_user if defined?(@_current_user) && !@_current_user.nil?
+
+          @_current_user = resolve_custom_auth_user ||
+                           warden_user ||
+                           (super rescue nil)
+        end
+
+        private
+
+        def warden
+          nil
+        end
+      end.new
+
+      assert_nil resolver.current_user
     end
 
     # Regression: Round 1, Critical #2

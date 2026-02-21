@@ -15,9 +15,11 @@ module Organizations
     # @return [User, nil]
     def warden_user
       return nil unless respond_to?(:warden, true)
+      w = warden
+      return nil unless w
 
       scope = defined?(Devise) ? Devise.default_scope : :user
-      warden.user(scope)
+      w.user(scope)
     end
 
     # Resolve custom auth method (Rodauth, Sorcery, etc.)
