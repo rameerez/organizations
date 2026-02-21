@@ -71,6 +71,14 @@ module Organizations
     # Can be a String ("/dashboard") or Proc (->(org) { "/orgs/#{org.id}" })
     attr_accessor :after_organization_created_redirect_path
 
+    # Default flash alert for no-organization redirects when using the built-in handler
+    # nil keeps backward-compatible default alert
+    attr_accessor :no_organization_alert
+
+    # Default flash notice for no-organization redirects when using the built-in handler
+    # nil means no notice
+    attr_accessor :no_organization_notice
+
     # === Invitation Flow Redirects ===
     # Where to redirect unauthenticated users when they try to accept an invitation
     # Can be nil (use default: new_user_registration_path or root_path),
@@ -81,6 +89,11 @@ module Organizations
     # Can be nil (use default: root_path), a String ("/dashboard"),
     # or a Proc receiving (invitation, user)
     attr_accessor :redirect_path_after_invitation_accepted
+
+    # Where to redirect after organization switch
+    # Can be nil (use default: root_path), a String ("/dashboard"),
+    # or a Proc receiving (organization, user)
+    attr_accessor :redirect_path_after_organization_switched
 
     # === Organizations Controller ===
     # Additional params to permit when creating/updating organizations
@@ -94,6 +107,14 @@ module Organizations
     # Base controller for public routes like invitation acceptance (default: ActionController::Base)
     # Use this to avoid inheriting host app filters that enforce authentication
     attr_accessor :public_controller
+
+    # Layout for authenticated engine controllers (OrganizationsController, etc.)
+    # Can be nil (use controller default), String, or Symbol
+    attr_accessor :authenticated_controller_layout
+
+    # Layout for public engine controllers (PublicInvitationsController, etc.)
+    # Can be nil (use controller default), String, or Symbol
+    attr_accessor :public_controller_layout
 
     # === Handlers (blocks) ===
     # @private - stored handler blocks
@@ -138,10 +159,13 @@ module Organizations
       # Redirects
       @redirect_path_when_no_organization = "/organizations/new"
       @after_organization_created_redirect_path = nil
+      @no_organization_alert = nil
+      @no_organization_notice = nil
 
       # Invitation flow redirects
       @redirect_path_when_invitation_requires_authentication = nil
       @redirect_path_after_invitation_accepted = nil
+      @redirect_path_after_organization_switched = nil
 
       # Organizations controller
       @additional_organization_params = []
@@ -149,6 +173,8 @@ module Organizations
       # Engine
       @parent_controller = "::ApplicationController"
       @public_controller = "ActionController::Base"
+      @authenticated_controller_layout = nil
+      @public_controller_layout = nil
 
       # Handlers (nil by default - use default behavior)
       @unauthorized_handler = nil
@@ -283,6 +309,8 @@ module Organizations
       validate_invitation_settings!
       validate_limits!
       validate_invitation_redirects!
+      validate_no_organization_messages!
+      validate_controller_layouts!
       true
     end
 
@@ -327,6 +355,20 @@ module Organizations
         @redirect_path_after_invitation_accepted,
         "redirect_path_after_invitation_accepted"
       )
+      validate_redirect_option!(
+        @redirect_path_after_organization_switched,
+        "redirect_path_after_organization_switched"
+      )
+    end
+
+    def validate_controller_layouts!
+      validate_layout_option!(@authenticated_controller_layout, "authenticated_controller_layout")
+      validate_layout_option!(@public_controller_layout, "public_controller_layout")
+    end
+
+    def validate_no_organization_messages!
+      validate_string_option!(@no_organization_alert, "no_organization_alert")
+      validate_string_option!(@no_organization_notice, "no_organization_notice")
     end
 
     def validate_redirect_option!(value, option_name)
@@ -334,6 +376,20 @@ module Organizations
 
       raise ConfigurationError,
             "#{option_name} must be nil, a String, or a Proc"
+    end
+
+    def validate_layout_option!(value, option_name)
+      return if value.nil? || value.is_a?(String) || value.is_a?(Symbol)
+
+      raise ConfigurationError,
+            "#{option_name} must be nil, a String, or a Symbol"
+    end
+
+    def validate_string_option!(value, option_name)
+      return if value.nil? || value.is_a?(String)
+
+      raise ConfigurationError,
+            "#{option_name} must be nil or a String"
     end
   end
 end

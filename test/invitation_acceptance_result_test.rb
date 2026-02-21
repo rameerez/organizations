@@ -68,6 +68,18 @@ module Organizations
       refute result.accepted?
     end
 
+    test "success and failure helpers match successful result contract" do
+      result = InvitationAcceptanceResult.new(
+        status: :accepted,
+        invitation: @invitation,
+        membership: @membership
+      )
+
+      assert result.success?
+      refute result.failure?
+      assert_nil result.failure_reason
+    end
+
     test "switched? returns true when switched is true" do
       result = InvitationAcceptanceResult.new(
         status: :accepted,

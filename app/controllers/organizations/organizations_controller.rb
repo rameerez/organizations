@@ -40,10 +40,7 @@ module Organizations
     # Create a new organization
     def create
       begin
-        @organization = current_user.create_organization!(organization_params.to_h)
-
-        # Switch to the new organization
-        switch_to_organization!(@organization)
+        @organization = create_organization_and_switch!(current_user, organization_params.to_h)
 
         respond_to do |format|
           format.html { redirect_to after_create_redirect_path(@organization), notice: "Organization created successfully." }

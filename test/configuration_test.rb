@@ -629,6 +629,18 @@ module Organizations
       assert_nil Organizations.configuration.redirect_path_after_invitation_accepted
     end
 
+    test "redirect_path_after_organization_switched defaults to nil" do
+      assert_nil Organizations.configuration.redirect_path_after_organization_switched
+    end
+
+    test "no_organization_alert defaults to nil" do
+      assert_nil Organizations.configuration.no_organization_alert
+    end
+
+    test "no_organization_notice defaults to nil" do
+      assert_nil Organizations.configuration.no_organization_notice
+    end
+
     test "redirect_path_when_invitation_requires_authentication can be set to String" do
       Organizations.configure do |config|
         config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
@@ -643,6 +655,14 @@ module Organizations
       end
 
       assert_equal "/dashboard", Organizations.configuration.redirect_path_after_invitation_accepted
+    end
+
+    test "redirect_path_after_organization_switched can be set to String" do
+      Organizations.configure do |config|
+        config.redirect_path_after_organization_switched = "/dashboard"
+      end
+
+      assert_equal "/dashboard", Organizations.configuration.redirect_path_after_organization_switched
     end
 
     test "redirect_path_when_invitation_requires_authentication can be set to Proc" do
@@ -665,6 +685,32 @@ module Organizations
       assert_equal the_proc, Organizations.configuration.redirect_path_after_invitation_accepted
     end
 
+    test "redirect_path_after_organization_switched can be set to Proc" do
+      the_proc = ->(org, _user) { "/org/#{org&.id}" }
+
+      Organizations.configure do |config|
+        config.redirect_path_after_organization_switched = the_proc
+      end
+
+      assert_equal the_proc, Organizations.configuration.redirect_path_after_organization_switched
+    end
+
+    test "no_organization_alert can be set to String" do
+      Organizations.configure do |config|
+        config.no_organization_alert = "Please create an organization first."
+      end
+
+      assert_equal "Please create an organization first.", Organizations.configuration.no_organization_alert
+    end
+
+    test "no_organization_notice can be set to String" do
+      Organizations.configure do |config|
+        config.no_organization_notice = "Please create or join an organization."
+      end
+
+      assert_equal "Please create or join an organization.", Organizations.configuration.no_organization_notice
+    end
+
     test "validate! raises if redirect_path_when_invitation_requires_authentication is invalid type" do
       assert_raises(ConfigurationError) do
         Organizations.configure do |config|
@@ -681,16 +727,92 @@ module Organizations
       end
     end
 
+    test "validate! raises if redirect_path_after_organization_switched is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.redirect_path_after_organization_switched = 123
+        end
+      end
+    end
+
+    test "validate! raises if no_organization_alert is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.no_organization_alert = :symbol
+        end
+      end
+    end
+
+    test "validate! raises if no_organization_notice is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.no_organization_notice = 42
+        end
+      end
+    end
+
+    # ── Controller Layouts ─────────────────────────────────────────────
+
+    test "authenticated_controller_layout defaults to nil" do
+      assert_nil Organizations.configuration.authenticated_controller_layout
+    end
+
+    test "public_controller_layout defaults to nil" do
+      assert_nil Organizations.configuration.public_controller_layout
+    end
+
+    test "authenticated_controller_layout can be set to String" do
+      Organizations.configure do |config|
+        config.authenticated_controller_layout = "dashboard"
+      end
+
+      assert_equal "dashboard", Organizations.configuration.authenticated_controller_layout
+    end
+
+    test "public_controller_layout can be set to Symbol" do
+      Organizations.configure do |config|
+        config.public_controller_layout = :devise
+      end
+
+      assert_equal :devise, Organizations.configuration.public_controller_layout
+    end
+
+    test "validate! raises if authenticated_controller_layout is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.authenticated_controller_layout = [:dashboard]
+        end
+      end
+    end
+
+    test "validate! raises if public_controller_layout is invalid type" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.public_controller_layout = 123
+        end
+      end
+    end
+
     test "reset_configuration! clears invitation redirect options" do
       Organizations.configure do |config|
         config.redirect_path_when_invitation_requires_authentication = "/custom"
         config.redirect_path_after_invitation_accepted = "/custom2"
+        config.redirect_path_after_organization_switched = "/custom3"
+        config.no_organization_alert = "Alert"
+        config.no_organization_notice = "Notice"
+        config.authenticated_controller_layout = "dashboard"
+        config.public_controller_layout = "devise"
       end
 
       Organizations.reset_configuration!
 
       assert_nil Organizations.configuration.redirect_path_when_invitation_requires_authentication
       assert_nil Organizations.configuration.redirect_path_after_invitation_accepted
+      assert_nil Organizations.configuration.redirect_path_after_organization_switched
+      assert_nil Organizations.configuration.no_organization_alert
+      assert_nil Organizations.configuration.no_organization_notice
+      assert_nil Organizations.configuration.authenticated_controller_layout
+      assert_nil Organizations.configuration.public_controller_layout
     end
   end
 end

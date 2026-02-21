@@ -19,6 +19,11 @@ module Organizations
     # Protect from forgery if the parent controller does
     protect_from_forgery with: :exception if respond_to?(:protect_from_forgery)
 
+    if respond_to?(:layout)
+      # Resolve layout at request-time so runtime config changes are respected.
+      layout :organizations_authenticated_layout
+    end
+
     # Ensure user is authenticated for all actions
     before_action :authenticate_organizations_user!
 
@@ -49,26 +54,25 @@ module Organizations
     # === User Context ===
 
     # Returns the current user from the host application.
-    # Inherits from host's ApplicationController which provides Devise's current_user.
-    #
-    # Resolution order:
-    # 1. Custom method (if configured to something other than :current_user)
-    # 2. Parent class method (host's ApplicationController with Devise)
+    # Uses the configured method name (defaults to :current_user)
+    # NOTE: We call the PARENT class method to avoid infinite recursion
     def current_user
-      return @_current_user if defined?(@_current_user)
-
-      user_method = Organizations.configuration.current_user_method
-
-      @_current_user = if user_method && user_method != :current_user && respond_to?(user_method, true)
-                         # Custom auth method (Rodauth, Sorcery, etc.)
-                         send(user_method)
-                       else
-                         # Parent class (host's ApplicationController with Devise)
-                         super rescue nil
-                       end
+      resolve_organizations_current_user(
+        cache_ivar: :@_current_user,
+        cache_nil: true,
+        prefer_super_for_current_user: true
+      )
     end
 
     # Alias for compatibility
     alias_method :current_organizations_user, :current_user
+
+    def organizations_authenticated_layout
+      configured_layout = Organizations.configuration.authenticated_controller_layout
+      return nil if configured_layout.nil?
+      return configured_layout unless configured_layout.is_a?(Symbol)
+
+      send(configured_layout)
+    end
   end
 end
