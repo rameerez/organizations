@@ -1,3 +1,8 @@
+## [0.3.1] - 2026-02-28
+
+- Fixed `organization_switcher_data[:switch_path]` generating broken URLs when engine mounted with custom name (e.g., `as: 'organizations_engine'`)
+- `switch_path` now uses engine's own route helpers, works regardless of mount name or path
+
 ## [0.3.0] - 2026-02-20
 
 - Invitation onboarding is now first-class and configurable, so host apps can remove most custom signup/invite glue code.
