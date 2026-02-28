@@ -71,10 +71,10 @@ module Organizations
       path_lambda = data[:switch_path]
 
       assert_respond_to path_lambda, :call
-      # Uses engine route helpers, path format depends on engine mount configuration
+      # In non-Rails unit tests, falls back to hardcoded path format
+      # In Rails with engine loaded, uses Engine.routes.url_helpers
       path = path_lambda.call(org.id)
-      assert_includes path, "switch"
-      assert_includes path, org.id.to_s
+      assert_match %r{/organizations/switch/#{org.id}\z}, path
     end
 
     test "organization_switcher_data returns empty data when no current_user" do
