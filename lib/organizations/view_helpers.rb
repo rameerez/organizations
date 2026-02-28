@@ -326,16 +326,21 @@ module Organizations
     end
 
     # Build a lambda for generating switch paths
-    # Uses route helpers when available, falls back to hardcoded path
+    # Uses the engine's own route helpers to ensure correct paths regardless of mount configuration
     def build_switch_path_lambda
-      # Try to use route helpers if available
-      # The route name is :switch_organization (POST /organizations/switch/:id)
-      if respond_to?(:organizations) && organizations.respond_to?(:switch_organization_path)
+      # Primary: Use the engine's own route helpers
+      # This works regardless of how the engine is mounted (name or path).
+      # When mounted (e.g., `mount Engine => '/org'`), the engine's url_helpers
+      # generate paths relative to the mount point (e.g., `/org/organizations/switch/:id`).
+      if defined?(Organizations::Engine)
+        ->(org_id) { Organizations::Engine.routes.url_helpers.switch_organization_path(org_id) }
+      # Fallbacks below are for non-Rails environments (e.g., gem unit tests that don't load Rails).
+      # In production Rails apps, Organizations::Engine is always defined.
+      elsif respond_to?(:organizations) && organizations.respond_to?(:switch_organization_path)
         ->(org_id) { organizations.switch_organization_path(org_id) }
       elsif respond_to?(:main_app) && main_app.respond_to?(:switch_organization_path)
         ->(org_id) { main_app.switch_organization_path(org_id) }
       else
-        # Fallback to standard path
         ->(org_id) { "/organizations/switch/#{org_id}" }
       end
     end
