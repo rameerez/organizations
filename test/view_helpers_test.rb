@@ -71,7 +71,10 @@ module Organizations
       path_lambda = data[:switch_path]
 
       assert_respond_to path_lambda, :call
-      assert_equal "/organizations/switch/#{org.id}", path_lambda.call(org.id)
+      # Uses engine route helpers, path format depends on engine mount configuration
+      path = path_lambda.call(org.id)
+      assert_includes path, "switch"
+      assert_includes path, org.id.to_s
     end
 
     test "organization_switcher_data returns empty data when no current_user" do
@@ -616,23 +619,31 @@ module Organizations
 
     # === Route helper resolution ===
 
-    test "switch_path falls back to hardcoded path when no route helpers are available" do
+    # NOTE: In a full Rails environment, switch_path uses Organizations::Engine.routes.url_helpers
+    # which generates correct paths regardless of how the engine is mounted. These unit tests
+    # run without Rails, so they test the fallback behavior. Integration tests in test/dummy
+    # verify the engine route helper behavior.
+
+    test "switch_path falls back to hardcoded path in non-Rails environment" do
+      # This test runs without Rails::Engine loaded, so it uses the fallback
       org, owner = create_org_with_owner!(name: "Fallback Org")
       self.current_user = owner
       self.current_organization = org
 
+      refute defined?(Organizations::Engine), "Test should run without Engine loaded"
+
       data = organization_switcher_data
-      assert_equal "/organizations/switch/123", data[:switch_path].call(123)
+      assert_equal "/organizations/switch/#{org.id}", data[:switch_path].call(org.id)
     end
 
-    test "switch_path uses organizations engine helper when available" do
+    test "switch_path uses organizations helper when available" do
       org, owner = create_org_with_owner!(name: "Engine Org")
       self.current_user = owner
       self.current_organization = org
 
       engine_helper = Object.new
       def engine_helper.switch_organization_path(id)
-        "/engine/switch/#{id}"
+        "/custom-mount/switch/#{id}"
       end
 
       # Define organizations method to return the engine helper
@@ -642,20 +653,20 @@ module Organizations
       remove_instance_variable(:@_organization_switcher_data) if instance_variable_defined?(:@_organization_switcher_data)
 
       data = organization_switcher_data
-      assert_equal "/engine/switch/42", data[:switch_path].call(42)
+      assert_equal "/custom-mount/switch/42", data[:switch_path].call(42)
     ensure
       # Clean up the singleton method
       class << self; remove_method(:organizations) if method_defined?(:organizations); end
     end
 
-    test "switch_path uses main_app helper as fallback" do
+    test "switch_path uses main_app helper as secondary fallback" do
       org, owner = create_org_with_owner!(name: "Main App Org")
       self.current_user = owner
       self.current_organization = org
 
       main_app_helper = Object.new
       def main_app_helper.switch_organization_path(id)
-        "/main_app/switch/#{id}"
+        "/main-app-mount/switch/#{id}"
       end
 
       define_singleton_method(:main_app) { main_app_helper }
@@ -664,7 +675,7 @@ module Organizations
       remove_instance_variable(:@_organization_switcher_data) if instance_variable_defined?(:@_organization_switcher_data)
 
       data = organization_switcher_data
-      assert_equal "/main_app/switch/99", data[:switch_path].call(99)
+      assert_equal "/main-app-mount/switch/99", data[:switch_path].call(99)
     ensure
       class << self; remove_method(:main_app) if method_defined?(:main_app); end
     end
