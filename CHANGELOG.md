@@ -1,3 +1,12 @@
+## [0.4.0] - 2026-03-17
+
+**Breaking:** `memberships_count` column is now required on the organizations table.
+
+- Added `memberships_count` to the install migration template (fresh installs get it automatically)
+- Switched to Rails' native `counter_cache` so in-memory organization instances stay accurate after member changes
+- `member_count` now reads directly from the counter cache (no fallback to COUNT query)
+- Marked `memberships_count` as readonly on organizations
+
 ## [0.3.1] - 2026-02-28
 
 - Fixed `organization_switcher_data[:switch_path]` generating broken URLs when engine mounted with custom name (e.g., `as: 'organizations_engine'`)

@@ -531,16 +531,14 @@ module Organizations
     # Counter Cache
     # =========================================================================
 
-    test "counter cache: uses count query when memberships_count column does not exist" do
-      org, _owner = create_org_with_owner!
-      member = create_user!
-      org.add_member!(member, role: :member)
+    test "counter cache: create_organization! returns an org with the owner already counted" do
+      user = create_user!
+      org = user.create_organization!("My Org")
 
-      # Our test schema does not have memberships_count column
-      assert_equal 2, org.member_count
+      assert_equal 1, org.member_count
     end
 
-    test "counter cache: member_count returns accurate count after add and remove" do
+    test "counter cache: member_count stays current after add and remove without reload" do
       org, _owner = create_org_with_owner!
 
       assert_equal 1, org.member_count
@@ -550,31 +548,20 @@ module Organizations
       assert_equal 2, org.member_count
 
       org.remove_member!(member)
-      assert_equal 1, org.reload.member_count
+      assert_equal 1, org.member_count
     end
 
-    test "counter cache: increment_counter called on membership create when column exists" do
-      org, _owner = create_org_with_owner!
-
-      # Verify the counter cache logic exists in the membership model
-      # The callback is registered but only fires when column exists
-      membership = Organizations::Membership.new(user: create_user!, organization: org, role: "member")
-
-      # The private method checks column existence
-      assert_equal false, membership.send(:memberships_counter_cache_enabled?)
-    end
-
-    test "counter cache: no-op when memberships_count column does not exist" do
+    test "counter cache: membership create and remove keep the counter accurate" do
       org, _owner = create_org_with_owner!
       user = create_user!
 
-      # Should not raise even though column doesn't exist
       membership = org.add_member!(user, role: :member)
       assert membership.persisted?
+      assert_equal 2, org.member_count
 
-      # Remove should also not raise
       org.remove_member!(user)
       refute user.is_member_of?(org)
+      assert_equal 1, org.member_count
     end
 
     # =========================================================================
@@ -917,56 +904,21 @@ module Organizations
     # Counter Cache with Column Present
     # =========================================================================
 
-    test "counter cache: uses increment_counter/decrement_counter (atomic) not read-modify-write" do
-      org, _owner = create_org_with_owner!
-
-      # Verify the membership model uses AR increment_counter / decrement_counter
-      # which generates UPDATE organizations SET memberships_count = memberships_count + 1
-      # rather than read-modify-write
-      membership = Organizations::Membership.new(user: create_user!, organization: org, role: "member")
-
-      # The callbacks call Organizations::Organization.increment_counter and decrement_counter
-      # which are atomic SQL operations. Verify the callback methods exist.
-      assert membership.respond_to?(:increment_memberships_counter_cache, true)
-      assert membership.respond_to?(:decrement_memberships_counter_cache, true)
-    end
-
-    test "counter cache: memberships_counter_cache_enabled? returns false when column missing" do
+    test "counter cache: membership association is configured with a native counter cache" do
       org, _owner = create_org_with_owner!
       membership = Organizations::Membership.new(user: create_user!, organization: org, role: "member")
+      reflection = membership.association(:organization).reflection
 
-      # Our test schema does not have memberships_count column
-      refute membership.send(:memberships_counter_cache_enabled?)
+      assert_equal "memberships_count", reflection.counter_cache_column
     end
 
-    test "counter cache: member_count falls back to count query without counter column" do
+    test "counter cache: member_count reads the live in-memory counter value" do
       org, _owner = create_org_with_owner!
 
-      # has_attribute? returns false for non-existent column
-      refute org.has_attribute?(:memberships_count)
-
-      # Falls back to memberships.count
       assert_equal 1, org.member_count
 
       org.add_member!(create_user!, role: :member)
       assert_equal 2, org.member_count
-    end
-
-    test "counter cache: member_count uses cached value when counter column exists" do
-      org, _owner = create_org_with_owner!
-
-      # Simulate counter cache column by stubbing has_attribute?
-      org.stub(:has_attribute?, ->(attr) { attr.to_s == "memberships_count" ? true : org.class.column_names.include?(attr.to_s) }) do
-        # When the attribute exists but is nil, falls back to count
-        org.stub(:[], ->(attr) { attr == :memberships_count ? nil : org.read_attribute(attr) }) do
-          assert_equal 1, org.member_count
-        end
-
-        # When the attribute has a value, uses that directly
-        org.stub(:[], ->(attr) { attr == :memberships_count ? 42 : org.read_attribute(attr) }) do
-          assert_equal 42, org.member_count
-        end
-      end
     end
 
     # =========================================================================

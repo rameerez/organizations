@@ -1387,24 +1387,11 @@ organization_switcher_data
 
 ### Counter caches for member counts
 
-If you display member counts frequently (pricing pages, org listings), consider adding a counter cache:
-
-```ruby
-# In a migration
-add_column :organizations_organizations, :memberships_count, :integer, default: 0, null: false
-
-# Reset existing counts
-Organization.find_each do |org|
-  Organization.reset_counters(org.id, :memberships)
-end
-```
-
-The gem automatically uses the counter cache if present:
+The install migration includes a `memberships_count` counter cache on organizations, and `member_count` reads from it directly:
 
 ```ruby
 org.member_count
-# Uses memberships_count column if it exists
-# Falls back to COUNT(*) query otherwise
+# Uses the memberships_count counter cache
 ```
 
 ### Existence checks use SQL

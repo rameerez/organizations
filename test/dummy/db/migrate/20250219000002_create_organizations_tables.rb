@@ -8,6 +8,7 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
     # Organizations table
     create_table :organizations_organizations, id: primary_key_type do |t|
       t.string :name, null: false
+      t.integer :memberships_count, default: 0, null: false
       t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
 
       t.timestamps
