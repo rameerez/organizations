@@ -1,3 +1,8 @@
+## [0.4.1] - 2026-03-17
+
+- Fixed `memberships_count` counter cache writes on `Organizations::Membership.create!`
+- Removed `attr_readonly :memberships_count`, which conflicted with Rails' native `counter_cache`
+
 ## [0.4.0] - 2026-03-17
 
 **Breaking:** `memberships_count` column is now required on the organizations table.
@@ -5,7 +10,6 @@
 - Added `memberships_count` to the install migration template (fresh installs get it automatically)
 - Switched to Rails' native `counter_cache` so in-memory organization instances stay accurate after member changes
 - `member_count` now reads directly from the counter cache (no fallback to COUNT query)
-- Marked `memberships_count` as readonly on organizations
 
 ## [0.3.1] - 2026-02-28
 
