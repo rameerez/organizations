@@ -166,6 +166,13 @@ module Organizations
         "memberships table must have invited_by_id column for the invited_by association"
     end
 
+    test "install migration template includes memberships_count column" do
+      template_path = File.expand_path("../../lib/generators/organizations/install/templates/create_organizations_tables.rb.erb", __dir__)
+      template = File.read(template_path)
+
+      assert_includes template, "t.integer :memberships_count, default: 0, null: false"
+    end
+
     # Regression: Round 1, Critical #3
     # Pending invitation uniqueness was only enforced at the application level.
     # A DB-level partial unique index should exist for PostgreSQL and SQLite.

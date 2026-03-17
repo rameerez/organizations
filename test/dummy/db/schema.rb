@@ -45,6 +45,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_02_19_000002) do
   end
 
   create_table "organizations_organizations", force: :cascade do |t|
+    t.integer "memberships_count", default: 0, null: false
     t.string "name", null: false
     t.json "metadata", default: {}, null: false
     t.datetime "created_at", null: false

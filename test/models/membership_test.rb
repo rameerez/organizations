@@ -678,25 +678,17 @@ module Organizations
 
     # ─── Counter Cache ───────────────────────────────────────────────────
 
-    test "counter cache methods do not raise when memberships_count column is absent" do
+    test "counter cache increments on create without requiring reload" do
       user = create_user!
       org = Organizations::Organization.create!(name: "Acme")
 
-      # The test schema does not have memberships_count, so this should work fine
       membership = Organizations::Membership.create!(user: user, organization: org, role: "member")
       assert membership.persisted?
+      assert_equal 1, org.member_count
 
       membership.destroy!
       assert membership.destroyed?
-    end
-
-    test "memberships_counter_cache_enabled? returns false when column absent" do
-      user = create_user!
-      org = Organizations::Organization.create!(name: "Acme")
-      membership = Organizations::Membership.create!(user: user, organization: org, role: "member")
-
-      # Accessing private method to verify behavior
-      assert_not membership.send(:memberships_counter_cache_enabled?)
+      assert_equal 0, org.member_count
     end
 
     # ─── Callbacks: role_changed dispatch ────────────────────────────────

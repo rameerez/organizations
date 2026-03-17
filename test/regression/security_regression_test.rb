@@ -91,22 +91,19 @@ module Organizations
                      "admins must not contain duplicate user IDs"
       end
 
-      # REVIEW.md Round 1, Finding 1 (counter cache):
-      # Counter cache column is optional. The gem must work without
-      # memberships_count on the organizations table.
-      test "P1: counter cache is optional - works without memberships_count column" do
-        # Our test schema does NOT have memberships_count column
-        refute Organizations::Organization.column_names.include?("memberships_count"),
-               "Test schema should not have memberships_count column for this test"
+      # REVIEW.md Round 2, Finding 1:
+      # Fresh installs now ship with memberships_count by default. The
+      # in-memory organization instance must stay correct after membership changes.
+      test "P1: counter cache stays correct on the live organization instance" do
+        assert Organizations::Organization.column_names.include?("memberships_count"),
+               "Test schema should include memberships_count for the default install path"
 
-        org, _owner = create_org_with_owner!(name: "No Counter Org")
+        org, _owner = create_org_with_owner!(name: "Counter Cache Org")
         member = create_user!(email: "member@example.com")
         org.add_member!(member, role: :member)
 
-        # member_count should still work via COUNT query
         assert_equal 2, org.member_count
 
-        # Creating and destroying memberships should not raise
         another = create_user!(email: "another@example.com")
         org.add_member!(another, role: :viewer)
         assert_equal 3, org.member_count

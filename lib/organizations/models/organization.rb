@@ -46,6 +46,7 @@ module Organizations
     # === Validations ===
 
     validates :name, presence: true
+    attr_readonly :memberships_count
 
     # === Scopes ===
 
@@ -101,14 +102,10 @@ module Organizations
       memberships.exists?
     end
 
-    # Get member count (uses counter cache if available, otherwise COUNT)
+    # Get member count from the organizations counter cache.
     # @return [Integer]
     def member_count
-      if has_attribute?(:memberships_count)
-        self[:memberships_count] || memberships.count
-      else
-        memberships.count
-      end
+      memberships_count || 0
     end
 
     # Get pending invitations

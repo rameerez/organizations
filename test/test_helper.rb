@@ -44,6 +44,7 @@ ActiveRecord::Schema.define do
 
   create_table :organizations_organizations, force: :cascade do |t|
     t.string :name, null: false
+    t.integer :memberships_count, default: 0, null: false
     t.text :metadata, default: "{}"
     t.timestamps
   end

@@ -28,7 +28,8 @@ module Organizations
     belongs_to :user
     belongs_to :organization,
                class_name: "Organizations::Organization",
-               inverse_of: :memberships
+               inverse_of: :memberships,
+               counter_cache: :memberships_count
 
     belongs_to :invited_by,
                class_name: "User",
@@ -39,11 +40,6 @@ module Organizations
     validates :role, presence: true, inclusion: { in: ->(_) { Roles::HIERARCHY.map(&:to_s) } }
     validates :user_id, uniqueness: { scope: :organization_id, message: "is already a member of this organization" }
     validate :single_owner_per_organization, if: :owner?
-
-    # Keep memberships_count accurate when the optional counter cache column exists.
-    after_create_commit :increment_memberships_counter_cache
-    after_destroy_commit :decrement_memberships_counter_cache
-    after_update_commit :sync_memberships_counter_cache_for_org_change, if: :saved_change_to_organization_id?
 
     # === Scopes ===
 
@@ -198,34 +194,6 @@ module Organizations
       return unless existing_owner.exists?
 
       errors.add(:role, "owner already exists for this organization")
-    end
-
-    def increment_memberships_counter_cache
-      return unless memberships_counter_cache_enabled?
-      return unless organization_id
-
-      Organizations::Organization.increment_counter(:memberships_count, organization_id)
-    end
-
-    def decrement_memberships_counter_cache
-      return unless memberships_counter_cache_enabled?
-      return unless organization_id
-
-      Organizations::Organization.decrement_counter(:memberships_count, organization_id)
-    end
-
-    def sync_memberships_counter_cache_for_org_change
-      return unless memberships_counter_cache_enabled?
-
-      old_org_id, new_org_id = saved_change_to_organization_id
-      Organizations::Organization.decrement_counter(:memberships_count, old_org_id) if old_org_id
-      Organizations::Organization.increment_counter(:memberships_count, new_org_id) if new_org_id
-    end
-
-    def memberships_counter_cache_enabled?
-      Organizations::Organization.column_names.include?("memberships_count")
-    rescue StandardError
-      false
     end
 
     def validate_role!(role)

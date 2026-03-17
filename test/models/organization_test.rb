@@ -277,12 +277,20 @@ module Organizations
       assert_equal 2, org.member_count
     end
 
-    test "member_count works without memberships_count column" do
+    test "member_count uses memberships_count counter cache on fresh records" do
       org, _owner = create_org_with_owner!
 
-      # The test schema doesn't have memberships_count column,
-      # so this exercises the COUNT(*) fallback
       assert_equal 1, org.member_count
+    end
+
+    test "member_count stays in sync on the in-memory organization after add_member!" do
+      org, _owner = create_org_with_owner!
+
+      assert_equal 1, org.member_count
+
+      org.add_member!(create_user!(email: "live-counter@example.com"), role: :member)
+
+      assert_equal 2, org.member_count
     end
 
     # =========================================================================
@@ -640,14 +648,15 @@ module Organizations
       assert_empty org.admins
     end
 
-    test "counter cache is optional and falls back to COUNT" do
+    test "counter cache column is part of the default schema" do
       org, _owner = create_org_with_owner!
 
-      # The test schema has no memberships_count column, so
-      # has_attribute?(:memberships_count) returns false and
-      # member_count falls back to COUNT(*)
-      assert_not org.has_attribute?(:memberships_count)
+      assert org.has_attribute?(:memberships_count)
       assert_equal 1, org.member_count
+    end
+
+    test "memberships_count is readonly on organizations" do
+      assert_includes Organization.readonly_attributes, "memberships_count"
     end
 
     private
