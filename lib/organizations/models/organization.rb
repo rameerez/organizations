@@ -46,7 +46,6 @@ module Organizations
     # === Validations ===
 
     validates :name, presence: true
-    attr_readonly :memberships_count
 
     # === Scopes ===
 

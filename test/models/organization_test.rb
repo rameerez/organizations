@@ -655,8 +655,8 @@ module Organizations
       assert_equal 1, org.member_count
     end
 
-    test "memberships_count is readonly on organizations" do
-      assert_includes Organization.readonly_attributes, "memberships_count"
+    test "memberships_count is writable for native counter cache updates" do
+      refute_includes Organization.readonly_attributes, "memberships_count"
     end
 
     private
