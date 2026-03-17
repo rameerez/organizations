@@ -888,6 +888,103 @@ Organizations.configure do |config|
 end
 ```
 
+## User Onboarding Patterns
+
+The `always_create_personal_organization_for_each_user` setting controls how new users get their first organization. This is one of the most important decisions when integrating the gem.
+
+### Pattern 1: Instant Access (auto-create)
+
+**Think:** Notion, Slack, Trello — "Sign up and start using it in 10 seconds"
+
+```ruby
+config.always_create_personal_organization_for_each_user = true
+config.default_organization_name = "My Workspace"
+```
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  User signs up  →  "My Workspace" created  →  Dashboard 🎉  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Users land in the app immediately. Zero friction. They can invite teammates later.
+
+```ruby
+# config/initializers/organizations.rb
+Organizations.configure do |config|
+  config.always_create_personal_organization_for_each_user = true
+  config.default_organization_name = "My Workspace"
+  # Or personalize it:
+  # config.default_organization_name = ->(user) { "#{user.email.split('@').first}'s Workspace" }
+end
+```
+
+Best for: productivity tools, note apps, personal SaaS, anything where "just let me in" matters.
+
+### Pattern 2: Guided Onboarding (manual create)
+
+**Think:** Stripe, HubSpot, Salesforce — "Tell us about your company first"
+
+```ruby
+config.always_create_personal_organization_for_each_user = false
+config.redirect_path_when_no_organization = "/onboarding/create_organization"
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  User signs up  →  Onboarding wizard  →  "Create your company"  →  App  │
+│                    (collect company name, billing email, etc.)           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+You control the experience. Collect whatever info you need before they enter.
+
+```ruby
+# config/initializers/organizations.rb
+Organizations.configure do |config|
+  config.always_create_personal_organization_for_each_user = false
+  config.redirect_path_when_no_organization = "/onboarding/create_organization"
+  config.no_organization_notice = "Let's set up your company first."
+  config.additional_organization_params = [:billing_email, :company_size, :industry]
+end
+```
+
+```ruby
+# app/controllers/onboarding_controller.rb
+def create_organization
+  @organization = current_user.create_organization!(
+    name: params[:company_name],
+    billing_email: params[:billing_email]
+  )
+  redirect_to dashboard_path
+end
+```
+
+Best for: B2B SaaS, enterprise tools, apps that need company details for billing/compliance.
+
+### Pattern 3: Invitation-Only
+
+**Think:** Internal company tools, private beta, enterprise deployments
+
+```ruby
+config.always_create_personal_organization_for_each_user = false
+config.redirect_path_when_no_organization = "/waiting_room"
+```
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│  User signs up  →  "Waiting for invitation" page  →  (nothing yet)    │
+│                                                                       │
+│  Admin invites user  →  User accepts  →  Joins org  →  Dashboard 🎉   │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Users can't do anything until an admin invites them. Full control over who gets in.
+
+Best for: internal tools, private beta programs, enterprise B2B where orgs are pre-provisioned.
+
+---
+
 ## Configuration
 
 Full configuration options:

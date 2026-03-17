@@ -33,10 +33,41 @@ module Organizations
     attr_accessor :authenticate_user_method
 
     # === Auto-creation ===
-    # Create personal organization on user signup
+    #
+    # Create personal organization automatically on user signup.
+    #
+    # This setting controls the user's first-time experience:
+    #
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │  true  → "Instant access" pattern                                       │
+    # │                                                                         │
+    # │  User signs up → auto-created workspace → lands in app immediately      │
+    # │                                                                         │
+    # │  Think: Notion, Slack, Trello                                           │
+    # │  "Sign up and start using it in seconds"                                │
+    # │                                                                         │
+    # │  Best for: productivity tools, note apps, simple SaaS                   │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │  false → "Guided onboarding" pattern                                    │
+    # │                                                                         │
+    # │  User signs up → onboarding wizard → enters company info → dashboard    │
+    # │                                                                         │
+    # │  Think: Stripe, HubSpot, enterprise B2B tools                           │
+    # │  "Tell us about your company before you start"                          │
+    # │                                                                         │
+    # │  Best for: B2B SaaS needing company details, billing info, etc.         │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #
+    # Related settings:
+    #   - default_organization_name: Name for auto-created orgs (only when true)
+    #   - redirect_path_when_no_organization: Where to send users without an org
+    #   - always_require_users_to_belong_to_one_organization: Prevent leaving last org
+    #
     attr_accessor :always_create_personal_organization_for_each_user
 
-    # Name for auto-created organizations
+    # Name for auto-created organizations (only used when always_create_personal_organization_for_each_user = true)
     # Can be a String or a Proc/Lambda: ->(user) { "#{user.name}'s Workspace" }
     attr_accessor :default_organization_name
 
