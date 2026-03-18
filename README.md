@@ -74,13 +74,13 @@ That's the simplest setup. You can also configure per-model options:
 class User < ApplicationRecord
   has_organizations do
     max_organizations 5         # Limit how many orgs a user can own (nil = unlimited)
-    create_personal_org true    # Auto-create org on signup (default: false)
+    create_personal_org true    # Auto-create org on signup (default: false). Can also be a proc.
     require_organization true   # Require users to have at least one org (default: false)
   end
 end
 ```
 
-> **Note:** By default, users can exist without any organization (invite-to-join flow). Set `create_personal_org true` if you want to auto-create a personal organization when users sign up.
+> **Note:** By default, users can exist without any organization (invite-to-join flow). Set `create_personal_org true` if you want to auto-create a personal organization when users sign up. For conditional creation, use a proc: `create_personal_org ->(user) { ... }` or override `should_create_personal_organization?` on your User model (see Pattern 4: Hybrid Onboarding).
 
 Mount the engine in your routes:
 
@@ -658,6 +658,8 @@ org.send_invite_to!("teammate@example.com", invited_by: current_user)
 
 The gem handles **both existing users and new signups** with a single invitation link:
 
+<img src="docs/organizations-invitation-accept-create-account.webp" width="500" />
+
 **For existing users:**
 1. Invitation created → Email sent with unique link
 2. User clicks link → Sees invitation details (org name, inviter, role)
@@ -988,6 +990,68 @@ config.redirect_path_when_no_organization = "/waiting_room"
 Users can't do anything until an admin invites them. Full control over who gets in.
 
 Best for: internal tools, private beta programs, enterprise B2B where orgs are pre-provisioned.
+
+### Pattern 4: Hybrid Onboarding
+
+**Think:** Best of both worlds — instant access for direct signups, no clutter for invited users
+
+Direct signups get a personal workspace immediately. Invited users skip the personal workspace and join the organization that invited them directly. This avoids creating unnecessary "My Workspace" organizations for users who are joining an existing team.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Direct signup  →  "My Workspace" auto-created  →  Dashboard 🎉              │
+│                                                                              │
+│  Invited signup  →  No personal org  →  Joins invited org  →  Dashboard 🎉   │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Implementation requires overriding the `should_create_personal_organization?` method on your User model:
+
+```ruby
+# app/models/user.rb
+class User < ApplicationRecord
+  has_organizations
+
+  # Skip personal org creation for users signing up via invitation
+  attr_accessor :skip_personal_organization
+
+  def should_create_personal_organization?
+    return false if skip_personal_organization
+    super
+  end
+end
+```
+
+Then set the flag before the user is persisted. With Devise, override `build_resource`:
+
+```ruby
+# app/controllers/users/registrations_controller.rb
+class Users::RegistrationsController < Devise::RegistrationsController
+  protected
+
+  def build_resource(hash = {})
+    super
+    # Skip personal org for users signing up via invitation
+    resource.skip_personal_organization = true if pending_organization_invitation?
+  end
+end
+```
+
+The `should_create_personal_organization?` method is the official extension seam. It evaluates:
+1. Your method override (if defined)
+2. The `create_personal_org` setting (boolean or proc)
+3. The global `always_create_personal_organization_for_each_user` config
+
+You can also use a proc for the setting itself:
+
+```ruby
+# In has_organizations block
+has_organizations do
+  create_personal_org ->(user) { !user.skip_personal_organization }
+end
+```
+
+Best for: SaaS products that want instant onboarding for individual users but clean team onboarding for invited members.
 
 ---
 

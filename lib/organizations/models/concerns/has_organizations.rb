@@ -37,7 +37,8 @@ module Organizations
           # Enable organization support on this model
           # @param options [Hash] Configuration options
           # @option options [Integer, nil] :max_organizations Maximum orgs user can own
-          # @option options [Boolean] :create_personal_org Create personal org on signup
+          # @option options [Boolean, Proc] :create_personal_org Create personal org on signup.
+          #   Can be a boolean or a proc that receives the user instance for conditional creation.
           # @option options [Boolean] :require_organization Require user to have an org
           # @yield Configuration block using DSL
           def has_organizations(**options, &block)
@@ -111,9 +112,10 @@ module Organizations
           end
 
           def setup_personal_org_callback
-            after_create :create_personal_organization_if_configured, if: -> {
-              self.class.organization_settings[:create_personal_org]
-            }
+            # Callback that creates personal organization.
+            # The condition is checked inside the callback to ensure it's evaluated
+            # at the right time with the correct instance state.
+            after_create :create_personal_organization_if_configured
           end
 
           def setup_owner_deletion_guard
@@ -136,7 +138,14 @@ module Organizations
           end
 
           # Enable/disable personal organization creation on signup
-          # @param value [Boolean]
+          # @param value [Boolean, Proc] Boolean or proc that receives the user instance
+          #
+          # @example Boolean (backward-compatible)
+          #   create_personal_org true
+          #
+          # @example Proc for conditional creation
+          #   create_personal_org ->(user) { !user.skip_personal_organization }
+          #
           def create_personal_org(value)
             @settings[:create_personal_org] = value
           end
@@ -499,9 +508,43 @@ module Organizations
             org.send_invite_to!(email, invited_by: self, role: role)
           end
 
+          # Extension seam for personal organization creation.
+          # Override this method in your User model to implement custom logic.
+          #
+          # @return [Boolean] true if a personal organization should be created
+          #
+          # @example Skip personal org for invited signups
+          #   class User < ApplicationRecord
+          #     has_organizations
+          #     attr_accessor :skip_personal_organization
+          #
+          #     def should_create_personal_organization?
+          #       return false if skip_personal_organization
+          #       super
+          #     end
+          #   end
+          #
+          def should_create_personal_organization?
+            setting = self.class.organization_settings[:create_personal_org]
+
+            case setting
+            when Proc
+              setting.call(self)
+            when true, false, nil
+              !!setting
+            else
+              !!setting
+            end
+          end
+
           private
 
           def create_personal_organization_if_configured
+            # Check condition inside callback (not via `if:` option) to ensure
+            # proper evaluation of instance state, including singleton methods
+            # and dynamically-set attributes.
+            return unless should_create_personal_organization?
+
             org_name = Organizations.configuration.resolve_default_organization_name(self)
             create_organization!(org_name)
           rescue StandardError => e
@@ -512,7 +555,7 @@ module Organizations
           def prevent_deletion_while_owning_organizations
             return unless memberships.where(role: "owner").exists?
 
-            errors.add(:base, "Cannot delete a user who still owns organizations. Transfer ownership first.")
+            errors.add(:base, "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first.")
             throw(:abort)
           end
         end
