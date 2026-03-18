@@ -108,7 +108,7 @@ org = current_user.create_organization!("Acme Corp")
 
 ### Invite teammates
 
-![Team members management](docs/organizations-team-members.webp)
+<img src="docs/organizations-team-members.webp" width="500" />
 
 ```ruby
 current_user.send_organization_invite_to!("teammate@example.com")
@@ -124,7 +124,7 @@ current_user.send_organization_invite_to!("teammate@example.com", organization: 
 
 ### Check roles and permissions
 
-![Member permissions](docs/organizations-member-permissions.webp)
+<img src="docs/organizations-member-permissions.webp" width="500" />
 
 ```ruby
 # Quick role checks (in current organization)
@@ -145,7 +145,7 @@ current_user.is_member_of?(@org)
 
 ### Switch between organizations
 
-![Organization switcher](docs/organizations-switcher.webp)
+<img src="docs/organizations-switcher.webp" width="400" />
 
 ```ruby
 # User belongs to multiple organizations? No problem.
