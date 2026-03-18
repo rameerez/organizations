@@ -81,6 +81,9 @@ module Organizations
 
     # DELETE /memberships/leave
     # Leave the current organization (current user removes themselves)
+    # Note: No permission guard needed — users can only leave themselves, and
+    # require_organization! ensures valid org context. Domain rules (can't leave
+    # as last owner, etc.) are enforced by leave_organization!.
     def leave
       org_name = current_organization.name
 
@@ -92,12 +95,8 @@ module Organizations
           format.json { head :no_content }
         end
       rescue Models::Concerns::HasOrganizations::CannotLeaveLastOrganization,
-             Models::Concerns::HasOrganizations::CannotLeaveAsLastOwner => e
-        respond_to do |format|
-          format.html { redirect_back fallback_location: organizations_path, alert: e.message }
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
-        end
-      rescue Error => e
+             Models::Concerns::HasOrganizations::CannotLeaveAsLastOwner,
+             Error => e
         respond_to do |format|
           format.html { redirect_back fallback_location: organizations_path, alert: e.message }
           format.json { render json: { error: e.message }, status: :unprocessable_entity }

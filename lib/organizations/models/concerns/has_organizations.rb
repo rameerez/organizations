@@ -530,8 +530,6 @@ module Organizations
             case setting
             when Proc
               setting.call(self)
-            when true, false, nil
-              !!setting
             else
               !!setting
             end
