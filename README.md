@@ -9,7 +9,7 @@
 
 **🎮 [Try the live demo →](https://organizations.rameerez.com)**
 
-[TODO: invitation / member management gif]
+<video src="demo.webm" autoplay loop muted playsinline></video>
 
 It's everything you need to turn a `User`-based app into a multi-tenant, `Organization`-based B2B SaaS (users belong in organizations, and organizations share resources and billing, etc.)
 
