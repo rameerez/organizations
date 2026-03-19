@@ -11,8 +11,6 @@
 
 **🎮 [Try the live demo →](https://organizations.rameerez.com)**
 
-https://github.com/user-attachments/assets/2eddafe2-025b-4670-af9f-e0d5480508c5
-
 It's everything you need to turn a `User`-based app into a multi-tenant, `Organization`-based B2B SaaS (users belong in organizations, and organizations share resources and billing, etc.)
 
 It's super easy:
@@ -42,6 +40,8 @@ And check your roles / permissions in relation to that organization like this:
 current_user.is_organization_owner?     # => true
 current_user.is_organization_admin?     # => true (owners inherit admin permissions)
 ```
+
+https://github.com/user-attachments/assets/2eddafe2-025b-4670-af9f-e0d5480508c5
 
 ## Installation
 
