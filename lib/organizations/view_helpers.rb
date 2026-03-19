@@ -213,10 +213,7 @@ module Organizations
     # @param organization [Organizations::Organization] The organization
     # @return [Boolean]
     def can_manage_organization?(user, organization)
-      return false unless user && organization
-
-      role = user.role_in(organization)
-      role && Roles.has_permission?(role, :manage_settings)
+      user_has_permission_in_org?(user, organization, :manage_settings)
     end
 
     # Check if current user can invite members
@@ -225,10 +222,25 @@ module Organizations
     # @param organization [Organizations::Organization] The organization
     # @return [Boolean]
     def can_invite_members?(user, organization)
-      return false unless user && organization
+      user_has_permission_in_org?(user, organization, :invite_members)
+    end
 
-      role = user.role_in(organization)
-      role && Roles.has_permission?(role, :invite_members)
+    # Check if current user can view billing information
+    # Uses permission-based check to respect custom role configurations
+    # @param user [User] The user
+    # @param organization [Organizations::Organization] The organization
+    # @return [Boolean]
+    def can_view_billing?(user, organization)
+      user_has_permission_in_org?(user, organization, :view_billing)
+    end
+
+    # Check if current user can manage billing
+    # Uses permission-based check to respect custom role configurations
+    # @param user [User] The user
+    # @param organization [Organizations::Organization] The organization
+    # @return [Boolean]
+    def can_manage_billing?(user, organization)
+      user_has_permission_in_org?(user, organization, :manage_billing)
     end
 
     # Check if current user can remove a member

@@ -168,7 +168,7 @@ end
 
 > **Note:** This is an integration pattern, not built-in functionality. You implement the limit checks in your callbacks.
 
-If you're using [`pricing_plans`](https://github.com/rameerez/pricing_plans), you can limit how many members an organization can have based on their subscription using callbacks:
+If you're using [`pricing_plans`](https://github.com/rameerez/pricing_plans), you can limit how many members an organization can have based on their effective pricing plan using callbacks:
 
 ```ruby
 # config/initializers/pricing_plans.rb
@@ -188,7 +188,7 @@ Then hook into the `on_member_invited` callback to enforce limits. **This callba
 Organizations.configure do |config|
   config.on_member_invited do |ctx|
     org = ctx.organization
-    limit = org.current_plan.limit_for(:organization_members)
+    limit = org.current_pricing_plan.limit_for(:organization_members)
 
     if limit && org.member_count >= limit
       raise Organizations::InvitationError, "Member limit reached. Please upgrade your plan."
@@ -435,6 +435,8 @@ class SettingsController < ApplicationController
   end
 end
 ```
+
+`manage_billing` and `view_billing` are authorization checks only. They control who in the organization can access your billing UI, but they do not imply an active Stripe subscription or determine the effective pricing plan.
 
 ### Handling unauthorized access
 
@@ -1217,7 +1219,7 @@ end
 
 ### Integrates with pricing_plans
 
-Enforce member limits based on pricing plans using callbacks:
+Enforce member limits based on the effective pricing plan using callbacks:
 
 ```ruby
 # In your Organization model

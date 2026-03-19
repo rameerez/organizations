@@ -322,6 +322,36 @@ module Organizations
       refute can_invite_members?(user, nil)
     end
 
+    test "can_view_billing? returns true for admin" do
+      org, _owner = create_org_with_owner!(name: "Billing View Org")
+      admin = create_user!(email: "billing-admin@example.com")
+      Organizations::Membership.create!(user: admin, organization: org, role: "admin")
+
+      assert can_view_billing?(admin, org)
+    end
+
+    test "can_view_billing? returns false for member" do
+      org, _owner = create_org_with_owner!(name: "Billing View Org")
+      member = create_user!(email: "billing-member@example.com")
+      Organizations::Membership.create!(user: member, organization: org, role: "member")
+
+      refute can_view_billing?(member, org)
+    end
+
+    test "can_manage_billing? returns true for owner" do
+      org, owner = create_org_with_owner!(name: "Billing Manage Org")
+
+      assert can_manage_billing?(owner, org)
+    end
+
+    test "can_manage_billing? returns false for admin" do
+      org, _owner = create_org_with_owner!(name: "Billing Manage Org")
+      admin = create_user!(email: "billing-admin-manage@example.com")
+      Organizations::Membership.create!(user: admin, organization: org, role: "admin")
+
+      refute can_manage_billing?(admin, org)
+    end
+
     test "can_remove_member? returns true for admin removing non-owner" do
       org, _owner = create_org_with_owner!(name: "Remove Org")
       admin = create_user!(email: "admin@example.com")
@@ -723,6 +753,8 @@ module Organizations
       Organizations::Membership.create!(user: viewer, organization: org, role: "viewer")
 
       refute can_invite_members?(viewer, org)
+      refute can_view_billing?(viewer, org)
+      refute can_manage_billing?(viewer, org)
       refute can_transfer_ownership?(viewer, org)
       refute can_delete_organization?(viewer, org)
       refute can_manage_organization?(viewer, org)
@@ -732,6 +764,8 @@ module Organizations
       org, owner = create_org_with_owner!(name: "Owner Perm Org")
 
       assert can_invite_members?(owner, org)
+      assert can_view_billing?(owner, org)
+      assert can_manage_billing?(owner, org)
       assert can_transfer_ownership?(owner, org)
       assert can_delete_organization?(owner, org)
       assert can_manage_organization?(owner, org)
