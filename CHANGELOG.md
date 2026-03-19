@@ -1,14 +1,10 @@
-## [0.4.3] - 2026-03-18
-
-- Added `DELETE /memberships/leave` route for users to leave organizations
-- `MembershipsController#leave` action calls `user.leave_organization!` with proper error handling
-
-## [0.4.2] - 2026-03-18
+## [0.4.2] - 2026-03-19
 
 - Added `should_create_personal_organization?` predicate as extension seam for conditional personal org creation
 - DSL `create_personal_organization` setting now accepts procs for dynamic evaluation
+- Added `DELETE /memberships/leave` route for users to leave organizations
 - Updated owner deletion guard message to clarify transfer/delete solution
-- Documentation: added "Pattern 4: Hybrid Onboarding" to README (invited users skip personal org)
+- Documentation: added "Pattern 4: Hybrid Onboarding" to README
 
 ## [0.4.1] - 2026-03-17
 
