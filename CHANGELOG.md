@@ -1,3 +1,11 @@
+## [0.4.2] - 2026-03-19
+
+- Added `should_create_personal_organization?` predicate as extension seam for conditional personal org creation
+- DSL `create_personal_organization` setting now accepts procs for dynamic evaluation
+- Added `DELETE /memberships/leave` route for users to leave organizations
+- Updated owner deletion guard message to clarify transfer/delete solution
+- Documentation: added "Pattern 4: Hybrid Onboarding" to README
+
 ## [0.4.1] - 2026-03-17
 
 - Fixed `memberships_count` counter cache writes on `Organizations::Membership.create!`

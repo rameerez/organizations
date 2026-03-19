@@ -6,10 +6,32 @@ Organizations.configure do |config|
   # ============================================================================
 
   # Automatically create a personal organization when a user signs up.
-  # The organization will be named after the user (e.g., "John's Organization").
+  # The organization will be named using default_organization_name (below).
   # Set to true if you want every user to have their own organization on signup.
   # Default: false (invite-to-join flow)
   # config.always_create_personal_organization_for_each_user = false
+
+  # NOTE: This is a coarse, global default. For conditional creation (e.g., skip
+  # personal org for invited signups), override should_create_personal_organization?
+  # on your User model instead:
+  #
+  #   class User < ApplicationRecord
+  #     has_organizations
+  #     attr_accessor :skip_personal_organization
+  #
+  #     def should_create_personal_organization?
+  #       return false if skip_personal_organization
+  #       super
+  #     end
+  #   end
+  #
+  # See "Pattern 4: Hybrid Onboarding" in the README for the full pattern.
+
+  # Name for auto-created organizations.
+  # Can be a string or a proc that receives the user.
+  # Default: "Personal"
+  # config.default_organization_name = "My Workspace"
+  # config.default_organization_name = ->(user) { "#{user.name}'s Workspace" }
 
   # ============================================================================
   # ORGANIZATION REQUIREMENTS

@@ -803,7 +803,7 @@ module Organizations
       end
 
       assert User.exists?(user.id)
-      assert_includes user.errors.full_messages.join(", "), "Cannot delete a user who still owns organizations"
+      assert_includes user.errors.full_messages.join(", "), "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first."
     end
 
     test "user can be deleted after transferring ownership" do
@@ -862,6 +862,82 @@ module Organizations
       user = User.create!(email: "no-personal@example.com", name: "No Personal")
 
       assert_equal 0, user.organizations.count
+    end
+
+    test "create_personal_org proc can suppress creation per-user" do
+      # Proc that skips personal org when user has skip flag set
+      User.organization_settings = {
+        max_organizations: nil,
+        create_personal_org: ->(user) { !user.respond_to?(:skip_personal_org_flag) || !user.skip_personal_org_flag },
+        require_organization: false
+      }.freeze
+
+      # User without skip flag gets personal org
+      user_with_org = User.create!(email: "with-org@example.com", name: "With Org")
+      assert_equal 1, user_with_org.organizations.count
+
+      # User with skip flag does not get personal org
+      # Add temporary flag via singleton method
+      user_without_org = User.new(email: "without-org@example.com", name: "Without Org")
+      user_without_org.define_singleton_method(:skip_personal_org_flag) { true }
+      user_without_org.save!
+
+      assert_equal 0, user_without_org.organizations.count
+    end
+
+    test "create_personal_org proc receives user instance" do
+      captured_user = nil
+      User.organization_settings = {
+        max_organizations: nil,
+        create_personal_org: ->(user) { captured_user = user; true },
+        require_organization: false
+      }.freeze
+
+      user = User.create!(email: "captured@example.com", name: "Captured User")
+
+      assert_equal user, captured_user
+      assert_equal 1, user.organizations.count
+    end
+
+    test "overriding should_create_personal_organization? suppresses creation" do
+      User.organization_settings = { max_organizations: nil, create_personal_org: true, require_organization: false }.freeze
+
+      # Override the predicate on this specific user instance
+      user = User.new(email: "override@example.com", name: "Override User")
+      user.define_singleton_method(:should_create_personal_organization?) { false }
+      user.save!
+
+      assert_equal 0, user.organizations.count
+    end
+
+    test "should_create_personal_organization? returns false when setting is false" do
+      User.organization_settings = { max_organizations: nil, create_personal_org: false, require_organization: false }.freeze
+
+      user = User.new(email: "predicate-false@example.com", name: "Predicate False")
+
+      refute user.should_create_personal_organization?
+    end
+
+    test "should_create_personal_organization? returns true when setting is true" do
+      User.organization_settings = { max_organizations: nil, create_personal_org: true, require_organization: false }.freeze
+
+      user = User.new(email: "predicate-true@example.com", name: "Predicate True")
+
+      assert user.should_create_personal_organization?
+    end
+
+    test "should_create_personal_organization? evaluates proc with user" do
+      User.organization_settings = {
+        max_organizations: nil,
+        create_personal_org: ->(u) { u.email.include?("create") },
+        require_organization: false
+      }.freeze
+
+      user_create = User.new(email: "create@example.com", name: "Create User")
+      user_skip = User.new(email: "skip@example.com", name: "Skip User")
+
+      assert user_create.should_create_personal_organization?
+      refute user_skip.should_create_personal_organization?
     end
 
     # =========================================================================

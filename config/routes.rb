@@ -15,6 +15,9 @@ Organizations::Engine.routes.draw do
     member do
       post :transfer_ownership
     end
+    collection do
+      delete :leave
+    end
   end
 
   # Invitation management (scoped to current_organization)

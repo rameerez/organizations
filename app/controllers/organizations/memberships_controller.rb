@@ -79,6 +79,31 @@ module Organizations
       end
     end
 
+    # DELETE /memberships/leave
+    # Leave the current organization (current user removes themselves)
+    # Note: No permission guard needed — users can only leave themselves, and
+    # require_organization! ensures valid org context. Domain rules (can't leave
+    # as last owner, etc.) are enforced by leave_organization!.
+    def leave
+      org_name = current_organization.name
+
+      begin
+        current_user.leave_organization!(current_organization)
+
+        respond_to do |format|
+          format.html { redirect_to organizations_path, notice: "You have left #{org_name}." }
+          format.json { head :no_content }
+        end
+      rescue Models::Concerns::HasOrganizations::CannotLeaveLastOrganization,
+             Models::Concerns::HasOrganizations::CannotLeaveAsLastOwner,
+             Error => e
+        respond_to do |format|
+          format.html { redirect_back fallback_location: organizations_path, alert: e.message }
+          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+        end
+      end
+    end
+
     # POST /memberships/:id/transfer_ownership
     # Transfer organization ownership to another member
     def transfer_ownership
