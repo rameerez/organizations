@@ -1,3 +1,10 @@
+## [0.4.3] - 2026-03-19
+
+- Added `can_view_billing?` and `can_manage_billing?` view helpers for billing permission checks
+- Refactored `can_manage_organization?` and `can_invite_members?` to use shared permission predicate
+- Fixed `pricing_plans` integration examples to use `current_pricing_plan` (effective plan API)
+- Clarified that billing permissions are authorization checks only, not subscription state indicators
+
 ## [0.4.2] - 2026-03-19
 
 - Added `should_create_personal_organization?` predicate as extension seam for conditional personal org creation
