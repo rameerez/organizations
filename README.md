@@ -7,6 +7,8 @@
 
 `organizations` adds organizations with members to any Rails app. It handles team invites, user memberships, roles, and permissions.
 
+<img src="docs/organizations-invitation-accept-create-account.webp" width="500" />
+
 **🎮 [Try the live demo →](https://organizations.rameerez.com)**
 
 https://github.com/user-attachments/assets/2eddafe2-025b-4670-af9f-e0d5480508c5
