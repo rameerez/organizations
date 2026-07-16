@@ -44,7 +44,7 @@ Style/FrozenStringLiteralComment:
   EnforcedStyle: always
 
 Style/ClassAndModuleChildren:
-  EnforcedStyle: compact
+  EnforcedStyle: nested  # matches the actual codebase (module Organizations \n class X)
 
 Style/GuardClause:
   MinBodyLength: 3
