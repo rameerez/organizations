@@ -204,7 +204,81 @@ The `on_member_invited` callback is special — it runs in **strict mode**, mean
 
 This pattern gives you full control over how and when limits are enforced.
 
+## Verified joining: let users prove they belong
+
+Invitations cover org→user. Since v0.5.0 the gem also covers **user→org**: people who claim to belong to an organization and need to prove it. Four mechanisms, all converging on a regular `Membership` with provenance stamped on it:
+
+| Mechanism | Proof | Typical use |
+|---|---|---|
+| Request-to-join | a human approves | small teams, communities |
+| Email domain | 6-digit code emailed to `anything@yourdomain.com` | companies, universities |
+| Join code ("PIN") | possession of the code (± domain email) | posters, newsletters, classrooms |
+| Allowlist / roster | 6-digit code emailed to a rostered address | clubs with no own domain |
+
+**The key idea: the proven email is decoupled from the account email.** A user signed up with a personal Gmail can still prove they control `j.doe@acme.com` and join Acme as a verified member. The proven address is recorded on the membership (`verified_email`) and is **unique per organization** — one inbox, one member.
+
+```ruby
+# ── Request-to-join (manual approval) ──────────────────────────────────────
+request = user.request_to_join!(org, message: "I'm in the Madrid office")
+org.pending_join_requests                      # approval queue
+org.approve_join_request!(request, approved_by: admin)  # => Membership
+org.reject_join_request!(request, rejected_by: admin, reason: "unknown")
+
+# ── Email domain ───────────────────────────────────────────────────────────
+org.add_domain!("acme.com")
+request = user.request_to_join!(org)
+request.start_email_verification!(email: "j.doe@acme.com")  # emails a 6-digit code
+request.verify_email_code!("492817")           # => Membership (auto-approved)
+
+# Zero-friction shortcut when the ACCOUNT email is already confirmed
+# (e.g. Devise :confirmable) and its domain is enrolled:
+org.join_with_account_email!(user)             # => Membership, no code needed
+
+# ── Join code (PIN) ────────────────────────────────────────────────────────
+code = org.generate_join_code!(label: "office poster", max_uses: 500,
+                               expires_at: 3.months.from_now)
+Organizations::JoinCode.redeem("7FHK-2MPX", user: user)  # => Membership
+code.revoke!                                   # rotation = revoke + generate
+
+# Reinforced mode: PIN + corporate email required (per-code!)
+strict = org.generate_join_code!(requires_verified_domain_email: true)
+request = Organizations::JoinCode.redeem(strict.code, user: user)  # => JoinRequest
+request.start_email_verification!(email: "j.doe@acme.com")
+request.verify_email_code!("492817")           # => Membership
+
+# ── Allowlist / roster ─────────────────────────────────────────────────────
+org.import_allowlist!(["ana@gmail.com", "luis@yahoo.es"], source: "csv_2026-07")
+# Rostered users still complete the email challenge — a leaked roster grants
+# nothing without inbox access. The entry is claimed on join.
+```
+
+### Cohorts without the gem knowing (`membership_metadata`)
+
+Every join instrument (domain, code, allowlist entry, invitation) carries a `membership_metadata` hash that's merged onto memberships it creates. The gem never interprets it — it's your cohort/segmentation channel:
+
+```ruby
+org.add_domain!("acme.com",          membership_metadata: { member_kind: "employee" })
+org.add_domain!("students.acme.edu", membership_metadata: { member_kind: "student" })
+# later…
+membership.metadata["member_kind"]  # => "student"
+membership.joined_via               # => "domain_email"
+membership.verified_email           # => "x@students.acme.edu"
+membership.verified?                # => true
+```
+
+### Security posture
+
+- Codes are stored as **SHA-256 digests only** (peppered by row id), compared in constant time, single-use, expire after `verification_code_ttl` (15 min default), capped at `verification_max_attempts` (5) with resend throttles.
+- Emails are normalized before the uniqueness check (case, whitespace, and `+tag` plus-addressing collapse — override via `config.verification_email_normalizer`).
+- Domain matching is **exact** and evasion-hardened: `acme.com.evil.com`, `evilacme.com`, multi-`@` shapes never match; subdomains are separate domains on purpose (they often mean different cohorts).
+- BYO-UI as always: the gem ships models/APIs/mailers only. **You must rate-limit your join/redemption/verification endpoints** in the host app.
+- After-callbacks (`on_join_request_*`) are error-isolated — enforce hard member caps *before* calling approve/redeem.
+- Verification-code delivery failures are swallowed (logged, never raised) AFTER the challenge row commits — deliberate, so a flaky mailer can't roll back state, but it means a misconfigured mailer silently strands users inside the resend-throttle window. **Monitor delivery failures for your verification mailer.**
+
+Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only).
+
 ## Why this gem exists
+
 
 Organizations / teams are tough to do alone. Wiring up accounts, roles, and invites by hand is a pain you only want to go through once. If you don't implement organizations / teams on day one, adding them later becomes a major refactor — the kind that touches every model, controller, and permission in your app. Even experienced Rails developers have built accounts / teams poorly multiple times before getting it right.
 
@@ -1756,9 +1830,10 @@ If your app currently has `User belongs_to :organization` (1:1), migrate to `Use
 
 ## Roadmap
 
-- [ ] Domain-based auto-join (users with @acme.com auto-join Acme org)
-- [ ] Bulk invitations (CSV upload)
-- [ ] Request-to-join workflow
+- [x] Domain-based joining (users prove control of an @acme.com inbox — shipped in 0.5.0 as part of verified joining)
+- [x] Request-to-join workflow (shipped in 0.5.0)
+- [x] Roster/allowlist bulk import (shipped in 0.5.0; covers the bulk-invite use case via `import_allowlist!`)
+- [ ] Bulk invitations (CSV upload of token invitations)
 - [ ] Organization-level audit logs
 - [ ] Team hierarchies within organizations
 

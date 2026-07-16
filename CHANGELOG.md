@@ -1,3 +1,26 @@
+## [0.5.0] - 2026-07-16
+
+**Verified Joining** — users can now join organizations by proving they belong, closing three roadmap items (domain-based joining, request-to-join, roster/bulk import). Fully additive: existing installs change nothing until they enroll a domain, generate a code, or import a roster. Run `rails g organizations:upgrade` + `rails db:migrate` to get the new tables/columns.
+
+### Added
+
+- **Join requests** (`Organizations::JoinRequest`) — the mirror image of invitations (user→org). Memberships stay active-only; all pending state lives on the request (`pending → approved | rejected | withdrawn`, `:expired` derived like invitations). `user.request_to_join!(org)`, `org.approve_join_request!/reject_join_request!`, `request.withdraw!`. One open request per (org, user), DB-enforced.
+- **Email domains** (`Organizations::Domain`) — `org.add_domain!("corp.com")`. Exact, dot-boundary-safe matching (subdomains are separate domains; lookalike and multi-@ evasion shapes rejected).
+- **Emailed-code verification** — `request.start_email_verification!(email:)` + `request.verify_email_code!(code)`. Codes are 6 digits, stored as SHA-256 digests only (peppered by row id), single-use, TTL'd (15 min default), attempt-capped (5), resend-throttled. The proven address can differ from the account email — recorded as `verified_email` on the membership, **unique per organization** (one proven inbox = one member).
+- **Join codes** (`Organizations::JoinCode`) — globally-unique shareable PINs: `org.generate_join_code!(label:, requires_verified_domain_email:, auto_approve:, expires_at:, max_uses:)`, `JoinCode.redeem(code, user:)`, `code.revoke!` (rotation = revoke + regenerate). `requires_verified_domain_email` chains the email challenge per-code ("reinforced" level); `auto_approve: false` parks redemptions for manual approval. Race-safe use accounting.
+- **Allowlists / rosters** (`Organizations::AllowlistEntry`) — `org.import_allowlist!(emails, source:, membership_metadata:)` (idempotent). Rostered addresses still complete the email challenge (a leaked roster grants nothing without inbox access); entries are claimed on join.
+- **Account-email trust shortcut** — `org.join_with_account_email!(user)`: when the host user's account email is confirmed (e.g. Devise `:confirmable`) and its domain is enrolled, joining needs no code. Gate with `config.trust_confirmed_account_email`.
+- **Membership provenance** — memberships gain `joined_via` (`invited|code|domain_email|allowlist|manual`), `verified_email(_normalized)`, `verified_at`, plus `Membership#verified?`. Invitation acceptance now stamps provenance too (accepting the emailed token proves the inbox).
+- **`membership_metadata` copy-through** — domains, join codes, allowlist entries, and invitations carry a `membership_metadata` hash merged onto memberships they create (cohort tags like `{ member_kind: "student" }`) — the gem never interprets it. Invitations also gained a `metadata` column (parity with other tables).
+- **Callbacks** — `on_join_request_created`, `on_join_request_approved` (with `decided_by`, nil for auto-approvals), `on_join_request_rejected`.
+- **Config** — `verification_mailer`, `verification_code_ttl`, `verification_max_attempts`, `verification_resend_interval`, `verification_max_sends`, `verification_email_normalizer` (default collapses case/whitespace/+tags), `trust_confirmed_account_email`, `join_request_expiry`, `join_code_generator`.
+- **`Organizations::VerificationMailer`** (+ HTML/text templates), `Organizations::EmailNormalizer`, `organizations:upgrade` generator.
+
+### Notes
+
+- BYO-UI as always: the gem ships models/APIs/mailers, no controllers or views for joining. **Rate-limit your join/redemption endpoints in the host app.**
+- After-callbacks stay error-isolated: enforce hard member caps BEFORE calling approve/redeem in host code.
+
 ## [0.4.3] - 2026-03-19
 
 - Added `can_view_billing?` and `can_manage_billing?` view helpers for billing permission checks

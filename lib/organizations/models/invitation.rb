@@ -167,14 +167,8 @@ module Organizations
           return existing_membership
         end
 
-        # Create the membership
-        # Use invited_by_id instead of invited_by to avoid Rails class reloading issues
-        # (AssociationTypeMismatch when User class is reloaded in development)
-        membership = organization.memberships.create!(
-          user: accepting_user,
-          role: role,
-          invited_by_id: invited_by_id
-        )
+        # Create the membership (with verified-joining provenance)
+        membership = create_membership_for!(accepting_user, skip_email_validation)
 
         # Mark invitation as accepted
         update!(accepted_at: Time.current)
@@ -227,6 +221,71 @@ module Organizations
     end
 
     private
+
+    # Create the membership for an acceptance.
+    # Uses invited_by_id instead of invited_by to avoid Rails class reloading
+    # issues (AssociationTypeMismatch when User is reloaded in development).
+    #
+    # Verified-joining provenance (v0.5.0): accepting the emailed token is
+    # proof of control of the invited address, so the membership records it
+    # as a verified email — UNLESS the acceptance bypassed the email match
+    # (skip_email_validation with a different account email), where no inbox
+    # proof exists. If the address was already claimed by another membership
+    # in this org (rare recycled-address edge), the membership is still
+    # created, just without the verified-email stamp.
+    def create_membership_for!(accepting_user, skip_email_validation)
+      organization.memberships.create!(
+        **base_membership_attributes(accepting_user),
+        **verified_email_attributes_for(accepting_user, skip_email_validation)
+      )
+    rescue ActiveRecord::RecordNotUnique
+      # Two unique indexes can fire here (same disambiguation as
+      # JoinRequest#create_membership!):
+      # 1. (user, org) — another acceptance/join path just made them a member:
+      #    reuse it (invitations to one address aren't normalization-aware, so
+      #    two plus-variant invitations can race).
+      # 2. (org, verified_email_normalized) — the address was claimed between
+      #    our pre-check and the INSERT: degrade gracefully by creating the
+      #    membership WITHOUT the verified-email stamp. Acceptance never breaks.
+      existing = organization.memberships.find_by(user_id: accepting_user.id)
+      return existing if existing
+
+      organization.memberships.create!(**base_membership_attributes(accepting_user))
+    end
+
+    def base_membership_attributes(accepting_user)
+      {
+        user: accepting_user,
+        role: role,
+        invited_by_id: invited_by_id,
+        joined_via: "invited",
+        metadata: membership_metadata.is_a?(Hash) ? membership_metadata : {}
+      }
+    end
+
+    # Provenance attributes for the membership created by this acceptance.
+    # See create_membership_for! for the trust rules.
+    def verified_email_attributes_for(accepting_user, skip_email_validation)
+      email_proven =
+        !skip_email_validation ||
+        (accepting_user.respond_to?(:email) && for_email?(accepting_user.email))
+
+      return {} unless email_proven
+
+      normalized = Organizations.configuration.normalize_verification_email(email)
+
+      already_claimed = Membership
+                        .where(organization_id: organization_id, verified_email_normalized: normalized)
+                        .exists?
+
+      return {} if already_claimed
+
+      {
+        verified_email: email,
+        verified_email_normalized: normalized,
+        verified_at: Time.current
+      }
+    end
 
     def normalize_email
       self.email = email.to_s.downcase.strip if email.present?

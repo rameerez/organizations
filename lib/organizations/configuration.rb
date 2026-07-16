@@ -81,6 +81,41 @@ module Organizations
     # Custom mailer for invitations (class name as string)
     attr_accessor :invitation_mailer
 
+    # === Verified Joining ===
+    # Custom mailer for email-verification codes (class name as string)
+    attr_accessor :verification_mailer
+
+    # How long an emailed verification code stays valid.
+    # Must be a Duration/Numeric — codes always expire (OTP hygiene).
+    attr_accessor :verification_code_ttl
+
+    # Maximum wrong-code attempts per challenge before it locks
+    attr_accessor :verification_max_attempts
+
+    # Minimum time between (re)sends of a verification code for one request
+    attr_accessor :verification_resend_interval
+
+    # Maximum number of code sends per join request
+    attr_accessor :verification_max_sends
+
+    # Custom email normalizer for the verified_email uniqueness invariant.
+    # nil = use Organizations::EmailNormalizer (downcase + strip + drop +tag).
+    # Can be a Proc/Lambda: ->(email) { ... } returning the normalized string.
+    attr_accessor :verification_email_normalizer
+
+    # Allow Organization#join_with_account_email! to trust a host user's
+    # already-confirmed account email (e.g. Devise :confirmable) as proof of
+    # inbox control, skipping the emailed code when the domain matches.
+    attr_accessor :trust_confirmed_account_email
+
+    # How long join requests stay pending before they read as expired
+    # (derived status, like invitations). nil = never expire.
+    attr_accessor :join_request_expiry
+
+    # Custom join code generator. nil = built-in 8-char ambiguity-free code.
+    # Can be a Proc/Lambda: -> { ... } returning the code string.
+    attr_accessor :join_code_generator
+
     # === Limits ===
     # Maximum organizations a user can own (nil = unlimited)
     attr_accessor :max_organizations_per_user
@@ -158,7 +193,10 @@ module Organizations
                 :on_member_joined_callback,
                 :on_member_removed_callback,
                 :on_role_changed_callback,
-                :on_ownership_transferred_callback
+                :on_ownership_transferred_callback,
+                :on_join_request_created_callback,
+                :on_join_request_approved_callback,
+                :on_join_request_rejected_callback
 
     # === Custom Roles ===
     # @private - custom roles definition
@@ -177,6 +215,17 @@ module Organizations
       @invitation_expiry = 7.days
       @default_invitation_role = :member
       @invitation_mailer = "Organizations::InvitationMailer"
+
+      # Verified joining defaults
+      @verification_mailer = "Organizations::VerificationMailer"
+      @verification_code_ttl = 15.minutes
+      @verification_max_attempts = 5
+      @verification_resend_interval = 60.seconds
+      @verification_max_sends = 5
+      @verification_email_normalizer = nil
+      @trust_confirmed_account_email = true
+      @join_request_expiry = 30.days
+      @join_code_generator = nil
 
       # Limits
       @max_organizations_per_user = nil
@@ -218,6 +267,9 @@ module Organizations
       @on_member_removed_callback = nil
       @on_role_changed_callback = nil
       @on_ownership_transferred_callback = nil
+      @on_join_request_created_callback = nil
+      @on_join_request_approved_callback = nil
+      @on_join_request_rejected_callback = nil
 
       # Custom roles
       @custom_roles_definition = nil
@@ -295,6 +347,29 @@ module Organizations
       @on_ownership_transferred_callback = block if block_given?
     end
 
+    # Called when a join request is created (request-to-join workflow)
+    # @yield [context] Block to execute
+    # @yieldparam context [CallbackContext] Context with organization, user, join_request
+    def on_join_request_created(&block)
+      @on_join_request_created_callback = block if block_given?
+    end
+
+    # Called when a join request is approved (manually or auto-approved).
+    # NOTE: like all after-callbacks, errors here are isolated — hosts must
+    # enforce hard caps (e.g. member limits) BEFORE approving, in their own code.
+    # @yield [context] Block to execute
+    # @yieldparam context [CallbackContext] Context with organization, user, join_request, membership, decided_by (nil for auto-approvals)
+    def on_join_request_approved(&block)
+      @on_join_request_approved_callback = block if block_given?
+    end
+
+    # Called when a join request is rejected
+    # @yield [context] Block to execute
+    # @yieldparam context [CallbackContext] Context with organization, user, join_request, decided_by
+    def on_join_request_rejected(&block)
+      @on_join_request_rejected_callback = block if block_given?
+    end
+
     # === Roles Configuration ===
 
     # Define custom roles with permissions
@@ -319,6 +394,16 @@ module Organizations
       end
     end
 
+    # Normalize an email through the configured (or default) normalizer
+    # @param email [String, nil]
+    # @return [String] normalized email
+    def normalize_verification_email(email)
+      normalizer = @verification_email_normalizer
+      return normalizer.call(email).to_s if normalizer.respond_to?(:call)
+
+      EmailNormalizer.normalize(email)
+    end
+
     # Resolve the default organization name for a user
     # @param user [Object] The user object
     # @return [String] The organization name
@@ -338,6 +423,7 @@ module Organizations
     def validate!
       validate_authentication_methods!
       validate_invitation_settings!
+      validate_verification_settings!
       validate_limits!
       validate_invitation_redirects!
       validate_no_organization_messages!
@@ -365,6 +451,45 @@ module Organizations
       unless Roles::HIERARCHY.include?(@default_invitation_role.to_sym)
         raise ConfigurationError, "default_invitation_role must be one of: #{Roles::HIERARCHY.join(', ')}"
       end
+    end
+
+    def validate_verification_settings!
+      validate_duration_option!(@verification_code_ttl, "verification_code_ttl", "15.minutes")
+      validate_duration_option!(@verification_resend_interval, "verification_resend_interval", "60.seconds")
+      validate_positive_integer_option!(@verification_max_attempts, "verification_max_attempts")
+      validate_positive_integer_option!(@verification_max_sends, "verification_max_sends")
+      validate_callable_option!(@verification_email_normalizer, "verification_email_normalizer")
+      validate_callable_option!(@join_code_generator, "join_code_generator")
+
+      unless [true, false].include?(@trust_confirmed_account_email)
+        raise ConfigurationError, "trust_confirmed_account_email must be true or false"
+      end
+
+      return if @join_request_expiry.nil? || duration_like?(@join_request_expiry)
+
+      raise ConfigurationError, "join_request_expiry must be a Duration (e.g., 30.days), Numeric, or nil (never expire)"
+    end
+
+    def duration_like?(value)
+      value.is_a?(ActiveSupport::Duration) || value.is_a?(Numeric)
+    end
+
+    def validate_duration_option!(value, option_name, example)
+      return if duration_like?(value)
+
+      raise ConfigurationError, "#{option_name} must be a Duration (e.g., #{example}) or Numeric"
+    end
+
+    def validate_positive_integer_option!(value, option_name)
+      return if value.is_a?(Integer) && value >= 1
+
+      raise ConfigurationError, "#{option_name} must be an Integer of at least 1"
+    end
+
+    def validate_callable_option!(value, option_name)
+      return if value.nil? || value.respond_to?(:call)
+
+      raise ConfigurationError, "#{option_name} must be nil or callable (Proc/Lambda)"
     end
 
     def validate_limits!

@@ -71,6 +71,15 @@ module Organizations
       SQL
     }
 
+    # === Verified Joining (v0.5.0) ===
+
+    # Whether this membership was created with a proven email address
+    # (emailed-code challenge, confirmed account email, or accepted invitation)
+    # @return [Boolean]
+    def verified?
+      verified_at.present?
+    end
+
     # === Role Methods ===
 
     # Get the role as a symbol

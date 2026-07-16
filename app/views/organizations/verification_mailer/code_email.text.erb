@@ -1,0 +1,8 @@
+Use this code to verify your email address and join <%= @organization.name %>:
+
+  <%= @code %>
+
+The code expires in <%= @expires_in_minutes %> minutes.
+
+If you didn't request this code, you can safely ignore this email —
+nobody can join <%= @organization.name %> with your address without it.
