@@ -13,8 +13,8 @@ gem "rake", "~> 13.0"
 group :development do
   gem "irb"
   gem "rubocop", "~> 1.88"
-  gem "rubocop-minitest", "~> 0.36"
-  gem "rubocop-performance", "~> 1.24"
+  gem "rubocop-minitest", "~> 0.39"
+  gem "rubocop-performance", "~> 1.26"
 end
 
 group :development, :test do
