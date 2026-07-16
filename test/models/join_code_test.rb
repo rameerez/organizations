@@ -261,6 +261,30 @@ module Organizations
       assert_equal 1, code.reload.uses_count
     end
 
+    test "redeeming a basic code mid-challenge approves immediately; the unfinished challenge dies with the approval" do
+      # Reviewer-requested transition: user starts a domain-email challenge,
+      # then redeems a basic auto-approve code BEFORE completing it. The code
+      # wins: instant membership with code provenance, NOT email-verified
+      # (the inbox was never proven), domain metadata still merged (the
+      # matched_domain_id survives on the request).
+      @org.add_domain!("inizio.com", membership_metadata: { member_kind: "employee" })
+      request = @user.request_to_join!(@org)
+      SecureRandom.stub(:random_number, 424_242) do
+        request.start_email_verification!(email: "j@inizio.com")
+      end
+
+      code = @org.generate_join_code!(membership_metadata: { from: "code" })
+      membership = JoinCode.redeem(code.code, user: @user)
+
+      assert_instance_of Organizations::Membership, membership
+      assert_equal "code", membership.joined_via
+      refute_predicate membership, :verified?, "an unfinished challenge must not stamp verified_email"
+      assert_nil membership.verified_email
+      assert_equal "employee", membership.metadata["member_kind"]
+      assert_equal "code", membership.metadata["from"]
+      assert_predicate request.reload, :approved?
+    end
+
     test "redeeming a second different code moves the pending request to it and consumes a use" do
       code_a = @org.generate_join_code!(auto_approve: false)
       code_b = @org.generate_join_code!(auto_approve: false)

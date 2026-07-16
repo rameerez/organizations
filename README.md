@@ -273,6 +273,7 @@ membership.verified?                # => true
 - Domain matching is **exact** and evasion-hardened: `acme.com.evil.com`, `evilacme.com`, multi-`@` shapes never match; subdomains are separate domains on purpose (they often mean different cohorts).
 - BYO-UI as always: the gem ships models/APIs/mailers only. **You must rate-limit your join/redemption/verification endpoints** in the host app.
 - After-callbacks (`on_join_request_*`) are error-isolated — enforce hard member caps *before* calling approve/redeem.
+- Verification-code delivery failures are swallowed (logged, never raised) AFTER the challenge row commits — deliberate, so a flaky mailer can't roll back state, but it means a misconfigured mailer silently strands users inside the resend-throttle window. **Monitor delivery failures for your verification mailer.**
 
 Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only).
 

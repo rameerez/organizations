@@ -358,7 +358,7 @@ module Organizations
     # Domains win over allowlist entries (an org can have both).
     # @return [Array(Domain|nil, AllowlistEntry|nil)]
     def eligible_instruments_for!(address)
-      matched_domain = organization.domains.detect { |domain| domain.matches_email?(address) }
+      matched_domain = organization.domains.matching_email(address).first
       matched_entry = matched_domain ? nil : organization.allowlist_entries.unclaimed.for_email(address).first
 
       unless matched_domain || matched_entry

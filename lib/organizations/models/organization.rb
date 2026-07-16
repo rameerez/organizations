@@ -502,7 +502,7 @@ module Organizations
         raise VerificationEmailNotEligible, "The account email has not been confirmed"
       end
 
-      matched_domain = domains.detect { |domain| domain.matches_email?(email) }
+      matched_domain = domains.matching_email(email).first
       unless matched_domain
         raise VerificationEmailNotEligible, "This email address is not eligible to join this organization"
       end

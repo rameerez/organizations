@@ -92,6 +92,34 @@ module Organizations
       assert_predicate membership, :persisted?
     end
 
+    test "concurrent verified-email claim during acceptance degrades gracefully (race form)" do
+      # Simulate the race where a rival claims the address BETWEEN accept!'s
+      # pre-check and the INSERT: force the stamped attributes despite the
+      # claim and let the unique index fire.
+      rival = create_user!(email: "rival@example.com")
+      invitation = invite!
+      stamped = {
+        verified_email: "invitee@example.com",
+        verified_email_normalized: "invitee@example.com",
+        verified_at: Time.current
+      }
+
+      invitation.stub(:verified_email_attributes_for, stamped) do
+        @org.memberships.create!(user: rival, role: "member",
+                                 verified_email: "invitee@example.com",
+                                 verified_email_normalized: "invitee@example.com",
+                                 verified_at: Time.current)
+
+        membership = invitation.accept!(@invitee)
+
+        assert_predicate membership, :persisted?
+        assert_equal @invitee, membership.user
+        refute_predicate membership, :verified?, "the loser of the race must degrade to an unstamped membership"
+        assert_equal "invited", membership.joined_via
+      end
+      assert_predicate invitation.reload, :accepted?
+    end
+
     test "memberships without verified_email are unconstrained (multiple NULLs allowed)" do
       user_b = create_user!(email: "b@example.com")
       @org.add_member!(@invitee)

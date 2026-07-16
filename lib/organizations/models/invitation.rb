@@ -235,13 +235,32 @@ module Organizations
     # created, just without the verified-email stamp.
     def create_membership_for!(accepting_user, skip_email_validation)
       organization.memberships.create!(
+        **base_membership_attributes(accepting_user),
+        **verified_email_attributes_for(accepting_user, skip_email_validation)
+      )
+    rescue ActiveRecord::RecordNotUnique
+      # Two unique indexes can fire here (same disambiguation as
+      # JoinRequest#create_membership!):
+      # 1. (user, org) — another acceptance/join path just made them a member:
+      #    reuse it (invitations to one address aren't normalization-aware, so
+      #    two plus-variant invitations can race).
+      # 2. (org, verified_email_normalized) — the address was claimed between
+      #    our pre-check and the INSERT: degrade gracefully by creating the
+      #    membership WITHOUT the verified-email stamp. Acceptance never breaks.
+      existing = organization.memberships.find_by(user_id: accepting_user.id)
+      return existing if existing
+
+      organization.memberships.create!(**base_membership_attributes(accepting_user))
+    end
+
+    def base_membership_attributes(accepting_user)
+      {
         user: accepting_user,
         role: role,
         invited_by_id: invited_by_id,
         joined_via: "invited",
-        metadata: membership_metadata.is_a?(Hash) ? membership_metadata : {},
-        **verified_email_attributes_for(accepting_user, skip_email_validation)
-      )
+        metadata: membership_metadata.is_a?(Hash) ? membership_metadata : {}
+      }
     end
 
     # Provenance attributes for the membership created by this acceptance.
