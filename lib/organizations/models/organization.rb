@@ -50,6 +50,15 @@ module Organizations
              inverse_of: :organization,
              dependent: :destroy
 
+    # NOTE: join_requests are declared BEFORE join_codes on purpose — Rails
+    # runs dependent: :destroy cascades in DECLARATION order, and requests
+    # hold an FK to the code that created them. Requests must die first (and
+    # JoinCode#join_requests additionally nullifies for standalone deletes).
+    has_many :join_requests,
+             class_name: "Organizations::JoinRequest",
+             inverse_of: :organization,
+             dependent: :destroy
+
     has_many :join_codes,
              class_name: "Organizations::JoinCode",
              inverse_of: :organization,
@@ -57,11 +66,6 @@ module Organizations
 
     has_many :allowlist_entries,
              class_name: "Organizations::AllowlistEntry",
-             inverse_of: :organization,
-             dependent: :destroy
-
-    has_many :join_requests,
-             class_name: "Organizations::JoinRequest",
              inverse_of: :organization,
              dependent: :destroy
 

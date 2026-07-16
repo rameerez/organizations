@@ -40,9 +40,14 @@ module Organizations
                class_name: "User",
                optional: true
 
+    # Requests OUTLIVE the codes that created them (they are the join audit
+    # trail; joined_via/metadata are already snapshotted) — deleting a code
+    # nullifies the linkage instead of cascading or violating the FK.
+    # Prefer revoke! over destroy for rotation; destroy stays safe regardless.
     has_many :join_requests,
              class_name: "Organizations::JoinRequest",
-             inverse_of: :join_code
+             inverse_of: :join_code,
+             dependent: :nullify
 
     # === Validations ===
 

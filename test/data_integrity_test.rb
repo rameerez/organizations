@@ -1103,5 +1103,38 @@ module Organizations
         invitation.accept!(user)
       end
     end
+
+    # =========================================================================
+    # Verified-joining destroy ordering (regression: found by the first
+    # downstream integration — org.destroy! violated the join_requests →
+    # join_codes FK because cascades run in association-declaration order)
+    # =========================================================================
+
+    test "destroying an organization with code-created join requests succeeds" do
+      org, _owner = create_org_with_owner!(name: "Cascade Org")
+      user = create_user!(email: "cascade@example.com")
+      code = org.generate_join_code!(auto_approve: false)
+      Organizations::JoinCode.redeem(code.code, user: user)
+
+      assert_difference -> { Organizations::Organization.count } => -1,
+                        -> { Organizations::JoinCode.count } => -1,
+                        -> { Organizations::JoinRequest.count } => -1 do
+        org.destroy!
+      end
+    end
+
+    test "destroying a join code nullifies its requests instead of breaking the FK" do
+      org, _owner = create_org_with_owner!(name: "Nullify Org")
+      user = create_user!(email: "nullify@example.com")
+      code = org.generate_join_code!(auto_approve: false)
+      request = Organizations::JoinCode.redeem(code.code, user: user)
+
+      code.destroy!
+
+      request.reload
+      assert_nil request.join_code_id
+      assert_equal "code", request.joined_via, "snapshotted provenance must survive the code deletion"
+      assert request.pending?
+    end
   end
 end
