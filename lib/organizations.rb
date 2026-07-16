@@ -41,6 +41,27 @@ module Organizations
   class InvitationAlreadyAccepted < InvitationError; end
   class InvitationEmailMismatch < InvitationError; end
 
+  # Join request errors (verified joining)
+  class JoinRequestError < Error; end
+  class JoinRequestExpired < JoinRequestError; end
+  class JoinRequestAlreadyDecided < JoinRequestError; end
+
+  # Join code errors (verified joining)
+  # JoinCodeInvalid covers unknown, revoked, and expired codes — hosts should
+  # show the same generic message for all three (don't leak which codes exist).
+  class JoinCodeError < Error; end
+  class JoinCodeInvalid < JoinCodeError; end
+  class JoinCodeExhausted < JoinCodeInvalid; end
+
+  # Email verification errors (verified joining)
+  class VerificationError < JoinRequestError; end
+  class VerificationEmailNotEligible < VerificationError; end
+  class VerificationEmailAlreadyClaimed < VerificationError; end
+  class VerificationCodeInvalid < VerificationError; end
+  class VerificationCodeExpired < VerificationError; end
+  class VerificationAttemptsExceeded < VerificationError; end
+  class VerificationThrottled < VerificationError; end
+
   # === Autoload Components (lazy loading) ===
 
   autoload :Configuration, "organizations/configuration"
@@ -54,6 +75,7 @@ module Organizations
   autoload :CurrentUserResolution, "organizations/current_user_resolution"
   autoload :InvitationAcceptanceResult, "organizations/invitation_acceptance_result"
   autoload :InvitationAcceptanceFailure, "organizations/invitation_acceptance_failure"
+  autoload :EmailNormalizer, "organizations/email_normalizer"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers
@@ -87,6 +109,10 @@ module Organizations
     autoload :Organization, "organizations/models/organization"
     autoload :Membership, "organizations/models/membership"
     autoload :Invitation, "organizations/models/invitation"
+    autoload :Domain, "organizations/models/domain"
+    autoload :JoinCode, "organizations/models/join_code"
+    autoload :AllowlistEntry, "organizations/models/allowlist_entry"
+    autoload :JoinRequest, "organizations/models/join_request"
   end
 
   class << self

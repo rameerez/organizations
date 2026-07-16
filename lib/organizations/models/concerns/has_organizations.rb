@@ -86,6 +86,35 @@ module Organizations
                      foreign_key: :invited_by_id,
                      inverse_of: :invited_by,
                      dependent: :nullify
+
+            # === Verified joining (v0.5.0) ===
+
+            # This user's join requests (request-to-join workflow)
+            has_many :organization_join_requests,
+                     class_name: "Organizations::JoinRequest",
+                     foreign_key: :user_id,
+                     inverse_of: :user,
+                     dependent: :destroy
+
+            # Trails this user leaves as an actor on other people's records —
+            # nullified on deletion, same as sent_organization_invitations
+            has_many :decided_organization_join_requests,
+                     class_name: "Organizations::JoinRequest",
+                     foreign_key: :decided_by_id,
+                     inverse_of: :decided_by,
+                     dependent: :nullify
+
+            has_many :created_organization_join_codes,
+                     class_name: "Organizations::JoinCode",
+                     foreign_key: :created_by_id,
+                     inverse_of: :created_by,
+                     dependent: :nullify
+
+            has_many :claimed_organization_allowlist_entries,
+                     class_name: "Organizations::AllowlistEntry",
+                     foreign_key: :claimed_by_id,
+                     inverse_of: :claimed_by,
+                     dependent: :nullify
           end
 
           def define_organization_settings(options, &block)
@@ -506,6 +535,54 @@ module Organizations
             end
 
             org.send_invite_to!(email, invited_by: self, role: role)
+          end
+
+          # === Verified Joining (v0.5.0) ===
+
+          # Petition to join an organization (request-to-join workflow).
+          # Idempotent: returns the existing open request when one exists.
+          # Fires the :join_request_created callback for new requests.
+          #
+          # @param organization [Organizations::Organization]
+          # @param message [String, nil] optional note shown to approvers
+          # @return [Organizations::JoinRequest]
+          #
+          # NOTE: `max_organizations` deliberately does NOT apply here — that
+          # setting caps orgs a user can OWN. Hosts wanting to cap plain
+          # memberships should check before approving (see README).
+          def request_to_join!(organization, message: nil)
+            existing = pending_join_request_for(organization)
+            return existing if existing
+
+            # A member doesn't need to request — surface their (approved)
+            # state instead of creating a nonsense pending row.
+            existing_membership = memberships.find_by(organization_id: organization.id)
+            if existing_membership
+              raise Organizations::JoinRequestAlreadyDecided,
+                    "You are already a member of this organization"
+            end
+
+            request = organization.join_requests.create!(user: self, message: message)
+
+            Callbacks.dispatch(
+              :join_request_created,
+              organization: organization,
+              user: self,
+              join_request: request
+            )
+
+            request
+          rescue ActiveRecord::RecordNotUnique
+            # Race: a concurrent request slipped past the pre-check.
+            pending_join_request_for(organization) ||
+              raise(Organizations::JoinRequestError, "Could not create join request")
+          end
+
+          # This user's open request for an organization, if any
+          # @param organization [Organizations::Organization]
+          # @return [Organizations::JoinRequest, nil]
+          def pending_join_request_for(organization)
+            organization_join_requests.pending.find_by(organization_id: organization.id)
           end
 
           # Extension seam for personal organization creation.

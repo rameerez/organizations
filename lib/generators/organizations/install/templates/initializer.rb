@@ -56,6 +56,59 @@ Organizations.configure do |config|
   # config.default_invitation_role = :member
 
   # ============================================================================
+  # VERIFIED JOINING (join requests, domains, join codes, allowlists)
+  # ============================================================================
+  #
+  # Users can join organizations by proving they belong:
+  #   - request-to-join:  user.request_to_join!(org) → org.approve_join_request!(...)
+  #   - email domain:     org.add_domain!("corp.com") + emailed 6-digit code
+  #   - join code (PIN):  org.generate_join_code!(...) + JoinCode.redeem(code, user:)
+  #   - allowlist/roster: org.import_allowlist!(emails) + emailed 6-digit code
+  #
+  # The gem ships models and APIs only (bring your own UI + rate limiting on
+  # your join endpoints). See the README's "Verified joining" section.
+
+  # Mailer that sends verification codes. Custom mailers must implement
+  # code_email(join_request, code).
+  # Default: "Organizations::VerificationMailer"
+  # config.verification_mailer = "Organizations::VerificationMailer"
+
+  # How long an emailed code stays valid (codes always expire).
+  # Default: 15.minutes
+  # config.verification_code_ttl = 15.minutes
+
+  # Wrong-attempt cap per challenge, and send throttles per join request.
+  # Defaults: 5 attempts, 60.seconds between sends, 5 sends max
+  # config.verification_max_attempts = 5
+  # config.verification_resend_interval = 60.seconds
+  # config.verification_max_sends = 5
+
+  # Email normalizer used for the "one proven email = one membership per org"
+  # invariant. Default collapses case, whitespace, and +tags (plus-addressing).
+  # config.verification_email_normalizer = ->(email) { ... }
+
+  # Allow org.join_with_account_email!(user) to trust a CONFIRMED account
+  # email (e.g. Devise :confirmable) as inbox proof — no emailed code needed
+  # when the account email's domain is enrolled.
+  # Default: true
+  # config.trust_confirmed_account_email = true
+
+  # How long join requests stay open before reading as expired (nil = never).
+  # Default: 30.days
+  # config.join_request_expiry = 30.days
+
+  # Custom join-code generator (default: 8 chars, ambiguity-free alphabet).
+  # config.join_code_generator = -> { SecureRandom.alphanumeric(10).upcase }
+
+  # Lifecycle callbacks:
+  # config.on_join_request_created  { |ctx| ... }  # ctx: organization, user, join_request
+  # config.on_join_request_approved { |ctx| ... }  # + membership, decided_by (nil = auto)
+  # config.on_join_request_rejected { |ctx| ... }  # + decided_by
+  #
+  # NOTE: like all after-callbacks these are error-isolated — enforce hard
+  # caps (member limits etc.) BEFORE calling approve/redeem, in your own code.
+
+  # ============================================================================
   # ROLES & PERMISSIONS
   # ============================================================================
 

@@ -43,6 +43,28 @@ module Organizations
              inverse_of: :organization,
              dependent: :destroy
 
+    # === Verified joining (v0.5.0) ===
+
+    has_many :domains,
+             class_name: "Organizations::Domain",
+             inverse_of: :organization,
+             dependent: :destroy
+
+    has_many :join_codes,
+             class_name: "Organizations::JoinCode",
+             inverse_of: :organization,
+             dependent: :destroy
+
+    has_many :allowlist_entries,
+             class_name: "Organizations::AllowlistEntry",
+             inverse_of: :organization,
+             dependent: :destroy
+
+    has_many :join_requests,
+             class_name: "Organizations::JoinRequest",
+             inverse_of: :organization,
+             dependent: :destroy
+
     # === Validations ===
 
     validates :name, presence: true
@@ -370,7 +392,156 @@ module Organizations
       invitations.pending.for_email(normalized_email).first!
     end
 
+    # === Verified Joining Methods (v0.5.0) ===
+
+    # Enroll an email domain for domain-verified joining.
+    # @param domain [String] e.g. "inizio.com" (exact match — subdomains must be enrolled separately)
+    # @param membership_metadata [Hash] copied onto memberships created through this domain
+    # @return [Domain]
+    def add_domain!(domain, membership_metadata: {})
+      domains.create!(domain: domain, membership_metadata: membership_metadata)
+    end
+
+    # Generate a shareable join code (PIN).
+    # @param label [String, nil] campaign attribution ("cafeteria poster")
+    # @param requires_verified_domain_email [Boolean] chain the emailed-code challenge ("reinforced" level)
+    # @param auto_approve [Boolean] false parks redemptions as pending requests for manual approval
+    # @param expires_at [Time, nil]
+    # @param max_uses [Integer, nil]
+    # @param created_by [User, nil]
+    # @param membership_metadata [Hash] copied onto memberships created through this code
+    # @return [JoinCode]
+    def generate_join_code!(label: nil, requires_verified_domain_email: false, auto_approve: true,
+                            expires_at: nil, max_uses: nil, created_by: nil, membership_metadata: {})
+      join_codes.create!(
+        label: label,
+        requires_verified_domain_email: requires_verified_domain_email,
+        auto_approve: auto_approve,
+        expires_at: expires_at,
+        max_uses: max_uses,
+        created_by_id: created_by&.id,
+        membership_metadata: membership_metadata
+      )
+    end
+
+    # Bulk-import roster emails as allowlist entries (idempotent per address:
+    # already-enrolled addresses are skipped, not duplicated).
+    # @param emails [Enumerable<String>]
+    # @param source [String, nil] provenance tag ("csv_2026-07")
+    # @param membership_metadata [Hash] copied onto memberships created through these entries
+    # @return [Array<AllowlistEntry>] the newly created entries
+    def import_allowlist!(emails, source: nil, membership_metadata: {})
+      Array(emails).filter_map do |email|
+        entry = allowlist_entries.create!(
+          email: email,
+          source: source,
+          membership_metadata: membership_metadata
+        )
+        entry
+      rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+        # Skip duplicates silently (idempotent import); re-raise anything else.
+        raise e unless duplicate_allowlist_error?(e)
+
+        nil
+      end
+    end
+
+    # Open join requests awaiting a decision
+    # @return [ActiveRecord::Relation<JoinRequest>]
+    def pending_join_requests
+      join_requests.pending
+    end
+
+    # Whether this organization exposes any self-serve joining mechanism
+    # @return [Boolean]
+    def accepts_join_requests?
+      domains.exists? || join_codes.not_revoked.exists? || allowlist_entries.unclaimed.exists?
+    end
+
+    # Approve a join request (creates the membership). See JoinRequest#approve!.
+    # @param join_request [JoinRequest]
+    # @param approved_by [User, nil]
+    # @return [Membership]
+    def approve_join_request!(join_request, approved_by: nil)
+      ensure_join_request_belongs_here!(join_request)
+      join_request.approve!(decided_by: approved_by)
+    end
+
+    # Reject a join request. See JoinRequest#reject!.
+    # @param join_request [JoinRequest]
+    # @param rejected_by [User, nil]
+    # @param reason [String, nil]
+    # @return [JoinRequest]
+    def reject_join_request!(join_request, rejected_by: nil, reason: nil)
+      ensure_join_request_belongs_here!(join_request)
+      join_request.reject!(rejected_by: rejected_by, reason: reason)
+    end
+
+    # Zero-friction domain join for hosts with confirmed account emails
+    # (e.g. Devise :confirmable): if the user's own account email is confirmed
+    # and its domain is enrolled, the inbox was already proven at signup — no
+    # emailed code needed.
+    #
+    # @param user [User] must respond to #email; #confirmed_at gates trust
+    # @return [Membership]
+    # @raise [VerificationEmailNotEligible] when the account email's domain isn't enrolled,
+    #   the email is unconfirmed, or the feature is disabled
+    def join_with_account_email!(user)
+      unless Organizations.configuration.trust_confirmed_account_email
+        raise VerificationEmailNotEligible, "Account-email trust is disabled (see config.trust_confirmed_account_email)"
+      end
+
+      email = user.respond_to?(:email) ? user.email.to_s : ""
+      confirmed = user.respond_to?(:confirmed_at) && user.confirmed_at.present?
+
+      unless confirmed
+        raise VerificationEmailNotEligible, "The account email has not been confirmed"
+      end
+
+      matched_domain = domains.detect { |domain| domain.matches_email?(email) }
+      unless matched_domain
+        raise VerificationEmailNotEligible, "This email address is not eligible to join this organization"
+      end
+
+      # Uniform funnel: every self-serve join goes through a JoinRequest so
+      # provenance and audit trail come for free.
+      request = join_requests.pending.find_by(user_id: user.id) || join_requests.new(user: user)
+      normalized = Organizations.configuration.normalize_verification_email(email)
+
+      ActiveRecord::Base.transaction do
+        if Membership.where(organization_id: id, verified_email_normalized: normalized).exists?
+          raise VerificationEmailAlreadyClaimed,
+                "This email address is already associated with a member of this organization"
+        end
+
+        request.assign_attributes(
+          joined_via: "domain_email",
+          verification_email: email,
+          verification_email_normalized: normalized,
+          verified_at: Time.current,
+          metadata: (request.metadata || {}).merge("matched_domain_id" => matched_domain.id)
+        )
+        request.save!
+      end
+
+      request.approve!(decided_by: nil)
+    end
+
     private
+
+    def ensure_join_request_belongs_here!(join_request)
+      return if join_request.organization_id == id
+
+      raise ArgumentError, "Join request does not belong to this organization"
+    end
+
+    def duplicate_allowlist_error?(error)
+      return true if error.is_a?(ActiveRecord::RecordNotUnique)
+
+      error.is_a?(ActiveRecord::RecordInvalid) &&
+        error.record.is_a?(Organizations::AllowlistEntry) &&
+        error.record.errors.of_kind?(:email_normalized, :taken)
+    end
 
     # Defense in depth for organization-centric API usage.
     # The user-level API already checks this, but direct calls to `org.send_invite_to!`

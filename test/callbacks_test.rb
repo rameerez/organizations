@@ -71,7 +71,7 @@ module Organizations
 
     # ── EVENTS constant ──────────────────────────────────────────────────
 
-    test "EVENTS contains all six lifecycle events" do
+    test "EVENTS contains all lifecycle events" do
       expected = %i[
         organization_created
         member_invited
@@ -79,6 +79,9 @@ module Organizations
         member_removed
         role_changed
         ownership_transferred
+        join_request_created
+        join_request_approved
+        join_request_rejected
       ]
       assert_equal expected, Callbacks::EVENTS
     end
@@ -387,6 +390,9 @@ module Organizations
         config.on_member_removed { procs[:removed] = true }
         config.on_role_changed { procs[:role] = true }
         config.on_ownership_transferred { procs[:transfer] = true }
+        config.on_join_request_created { procs[:jr_created] = true }
+        config.on_join_request_approved { procs[:jr_approved] = true }
+        config.on_join_request_rejected { procs[:jr_rejected] = true }
       end
 
       Callbacks::EVENTS.each do |event|

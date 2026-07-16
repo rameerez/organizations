@@ -17,6 +17,9 @@ module Organizations
       member_removed
       role_changed
       ownership_transferred
+      join_request_created
+      join_request_approved
+      join_request_rejected
     ].freeze
 
     module_function
@@ -55,6 +58,12 @@ module Organizations
         config.on_role_changed_callback
       when :ownership_transferred
         config.on_ownership_transferred_callback
+      when :join_request_created
+        config.on_join_request_created_callback
+      when :join_request_approved
+        config.on_join_request_approved_callback
+      when :join_request_rejected
+        config.on_join_request_rejected_callback
       end
     end
 
