@@ -142,9 +142,7 @@ module Organizations
         # be race-safe (two concurrent redemptions of a max_uses: 1 code must
         # yield exactly one success).
         lock!
-
-        raise JoinCodeInvalid, "This code is not valid" if revoked? || expired?
-        raise JoinCodeExhausted, "This code has reached its usage limit" if exhausted?
+        ensure_redeemable!
 
         # Already a member — idempotent no-op that does NOT consume a use.
         existing_membership = organization.memberships.find_by(user_id: user.id)
@@ -153,18 +151,7 @@ module Organizations
           raise ActiveRecord::Rollback # nothing to persist
         end
 
-        request = pending_request_for(user)
-
-        if request.persisted? && request.join_code_id == id
-          # Same user re-redeeming the same code: idempotent, no extra use.
-          outcome = request
-        else
-          request.join_code = self
-          request.joined_via = "code"
-          request.save!
-          increment!(:uses_count)
-          outcome = request
-        end
+        outcome = attach_request!(user)
       end
 
       # Instant-join path: no email challenge required and auto-approve on.
@@ -172,21 +159,40 @@ module Organizations
       # member_joined/join_request_approved callbacks never fire for a
       # transaction that could still roll back. If approval fails, the
       # pending request survives — a safe, resumable state.
-      if outcome.is_a?(JoinRequest) && !requires_verified_domain_email? && auto_approve?
-        outcome = outcome.approve!(decided_by: nil)
-      end
+      return outcome unless outcome.is_a?(JoinRequest)
+      return outcome if requires_verified_domain_email? || !auto_approve?
 
-      outcome
+      outcome.approve!(decided_by: nil)
     end
 
     # Normalize user input to storage form: uppercase, strip separators.
     # @param code [String, nil]
     # @return [String]
     def self.normalize(code)
-      code.to_s.upcase.gsub(/[\s\-]/, "")
+      code.to_s.upcase.gsub(/[\s-]/, "")
     end
 
     private
+
+    def ensure_redeemable!
+      raise JoinCodeInvalid, "This code is not valid" if revoked? || expired?
+      raise JoinCodeExhausted, "This code has reached its usage limit" if exhausted?
+    end
+
+    # Attach this code to the user's open request (creating one if needed),
+    # consuming a use — except for idempotent re-redemptions of the same code.
+    def attach_request!(user)
+      request = pending_request_for(user)
+
+      # Same user re-redeeming the same code: idempotent, no extra use.
+      return request if request.persisted? && request.join_code_id == id
+
+      request.join_code = self
+      request.joined_via = "code"
+      request.save!
+      increment!(:uses_count)
+      request
+    end
 
     # Find or build this user's open request for the organization.
     # Reuses an existing pending request (partial unique index: one pending

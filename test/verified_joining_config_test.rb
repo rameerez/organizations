@@ -10,6 +10,7 @@ module Organizations
 
     test "verified-joining defaults" do
       config = Organizations.configuration
+
       assert_equal "Organizations::VerificationMailer", config.verification_mailer
       assert_equal 15.minutes, config.verification_code_ttl
       assert_equal 5, config.verification_max_attempts
@@ -58,6 +59,7 @@ module Organizations
       end
 
       Organizations.configure { |c| c.verification_email_normalizer = ->(e) { e.to_s.downcase } }
+
       assert_equal "x@y.com", Organizations.configuration.normalize_verification_email("X@Y.COM")
     end
 

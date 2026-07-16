@@ -167,25 +167,8 @@ module Organizations
           return existing_membership
         end
 
-        # Create the membership
-        # Use invited_by_id instead of invited_by to avoid Rails class reloading issues
-        # (AssociationTypeMismatch when User class is reloaded in development)
-        #
-        # Verified-joining provenance (v0.5.0): accepting the emailed token is
-        # proof of control of the invited address, so the membership records
-        # it as a verified email — UNLESS the acceptance bypassed the email
-        # match (skip_email_validation with a different account email), where
-        # no inbox proof exists. If the address was already claimed by another
-        # membership in this org (rare recycled-address edge), the membership
-        # is still created, just without the verified-email stamp.
-        membership = organization.memberships.create!(
-          user: accepting_user,
-          role: role,
-          invited_by_id: invited_by_id,
-          joined_via: "invited",
-          metadata: membership_metadata.is_a?(Hash) ? membership_metadata : {},
-          **verified_email_attributes_for(accepting_user, skip_email_validation)
-        )
+        # Create the membership (with verified-joining provenance)
+        membership = create_membership_for!(accepting_user, skip_email_validation)
 
         # Mark invitation as accepted
         update!(accepted_at: Time.current)
@@ -239,8 +222,30 @@ module Organizations
 
     private
 
+    # Create the membership for an acceptance.
+    # Uses invited_by_id instead of invited_by to avoid Rails class reloading
+    # issues (AssociationTypeMismatch when User is reloaded in development).
+    #
+    # Verified-joining provenance (v0.5.0): accepting the emailed token is
+    # proof of control of the invited address, so the membership records it
+    # as a verified email — UNLESS the acceptance bypassed the email match
+    # (skip_email_validation with a different account email), where no inbox
+    # proof exists. If the address was already claimed by another membership
+    # in this org (rare recycled-address edge), the membership is still
+    # created, just without the verified-email stamp.
+    def create_membership_for!(accepting_user, skip_email_validation)
+      organization.memberships.create!(
+        user: accepting_user,
+        role: role,
+        invited_by_id: invited_by_id,
+        joined_via: "invited",
+        metadata: membership_metadata.is_a?(Hash) ? membership_metadata : {},
+        **verified_email_attributes_for(accepting_user, skip_email_validation)
+      )
+    end
+
     # Provenance attributes for the membership created by this acceptance.
-    # See the comment at the create! call site for the trust rules.
+    # See create_membership_for! for the trust rules.
     def verified_email_attributes_for(accepting_user, skip_email_validation)
       email_proven =
         !skip_email_validation ||

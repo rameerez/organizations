@@ -87,8 +87,11 @@ module Organizations
                      inverse_of: :invited_by,
                      dependent: :nullify
 
-            # === Verified joining (v0.5.0) ===
+            define_verified_joining_associations
+          end
 
+          # Verified-joining (v0.5.0) associations, split out for readability
+          def define_verified_joining_associations
             # This user's join requests (request-to-join workflow)
             has_many :organization_join_requests,
                      class_name: "Organizations::JoinRequest",

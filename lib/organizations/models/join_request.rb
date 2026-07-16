@@ -28,6 +28,10 @@ module Organizations
   #   request.start_email_verification!(email: "j.doe@inizio.com")
   #   request.verify_email_code!("492817") # => Membership (auto-approved)
   #
+  # The class carries the request's FULL lifecycle (statuses, challenge,
+  # decisions) exactly like its mirror Invitation does — splitting it would
+  # scatter one cohesive state machine across files.
+  # rubocop:disable Metrics/ClassLength
   class JoinRequest < ActiveRecord::Base
     self.table_name = "organizations_join_requests"
 
@@ -62,13 +66,13 @@ module Organizations
     # === Scopes ===
 
     # Open requests (pending status and not past expiry)
-    scope :pending, -> {
+    scope :pending, lambda {
       where(status: "pending")
         .where("expires_at IS NULL OR expires_at > ?", Time.current)
     }
 
     # Requests that timed out while pending
-    scope :expired, -> {
+    scope :expired, lambda {
       where(status: "pending")
         .where("expires_at IS NOT NULL AND expires_at <= ?", Time.current)
     }
@@ -143,54 +147,18 @@ module Organizations
         raise VerificationEmailNotEligible, "This is not a valid email address"
       end
 
-      config = Organizations.configuration
-      normalized = config.normalize_verification_email(address)
       code = nil
 
       ActiveRecord::Base.transaction do
         lock!
         ensure_open!
 
-        matched_domain = organization.domains.detect { |domain| domain.matches_email?(address) }
-        matched_entry = matched_domain ? nil : organization.allowlist_entries.unclaimed.for_email(address).first
-
-        unless matched_domain || matched_entry
-          raise VerificationEmailNotEligible,
-                "This email address is not eligible to join this organization"
-        end
-
-        # One proven email => one membership per org. Pre-check for a friendly
-        # error; the partial unique index on memberships is the backstop.
-        if Membership.where(organization_id: organization_id, verified_email_normalized: normalized).exists?
-          raise VerificationEmailAlreadyClaimed,
-                "This email address is already associated with a member of this organization"
-        end
-
-        if verification_sends_count >= config.verification_max_sends
-          raise VerificationThrottled, "Too many codes requested for this request"
-        end
-
-        if verification_sent_at.present? && verification_sent_at > interval_ago(config.verification_resend_interval)
-          raise VerificationThrottled, "Please wait before requesting another code"
-        end
+        matched_domain, matched_entry = eligible_instruments_for!(address)
+        ensure_address_unclaimed!(address)
+        ensure_send_allowed!
 
         code = generate_verification_code
-
-        update!(
-          verification_email: address,
-          verification_email_normalized: normalized,
-          verification_code_digest: self.class.digest_verification_code(code, id),
-          verification_sent_at: Time.current,
-          verification_expires_at: Time.current + config.verification_code_ttl,
-          verification_attempts: 0,
-          verification_sends_count: verification_sends_count + 1,
-          verified_at: nil,
-          joined_via: joined_via.presence || (matched_domain ? "domain_email" : "allowlist"),
-          metadata: (metadata || {}).merge(
-            "matched_domain_id" => matched_domain&.id,
-            "matched_allowlist_entry_id" => matched_entry&.id
-          ).compact
-        )
+        update!(challenge_attributes(address, code, matched_domain, matched_entry))
       end
 
       deliver_verification_email(code)
@@ -207,26 +175,14 @@ module Organizations
     # @raise [VerificationCodeInvalid, VerificationCodeExpired, VerificationAttemptsExceeded]
     # @raise [JoinRequestExpired, JoinRequestAlreadyDecided]
     def verify_email_code!(code)
-      config = Organizations.configuration
       failure = nil
 
       ActiveRecord::Base.transaction do
         lock!
         ensure_open!
+        ensure_active_challenge!
 
-        raise VerificationCodeInvalid, "No verification code is active for this request" if verification_code_digest.blank?
-
-        if verification_attempts >= config.verification_max_attempts
-          raise VerificationAttemptsExceeded, "Too many incorrect attempts — request a new code"
-        end
-
-        if verification_expires_at.blank? || verification_expires_at <= Time.current
-          raise VerificationCodeExpired, "This code has expired — request a new one"
-        end
-
-        submitted = self.class.digest_verification_code(code.to_s.strip, id)
-
-        if ActiveSupport::SecurityUtils.secure_compare(submitted, verification_code_digest)
+        if correct_code?(code)
           # Burn the code: single-use by construction.
           update!(verified_at: Time.current, verification_code_digest: nil)
         else
@@ -266,16 +222,11 @@ module Organizations
       ActiveRecord::Base.transaction do
         lock!
 
-        if approved?
-          membership = organization.memberships.find_by(user_id: user_id)
-          raise JoinRequestAlreadyDecided, "Request was approved but the membership no longer exists" unless membership
-
-          return membership
-        end
+        return approved_membership! if approved? # idempotent re-approval
 
         ensure_open!
 
-        existing = organization.memberships.find_by(user_id: user_id)
+        existing = existing_membership
 
         if existing
           membership = existing
@@ -288,24 +239,7 @@ module Organizations
         update!(status: "approved", decided_by_id: decided_by&.id, decided_at: Time.current)
       end
 
-      unless reused_existing
-        Callbacks.dispatch(
-          :member_joined,
-          organization: organization,
-          membership: membership,
-          user: user
-        )
-      end
-
-      Callbacks.dispatch(
-        :join_request_approved,
-        organization: organization,
-        user: user,
-        join_request: self,
-        membership: membership,
-        decided_by: decided_by
-      )
-
+      dispatch_approval_callbacks(membership, decided_by, reused_existing)
       membership
     end
 
@@ -319,7 +253,7 @@ module Organizations
         lock!
         ensure_undecided!
 
-        new_metadata = (metadata || {})
+        new_metadata = metadata || {}
         new_metadata = new_metadata.merge("rejection_reason" => reason) if reason.present?
 
         update!(
@@ -382,6 +316,121 @@ module Organizations
       true
     end
 
+    def existing_membership
+      organization.memberships.find_by(user_id: user_id)
+    end
+
+    # The membership behind an already-approved request (idempotent path).
+    # Raises if it was removed after approval — the request can't be reused.
+    def approved_membership!
+      membership = existing_membership
+      raise JoinRequestAlreadyDecided, "Request was approved but the membership no longer exists" unless membership
+
+      membership
+    end
+
+    # Post-approval callback dispatches (outside the approval transaction).
+    # member_joined is skipped when the membership pre-existed via another
+    # path — it already fired when that membership was created.
+    def dispatch_approval_callbacks(membership, decided_by, reused_existing)
+      unless reused_existing
+        Callbacks.dispatch(
+          :member_joined,
+          organization: organization,
+          membership: membership,
+          user: user
+        )
+      end
+
+      Callbacks.dispatch(
+        :join_request_approved,
+        organization: organization,
+        user: user,
+        join_request: self,
+        membership: membership,
+        decided_by: decided_by
+      )
+    end
+
+    # === Challenge guards & builders (all called under lock) ===
+
+    # Resolve which join instrument makes this address eligible.
+    # Domains win over allowlist entries (an org can have both).
+    # @return [Array(Domain|nil, AllowlistEntry|nil)]
+    def eligible_instruments_for!(address)
+      matched_domain = organization.domains.detect { |domain| domain.matches_email?(address) }
+      matched_entry = matched_domain ? nil : organization.allowlist_entries.unclaimed.for_email(address).first
+
+      unless matched_domain || matched_entry
+        raise VerificationEmailNotEligible,
+              "This email address is not eligible to join this organization"
+      end
+
+      [matched_domain, matched_entry]
+    end
+
+    # One proven email => one membership per org. Pre-check for a friendly
+    # error; the unique index on memberships is the backstop.
+    def ensure_address_unclaimed!(address)
+      normalized = Organizations.configuration.normalize_verification_email(address)
+      return unless Membership.where(organization_id: organization_id, verified_email_normalized: normalized).exists?
+
+      raise VerificationEmailAlreadyClaimed,
+            "This email address is already associated with a member of this organization"
+    end
+
+    def ensure_send_allowed!
+      config = Organizations.configuration
+
+      if verification_sends_count >= config.verification_max_sends
+        raise VerificationThrottled, "Too many codes requested for this request"
+      end
+
+      resend_floor = interval_ago(config.verification_resend_interval)
+      return unless verification_sent_at.present? && verification_sent_at > resend_floor
+
+      raise VerificationThrottled, "Please wait before requesting another code"
+    end
+
+    def ensure_active_challenge!
+      config = Organizations.configuration
+
+      raise VerificationCodeInvalid, "No verification code is active for this request" if verification_code_digest.blank?
+
+      if verification_attempts >= config.verification_max_attempts
+        raise VerificationAttemptsExceeded, "Too many incorrect attempts — request a new code"
+      end
+
+      return unless verification_expires_at.blank? || verification_expires_at <= Time.current
+
+      raise VerificationCodeExpired, "This code has expired — request a new one"
+    end
+
+    def correct_code?(code)
+      submitted = self.class.digest_verification_code(code.to_s.strip, id)
+      ActiveSupport::SecurityUtils.secure_compare(submitted, verification_code_digest)
+    end
+
+    def challenge_attributes(address, code, matched_domain, matched_entry)
+      config = Organizations.configuration
+
+      {
+        verification_email: address,
+        verification_email_normalized: config.normalize_verification_email(address),
+        verification_code_digest: self.class.digest_verification_code(code, id),
+        verification_sent_at: Time.current,
+        verification_expires_at: Time.current + config.verification_code_ttl,
+        verification_attempts: 0,
+        verification_sends_count: verification_sends_count + 1,
+        verified_at: nil,
+        joined_via: joined_via.presence || (matched_domain ? "domain_email" : "allowlist"),
+        metadata: (metadata || {}).merge(
+          "matched_domain_id" => matched_domain&.id,
+          "matched_allowlist_entry_id" => matched_entry&.id
+        ).compact
+      }
+    end
+
     def create_membership!
       organization.memberships.create!(
         user: user,
@@ -408,8 +457,7 @@ module Organizations
       merged = {}
       merged = merged.merge(hashify(matched_domain&.membership_metadata))
       merged = merged.merge(hashify(matched_allowlist_entry&.membership_metadata))
-      merged = merged.merge(hashify(join_code&.membership_metadata))
-      merged
+      merged.merge(hashify(join_code&.membership_metadata))
     end
 
     def hashify(value)
@@ -460,10 +508,11 @@ module Organizations
       return unless status == "pending"
 
       existing = JoinRequest.where(organization_id: organization_id, user_id: user_id, status: "pending")
-                            .where.not(id: id)
-                            .exists?
+        .where.not(id: id)
+        .exists?
 
       errors.add(:user_id, "already has a pending request for this organization") if existing
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end

@@ -411,6 +411,9 @@ module Organizations
     # @param created_by [User, nil]
     # @param membership_metadata [Hash] copied onto memberships created through this code
     # @return [JoinCode]
+    # Every parameter is an optional keyword with a safe default — this IS
+    # the public API surface, not incidental complexity.
+    # rubocop:disable Metrics/ParameterLists
     def generate_join_code!(label: nil, requires_verified_domain_email: false, auto_approve: true,
                             expires_at: nil, max_uses: nil, created_by: nil, membership_metadata: {})
       join_codes.create!(
@@ -423,6 +426,7 @@ module Organizations
         membership_metadata: membership_metadata
       )
     end
+    # rubocop:enable Metrics/ParameterLists
 
     # Bulk-import roster emails as allowlist entries (idempotent per address:
     # already-enrolled addresses are skipped, not duplicated).

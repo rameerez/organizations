@@ -3,6 +3,8 @@
 require "test_helper"
 
 module Organizations
+  # Comprehensive lifecycle suite — size is the point.
+  # rubocop:disable Metrics/ClassLength
   class JoinCodeTest < Organizations::Test
     def setup
       super
@@ -20,13 +22,15 @@ module Organizations
 
     test "generate_join_code! creates an 8-char code from the ambiguity-free alphabet" do
       code = @org.generate_join_code!
+
       assert_equal 8, code.code.length
-      assert code.code.chars.all? { |c| JoinCode::CODE_ALPHABET.include?(c) }
+      assert(code.code.chars.all? { |c| JoinCode::CODE_ALPHABET.include?(c) })
     end
 
     test "generated codes never contain lookalike characters" do
       20.times do
         code = @org.generate_join_code!
+
         assert_no_match(/[ILO01]/, code.code)
       end
     end
@@ -34,7 +38,8 @@ module Organizations
     test "codes are globally unique — same code cannot exist twice across orgs" do
       other_org, = create_org_with_owner!(name: "Other")
       code = @org.join_codes.create!(code: "AAAABBBB")
-      assert code.persisted?
+
+      assert_predicate code, :persisted?
 
       assert_raises(ActiveRecord::RecordInvalid) { other_org.join_codes.create!(code: "AAAABBBB") }
     end
@@ -42,6 +47,7 @@ module Organizations
     test "custom generator from config is used and normalized" do
       Organizations.configure { |c| c.join_code_generator = -> { "custom-code" } }
       code = @org.generate_join_code!
+
       assert_equal "CUSTOMCODE", code.code
     end
 
@@ -51,6 +57,7 @@ module Organizations
 
     test "display_code groups in fours" do
       code = @org.join_codes.create!(code: "7FHK2MPX")
+
       assert_equal "7FHK-2MPX", code.display_code
     end
 
@@ -66,8 +73,8 @@ module Organizations
       )
 
       assert_equal "cartel cafetería", code.label
-      assert code.requires_verified_domain_email?
-      refute code.auto_approve?
+      assert_predicate code, :requires_verified_domain_email?
+      refute_predicate code, :auto_approve?
       assert_equal 500, code.max_uses
       assert_equal @owner, code.created_by
     end
@@ -78,15 +85,18 @@ module Organizations
 
     test "status transitions: active, revoked, expired, exhausted" do
       code = @org.generate_join_code!(max_uses: 1, expires_at: 1.day.from_now)
-      assert code.active?
+
+      assert_predicate code, :active?
       assert_equal :active, code.status
 
       travel_to(2.days.from_now) { assert_equal :expired, code.status }
 
       code.update!(expires_at: 1.day.from_now, uses_count: 1)
+
       assert_equal :exhausted, code.status
 
       code.revoke!
+
       assert_equal :revoked, code.status
     end
 
@@ -95,6 +105,7 @@ module Organizations
       code.revoke!
       first = code.revoked_at
       code.revoke!
+
       assert_equal first.to_i, code.reload.revoked_at.to_i
     end
 
@@ -118,6 +129,7 @@ module Organizations
 
     test "redeem raises JoinCodeInvalid for expired codes" do
       code = @org.generate_join_code!(expires_at: 1.hour.from_now)
+
       travel_to(2.hours.from_now) do
         assert_raises(JoinCodeInvalid) { JoinCode.redeem(code.code, user: @user) }
       end
@@ -149,7 +161,7 @@ module Organizations
       assert_instance_of Organizations::Membership, membership
       assert_equal "member", membership.role
       assert_equal "code", membership.joined_via
-      refute membership.verified?
+      refute_predicate membership, :verified?
       assert_equal "employee", membership.metadata["member_kind"]
       assert_equal 1, code.reload.uses_count
     end
@@ -159,14 +171,16 @@ module Organizations
       JoinCode.redeem(code.code, user: @user)
 
       request = @org.join_requests.find_by(user_id: @user.id)
-      assert request.approved?
+
+      assert_predicate request, :approved?
       assert_equal code, request.join_code
       assert_nil request.decided_by
     end
 
     test "input is normalized at redemption (typed with hyphens/lowercase)" do
-      code = @org.join_codes.create!(code: "7FHK2MPX")
+      @org.join_codes.create!(code: "7FHK2MPX")
       membership = JoinCode.redeem("7fhk-2mpx", user: @user)
+
       assert_instance_of Organizations::Membership, membership
     end
 
@@ -195,7 +209,7 @@ module Organizations
       outcome = JoinCode.redeem(code.code, user: @user)
 
       assert_instance_of Organizations::JoinRequest, outcome
-      assert outcome.pending?
+      assert_predicate outcome, :pending?
       assert_equal "code", outcome.joined_via
       refute @org.has_member?(@user)
       assert_equal 1, code.reload.uses_count
@@ -207,7 +221,7 @@ module Organizations
       outcome = JoinCode.redeem(code.code, user: @user)
 
       assert_instance_of Organizations::JoinRequest, outcome
-      assert outcome.pending?
+      assert_predicate outcome, :pending?
       refute @org.has_member?(@user)
     end
 
@@ -260,4 +274,5 @@ module Organizations
       assert_equal 1, code_b.reload.uses_count
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end

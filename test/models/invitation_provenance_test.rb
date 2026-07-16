@@ -21,13 +21,14 @@ module Organizations
       membership = invite!.accept!(@invitee)
 
       assert_equal "invited", membership.joined_via
-      assert membership.verified?
+      assert_predicate membership, :verified?
       assert_equal "invitee@example.com", membership.verified_email
       assert_equal "invitee@example.com", membership.verified_email_normalized
     end
 
     test "membership_metadata copies through to the membership" do
       membership = invite!(membership_metadata: { member_kind: "employee" }).accept!(@invitee)
+
       assert_equal "employee", membership.metadata["member_kind"]
     end
 
@@ -36,13 +37,14 @@ module Organizations
       membership = invite!.accept!(other, skip_email_validation: true)
 
       assert_equal "invited", membership.joined_via
-      refute membership.verified?
+      refute_predicate membership, :verified?
       assert_nil membership.verified_email
     end
 
     test "skip_email_validation acceptance by the MATCHING email still stamps verified email" do
       membership = invite!.accept!(@invitee, skip_email_validation: true)
-      assert membership.verified?
+
+      assert_predicate membership, :verified?
       assert_equal "invitee@example.com", membership.verified_email
     end
 
@@ -55,8 +57,8 @@ module Organizations
 
       membership = invite!.accept!(@invitee)
 
-      assert membership.persisted?
-      refute membership.verified?
+      assert_predicate membership, :persisted?
+      refute_predicate membership, :verified?
       assert_nil membership.verified_email
     end
 
@@ -86,13 +88,15 @@ module Organizations
                                                  verified_email: "x@corp.com",
                                                  verified_email_normalized: "x@corp.com",
                                                  verified_at: Time.current)
-      assert membership.persisted?
+
+      assert_predicate membership, :persisted?
     end
 
     test "memberships without verified_email are unconstrained (multiple NULLs allowed)" do
       user_b = create_user!(email: "b@example.com")
       @org.add_member!(@invitee)
       @org.add_member!(user_b)
+
       assert_equal 3, @org.memberships.count # owner + 2
     end
   end

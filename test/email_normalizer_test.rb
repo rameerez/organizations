@@ -47,6 +47,7 @@ module Organizations
       a = EmailNormalizer.normalize("ana+1@iberozoa.com")
       b = EmailNormalizer.normalize("ana+2@iberozoa.com")
       c = EmailNormalizer.normalize("ana@iberozoa.com")
+
       assert_equal a, b
       assert_equal b, c
     end

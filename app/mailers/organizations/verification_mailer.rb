@@ -38,11 +38,16 @@ module Organizations
     end
 
     def default_from_address
+      # Deliberately identical to InvitationMailer#default_from_address —
+      # keep the two in sync. The long safe-nav chain is the defensive shape
+      # for engines that may boot without a full Rails app.
+      # rubocop:disable Style/SafeNavigationChainLength
       if defined?(Rails) && Rails.application&.config&.action_mailer&.default_options
         Rails.application.config.action_mailer.default_options[:from] || "noreply@example.com"
       else
         "noreply@example.com"
       end
+      # rubocop:enable Style/SafeNavigationChainLength
     end
   end
 end

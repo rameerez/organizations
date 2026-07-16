@@ -45,7 +45,7 @@ module Organizations
     scope :unclaimed, -> { where(claimed_at: nil) }
 
     # Entries matching an email (through the configured normalizer)
-    scope :for_email, ->(email) {
+    scope :for_email, lambda { |email|
       where(email_normalized: Organizations.configuration.normalize_verification_email(email))
     }
 

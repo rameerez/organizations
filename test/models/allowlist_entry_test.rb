@@ -20,6 +20,7 @@ module Organizations
 
     test "stores the email as provided and a normalized twin" do
       entry = @org.allowlist_entries.create!(email: "Ana+Socia@Gmail.com")
+
       assert_equal "Ana+Socia@Gmail.com", entry.email
       assert_equal "ana@gmail.com", entry.email_normalized
     end
@@ -36,7 +37,8 @@ module Organizations
     test "the same email can be rostered by two different organizations" do
       other_org, = create_org_with_owner!(name: "Other")
       @org.allowlist_entries.create!(email: "ana@gmail.com")
-      assert other_org.allowlist_entries.create!(email: "ana@gmail.com").persisted?
+
+      assert_predicate other_org.allowlist_entries.create!(email: "ana@gmail.com"), :persisted?
     end
 
     # =========================================================================
@@ -51,8 +53,9 @@ module Organizations
       )
 
       assert_equal 2, entries.size
-      assert entries.all? { |e| e.source == "csv_2026-07" }
-      assert_equal "member", entries.first.membership_metadata["member_kind"] || entries.first.membership_metadata[:member_kind]
+      assert(entries.all? { |e| e.source == "csv_2026-07" })
+      assert_equal "member",
+                   entries.first.membership_metadata["member_kind"] || entries.first.membership_metadata[:member_kind]
     end
 
     test "import_allowlist! is idempotent — duplicates are skipped, not duplicated" do
@@ -75,14 +78,17 @@ module Organizations
 
     test "for_email matches through the normalizer" do
       entry = @org.allowlist_entries.create!(email: "ana@gmail.com")
+
       assert_equal [entry], @org.allowlist_entries.for_email("ANA+x@gmail.com").to_a
     end
 
     test "unclaimed excludes claimed entries" do
       entry = @org.allowlist_entries.create!(email: "ana@gmail.com")
+
       assert_includes @org.allowlist_entries.unclaimed, entry
 
       entry.claim!(@user)
+
       assert_empty @org.allowlist_entries.unclaimed
     end
 
@@ -90,7 +96,7 @@ module Organizations
       entry = @org.allowlist_entries.create!(email: "ana@gmail.com")
       entry.claim!(@user)
 
-      assert entry.claimed?
+      assert_predicate entry, :claimed?
       assert_equal @user, entry.claimed_by
       assert_not_nil entry.claimed_at
     end

@@ -454,37 +454,42 @@ module Organizations
     end
 
     def validate_verification_settings!
-      unless @verification_code_ttl.is_a?(ActiveSupport::Duration) || @verification_code_ttl.is_a?(Numeric)
-        raise ConfigurationError, "verification_code_ttl must be a Duration (e.g., 15.minutes) or Numeric — codes must expire"
-      end
-
-      unless @verification_resend_interval.is_a?(ActiveSupport::Duration) || @verification_resend_interval.is_a?(Numeric)
-        raise ConfigurationError, "verification_resend_interval must be a Duration (e.g., 60.seconds) or Numeric"
-      end
-
-      unless @verification_max_attempts.is_a?(Integer) && @verification_max_attempts >= 1
-        raise ConfigurationError, "verification_max_attempts must be an Integer of at least 1"
-      end
-
-      unless @verification_max_sends.is_a?(Integer) && @verification_max_sends >= 1
-        raise ConfigurationError, "verification_max_sends must be an Integer of at least 1"
-      end
-
-      unless @verification_email_normalizer.nil? || @verification_email_normalizer.respond_to?(:call)
-        raise ConfigurationError, "verification_email_normalizer must be nil or callable (Proc/Lambda)"
-      end
+      validate_duration_option!(@verification_code_ttl, "verification_code_ttl", "15.minutes")
+      validate_duration_option!(@verification_resend_interval, "verification_resend_interval", "60.seconds")
+      validate_positive_integer_option!(@verification_max_attempts, "verification_max_attempts")
+      validate_positive_integer_option!(@verification_max_sends, "verification_max_sends")
+      validate_callable_option!(@verification_email_normalizer, "verification_email_normalizer")
+      validate_callable_option!(@join_code_generator, "join_code_generator")
 
       unless [true, false].include?(@trust_confirmed_account_email)
         raise ConfigurationError, "trust_confirmed_account_email must be true or false"
       end
 
-      unless @join_request_expiry.nil? || @join_request_expiry.is_a?(ActiveSupport::Duration) || @join_request_expiry.is_a?(Numeric)
-        raise ConfigurationError, "join_request_expiry must be a Duration (e.g., 30.days), Numeric, or nil (never expire)"
-      end
+      return if @join_request_expiry.nil? || duration_like?(@join_request_expiry)
 
-      unless @join_code_generator.nil? || @join_code_generator.respond_to?(:call)
-        raise ConfigurationError, "join_code_generator must be nil or callable (Proc/Lambda)"
-      end
+      raise ConfigurationError, "join_request_expiry must be a Duration (e.g., 30.days), Numeric, or nil (never expire)"
+    end
+
+    def duration_like?(value)
+      value.is_a?(ActiveSupport::Duration) || value.is_a?(Numeric)
+    end
+
+    def validate_duration_option!(value, option_name, example)
+      return if duration_like?(value)
+
+      raise ConfigurationError, "#{option_name} must be a Duration (e.g., #{example}) or Numeric"
+    end
+
+    def validate_positive_integer_option!(value, option_name)
+      return if value.is_a?(Integer) && value >= 1
+
+      raise ConfigurationError, "#{option_name} must be an Integer of at least 1"
+    end
+
+    def validate_callable_option!(value, option_name)
+      return if value.nil? || value.respond_to?(:call)
+
+      raise ConfigurationError, "#{option_name} must be nil or callable (Proc/Lambda)"
     end
 
     def validate_limits!

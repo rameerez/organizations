@@ -46,7 +46,7 @@ module Organizations
     # All domain rows (across organizations) matching an email's domain.
     # Returns none for emails whose domain can't be safely extracted
     # (multi-@ evasion shapes, blanks).
-    scope :matching_email, ->(email) {
+    scope :matching_email, lambda { |email|
       extracted = EmailNormalizer.domain_of(email)
       extracted ? where(domain: extracted) : none
     }
@@ -74,7 +74,7 @@ module Organizations
     def domain_shape
       return if domain.blank? # presence validation covers this
 
-      unless domain.match?(/\A[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+\z/)
+      unless domain.match?(/\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/)
         errors.add(:domain, "is not a valid domain name")
       end
     end

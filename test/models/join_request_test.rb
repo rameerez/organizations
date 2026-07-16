@@ -3,6 +3,8 @@
 require "test_helper"
 
 module Organizations
+  # Comprehensive lifecycle suite — size is the point.
+  # rubocop:disable Metrics/ClassLength
   class JoinRequestTest < Organizations::Test
     include ActiveJob::TestHelper
 
@@ -34,7 +36,7 @@ module Organizations
     test "request_to_join! creates a pending request with expiry from config" do
       request = @user.request_to_join!(@org, message: "Soy socio nº 442")
 
-      assert request.pending?
+      assert_predicate request, :pending?
       assert_equal "Soy socio nº 442", request.message
       assert_in_delta 30.days.from_now.to_i, request.expires_at.to_i, 5
     end
@@ -42,6 +44,7 @@ module Organizations
     test "request_to_join! is idempotent — returns the existing open request" do
       first = @user.request_to_join!(@org)
       second = @user.request_to_join!(@org)
+
       assert_equal first.id, second.id
       assert_equal 1, @org.join_requests.count
     end
@@ -68,8 +71,9 @@ module Organizations
     test "pending uniqueness is validated (one open request per org per user)" do
       @user.request_to_join!(@org)
       duplicate = @org.join_requests.new(user: @user)
-      refute duplicate.valid?
-      assert duplicate.errors[:user_id].any?
+
+      refute_predicate duplicate, :valid?
+      assert_predicate duplicate.errors[:user_id], :any?
     end
 
     test "a decided request does not block a new one" do
@@ -77,6 +81,7 @@ module Organizations
       request.withdraw!
 
       fresh = @user.request_to_join!(@org)
+
       refute_equal request.id, fresh.id
     end
 
@@ -88,8 +93,8 @@ module Organizations
       request = @user.request_to_join!(@org)
 
       travel_to(31.days.from_now) do
-        assert request.expired?
-        refute request.pending?
+        assert_predicate request, :expired?
+        refute_predicate request, :pending?
         assert_equal :expired, request.effective_status
         assert_empty @org.join_requests.pending
         assert_includes @org.join_requests.expired, request
@@ -98,6 +103,7 @@ module Organizations
 
     test "approve! refuses expired requests" do
       request = @user.request_to_join!(@org)
+
       travel_to(31.days.from_now) do
         assert_raises(JoinRequestExpired) { request.approve!(decided_by: @owner) }
       end
@@ -107,16 +113,18 @@ module Organizations
       request = @user.request_to_join!(@org)
       travel_to(31.days.from_now) do
         request.reject!(rejected_by: @owner)
-        assert request.rejected?
+
+        assert_predicate request, :rejected?
       end
     end
 
     test "nil join_request_expiry means requests never expire" do
       Organizations.configure { |c| c.join_request_expiry = nil }
       request = @user.request_to_join!(@org)
+
       assert_nil request.expires_at
 
-      travel_to(10.years.from_now) { assert request.pending? }
+      travel_to(10.years.from_now) { assert_predicate request, :pending? }
     end
 
     # =========================================================================
@@ -129,8 +137,8 @@ module Organizations
 
       assert_equal "member", membership.role
       assert_equal "manual", membership.joined_via
-      refute membership.verified?
-      assert request.reload.approved?
+      refute_predicate membership, :verified?
+      assert_predicate request.reload, :approved?
       assert_equal @owner, request.decided_by
       assert_not_nil request.decided_at
     end
@@ -139,6 +147,7 @@ module Organizations
       request = @user.request_to_join!(@org)
       first = request.approve!(decided_by: @owner)
       second = request.approve!(decided_by: @owner)
+
       assert_equal first.id, second.id
     end
 
@@ -156,7 +165,7 @@ module Organizations
 
       assert_equal @org.memberships.find_by(user_id: @user.id).id, membership.id
       assert_equal joined_before, joined_events, "member_joined must not fire for a reused membership"
-      assert request.reload.approved?
+      assert_predicate request.reload, :approved?
     end
 
     test "approve! fires member_joined and join_request_approved with decided_by" do
@@ -182,7 +191,7 @@ module Organizations
       request = @user.request_to_join!(@org)
       request.reject!(rejected_by: @owner, reason: "no consta como socio")
 
-      assert request.rejected?
+      assert_predicate request, :rejected?
       assert_equal @owner, request.decided_by
       assert_equal "no consta como socio", request.metadata["rejection_reason"]
       assert_equal :join_request_rejected, rejected.event
@@ -199,7 +208,7 @@ module Organizations
       request = @user.request_to_join!(@org)
       request.withdraw!
 
-      assert request.withdrawn?
+      assert_predicate request, :withdrawn?
       assert_raises(JoinRequestAlreadyDecided) { request.withdraw! }
       assert_raises(JoinRequestAlreadyDecided) { request.reject!(rejected_by: @owner) }
     end
@@ -267,7 +276,7 @@ module Organizations
                    request.verification_code_digest
 
       # No column anywhere carries the plaintext
-      refute request.attributes.values.map(&:to_s).include?(FIXED_CODE)
+      refute_includes request.attributes.values.map(&:to_s), FIXED_CODE
     end
 
     test "an unclaimed allowlist entry is eligible (P6) and sets allowlist provenance" do
@@ -359,12 +368,12 @@ module Organizations
       membership = request.verify_email_code!(FIXED_CODE)
 
       assert_instance_of Organizations::Membership, membership
-      assert membership.verified?
+      assert_predicate membership, :verified?
       assert_equal "j.doe@inizio.com", membership.verified_email
       assert_equal "j.doe@inizio.com", membership.verified_email_normalized
       assert_equal "domain_email", membership.joined_via
       assert_equal "employee", membership.metadata["member_kind"]
-      assert request.reload.approved?
+      assert_predicate request.reload, :approved?
       assert_nil request.decided_by
     end
 
@@ -441,7 +450,7 @@ module Organizations
 
       assert_instance_of Organizations::Membership, membership
       assert_equal "code", membership.joined_via
-      assert membership.verified?
+      assert_predicate membership, :verified?
       # Precedence: domain < code (later wins)
       assert_equal "code", membership.metadata["from"]
       assert_equal "employee", membership.metadata["member_kind"]
@@ -456,12 +465,13 @@ module Organizations
       outcome = request.verify_email_code!(FIXED_CODE)
 
       assert_equal request, outcome
-      assert request.pending?
-      assert request.email_verified?
+      assert_predicate request, :pending?
+      assert_predicate request, :email_verified?
       refute @org.has_member?(@user)
 
       membership = @org.approve_join_request!(request, approved_by: @owner)
-      assert membership.verified?
+
+      assert_predicate membership, :verified?
       assert_equal "j@inizio.com", membership.verified_email
     end
 
@@ -473,7 +483,8 @@ module Organizations
       membership = request.verify_email_code!(FIXED_CODE)
 
       entry = @org.allowlist_entries.first
-      assert entry.claimed?
+
+      assert_predicate entry, :claimed?
       assert_equal @user, entry.claimed_by
       assert_equal "allowlist", membership.joined_via
       assert_equal "member", membership.metadata["member_kind"]
@@ -507,11 +518,11 @@ module Organizations
 
       assert_equal "domain_email", membership.joined_via
       assert_equal "prof@urjc.es", membership.verified_email
-      assert membership.verified?
+      assert_predicate membership, :verified?
       assert_equal "employee", membership.metadata["member_kind"]
 
       # Uniform funnel: the join left an approved request behind
-      assert @org.join_requests.find_by(user_id: prof.id).approved?
+      assert_predicate @org.join_requests.find_by(user_id: prof.id), :approved?
     end
 
     test "unconfirmed account email is refused" do
@@ -551,20 +562,25 @@ module Organizations
     # =========================================================================
 
     test "accepts_join_requests? reflects available mechanisms" do
-      refute @org.accepts_join_requests?
+      refute_predicate @org, :accepts_join_requests?
 
       domain = @org.add_domain!("inizio.com")
-      assert @org.accepts_join_requests?
+
+      assert_predicate @org, :accepts_join_requests?
 
       domain.destroy!
       code = @org.generate_join_code!
-      assert @org.accepts_join_requests?
+
+      assert_predicate @org, :accepts_join_requests?
 
       code.revoke!
-      refute @org.accepts_join_requests?
+
+      refute_predicate @org, :accepts_join_requests?
 
       @org.import_allowlist!(["ana@gmail.com"])
-      assert @org.accepts_join_requests?
+
+      assert_predicate @org, :accepts_join_requests?
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end

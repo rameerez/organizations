@@ -38,6 +38,20 @@ module Organizations
       strict ? execute_strictly(callback, context) : execute_safely(event, callback, context)
     end
 
+    # Maps each event to its Configuration reader. Adding an event = one
+    # entry here + the EVENTS list + a Configuration attr/block method.
+    CALLBACK_READERS = {
+      organization_created: :on_organization_created_callback,
+      member_invited: :on_member_invited_callback,
+      member_joined: :on_member_joined_callback,
+      member_removed: :on_member_removed_callback,
+      role_changed: :on_role_changed_callback,
+      ownership_transferred: :on_ownership_transferred_callback,
+      join_request_created: :on_join_request_created_callback,
+      join_request_approved: :on_join_request_approved_callback,
+      join_request_rejected: :on_join_request_rejected_callback
+    }.freeze
+
     # Get the callback proc for an event
     # @param event [Symbol] The event type
     # @return [Proc, nil]
@@ -45,26 +59,8 @@ module Organizations
       config = Organizations.configuration
       return nil unless config
 
-      case event
-      when :organization_created
-        config.on_organization_created_callback
-      when :member_invited
-        config.on_member_invited_callback
-      when :member_joined
-        config.on_member_joined_callback
-      when :member_removed
-        config.on_member_removed_callback
-      when :role_changed
-        config.on_role_changed_callback
-      when :ownership_transferred
-        config.on_ownership_transferred_callback
-      when :join_request_created
-        config.on_join_request_created_callback
-      when :join_request_approved
-        config.on_join_request_approved_callback
-      when :join_request_rejected
-        config.on_join_request_rejected_callback
-      end
+      reader = CALLBACK_READERS[event]
+      reader ? config.public_send(reader) : nil
     end
 
     # Execute callback with error isolation
