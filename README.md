@@ -111,7 +111,7 @@ config.user_class = "Account"   # set BEFORE the models are first referenced (in
 Done. Your app now has full organizations / teams support.
 
 > [!IMPORTANT]
-> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. Run `rails g organizations:views` to copy the Tailwind reference views into `app/views/organizations/` and retheme them — they're yours. For a complete working example (including the verified-joining screens the generator deliberately doesn't cover), check out the demo app in [`test/dummy`](test/dummy/).
+> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. Run `rails g organizations:views` to copy the Tailwind reference views into `app/views/organizations/` and retheme them — they're yours. The copies use the `heroicon` helper (add `gem "heroicons"`, or swap the icon calls for your own set), and the organization page's owner-only Danger Zone renders only if you provide `app/views/shared/_danger_zone.html.erb` (copy the full-featured one from the dummy). For a complete working example (including the verified-joining screens the generator deliberately doesn't cover), check out the demo app in [`test/dummy`](test/dummy/).
 
 > [!NOTE]
 > This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
@@ -205,6 +205,15 @@ Then enforce the limit in **`on_member_joining` — the membership gate**. It ru
 Organizations.configure do |config|
   config.on_member_joining do |ctx|
     org = ctx.organization
+
+    # The gate runs INSIDE the membership-creating transaction, so this row
+    # lock serializes concurrent joins to the same org (and refreshes
+    # member_count under the lock). Without it, two simultaneous joins can
+    # both read "one seat left" and overshoot the cap by one — take the lock
+    # when you sell hard seat counts; skip it for advisory/anti-abuse caps
+    # where an off-by-one under a race is acceptable.
+    org.lock!
+
     limit = org.current_pricing_plan.limit_for(:organization_members)
 
     if limit && org.member_count >= limit
@@ -219,6 +228,7 @@ end
 
 Details worth knowing:
 - A vetoed join-request approval leaves the request **pending** (resumable — approve again after the upgrade); a vetoed invitation acceptance leaves the invitation pending too.
+- A vetoed join-code redemption still **consumes a use**: uses are counted at redemption, before approval reaches the gate. `max_uses` is an anti-abuse cap, not a seat counter — seats live here, in the gate.
 - The gate deliberately does NOT fire when an owner membership is created together with its organization (creating your own org is not "joining"), for idempotent already-a-member paths, or for role changes.
 - `ctx` carries `organization`, `user`, `role`, `joined_via`, and the instrument (`invitation`/`join_request`) when one applies.
 - Raising bare `Organizations::MembershipVetoed` uses a localized default message.
@@ -338,7 +348,9 @@ Layer them per surface: the gem already throttles **per request** (60s resend in
 - Emails are normalized before the uniqueness check (case, whitespace, and `+tag` plus-addressing collapse — override via `config.verification_email_normalizer`).
 - Domain matching is **exact** and evasion-hardened: `acme.com.evil.com`, `evilacme.com`, multi-`@` shapes never match; subdomains are separate domains on purpose (they often mean different cohorts).
 - BYO-UI as always: the gem ships models/APIs/mailers and state; **you must rate-limit your join/redemption/verification endpoints** (see above).
-- Hard member caps belong in **`on_member_joining`** (the strict membership gate) — the `on_join_request_*` after-callbacks are error-isolated and cannot veto.
+- Hard member caps belong in **`on_member_joining`** (the strict membership gate) — the `on_join_request_*` after-callbacks are error-isolated and cannot veto. Take `ctx.organization.lock!` inside the gate when the cap must hold under concurrent joins (see "Limit seats per plan").
+- **`max_uses` is an anti-abuse cap, not a seat counter**: join-code uses are counted at redemption, so a redemption later vetoed by the gate still consumed a use.
+- One deliberate exception to the one-generic-reason rule: an **exhausted** code surfaces its own reason (`:join_code_exhausted`), so legitimate holders learn the code ran out instead of retyping it forever. This confirms such a code exists — if that trade-off bothers you, render it with the same copy as `:join_code_invalid`.
 - Verification-email delivery failures are handled: the gem rolls the throttle bookkeeping back (immediate retry, the failed send doesn't count) and fires `on_verification_delivery_failed` — wire it to your error tracker so mail outages are visible:
 
 ```ruby

@@ -15,14 +15,17 @@
 #     rescue ladders; Result.outcome/reason drive the render.
 #
 # ⚠️ PRODUCTION CHECKLIST for your copy (the gem cannot do these for you):
-#   1. RATE-LIMIT these endpoints — code redemption and code verification
+#   1. REQUIRE AUTHENTICATION — every action here assumes a signed-in user
+#      (JoinFlow needs one). This demo auto-creates a user per visitor; your
+#      copy needs its own guard, e.g. `before_action :authenticate_user!`.
+#   2. RATE-LIMIT these endpoints — code redemption and code verification
 #      are enumeration surfaces. Rails 8 built-in, e.g.:
 #        rate_limit to: 10, within: 1.hour, by: -> { current_user.id }, only: :create
 #      (https://api.rubyonrails.org/classes/ActionController/RateLimiting.html)
-#   2. Keep the generic error copy for unknown codes (JoinFlow already
+#   3. Keep the generic error copy for unknown codes (JoinFlow already
 #      collapses unknown/revoked/expired/foreign codes into one reason —
 #      don't "improve" it into an oracle).
-#   3. Add your product's consent/disclosure copy to the entry state.
+#   4. Add your product's consent/disclosure copy to the entry state.
 class JoinsController < ApplicationController
   before_action :set_organization
 
