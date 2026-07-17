@@ -256,9 +256,15 @@
     <% end %>
   </div>
 
-  <%# Danger Zone %>
-  <div>
-    <%= render "shared/danger_zone", organization: @organization %>
-  </div>
+  <%# Danger Zone — owner-only destructive actions (transfer/delete). NOT
+      part of `rails g organizations:views` (it carries its own Stimulus
+      modal + icon dependencies): rendered only when the host app provides
+      the partial. Copy the full-featured one from the gem's
+      test/dummy/app/views/shared/_danger_zone.html.erb. %>
+  <% if lookup_context.exists?("shared/danger_zone", [], true) %>
+    <div>
+      <%= render "shared/danger_zone", organization: @organization %>
+    </div>
+  <% end %>
 
 </div>

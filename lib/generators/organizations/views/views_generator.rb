@@ -33,6 +33,11 @@ module Organizations
       def show_readme
         say ""
         say "Organizations views copied to app/views/organizations/ — they're yours now; retheme freely.", :green
+        say "These views use Tailwind classes and the `heroicon` helper: add `gem \"heroicons\"` (or"
+        say "swap the icon calls for your own icon set)."
+        say "The organization page's owner-only Danger Zone (transfer/delete) renders only if you"
+        say "provide app/views/shared/_danger_zone.html.erb — copy the full-featured one (Stimulus"
+        say "confirm modal included) from the gem's test/dummy app."
         say "Verified-joining surfaces (join screen, request queue, access management) are host"
         say "controllers + views: copy the reference implementation from the gem's test/dummy app."
         say ""
