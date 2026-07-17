@@ -41,6 +41,18 @@ module Organizations
   class InvitationAlreadyAccepted < InvitationError; end
   class InvitationEmailMismatch < InvitationError; end
 
+  # User-level membership errors — canonical TOP-LEVEL homes (0.5.0). These
+  # were historically defined four modules deep inside the HasOrganizations
+  # concern, forcing hosts to rescue
+  # Organizations::Models::Concerns::HasOrganizations::CannotLeaveAsLastOwner
+  # — a real papercut found in a production host. The nested constants are
+  # kept as aliases; rescue THESE.
+  class OrganizationLimitReached < Error; end
+  class CannotLeaveLastOrganization < Error; end
+  class CannotLeaveAsLastOwner < Error; end
+  class CannotDeleteAsOrganizationOwner < Error; end
+  class NoCurrentOrganization < Error; end
+
   # Join request errors (verified joining)
   class JoinRequestError < Error; end
   class JoinRequestExpired < JoinRequestError; end
@@ -91,6 +103,7 @@ module Organizations
   autoload :EmailNormalizer, "organizations/email_normalizer"
   autoload :JoinFlow, "organizations/join_flow"
   autoload :JoinState, "organizations/join_state"
+  autoload :MetadataFlags, "organizations/metadata_flags"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers
@@ -166,7 +179,42 @@ module Organizations
     # Primarily used in tests
     def reset_configuration!
       @configuration = nil
+      remove_instance_variable(:@engine_mount_path) if defined?(@engine_mount_path)
       Roles.reset!
+    end
+
+    # The path prefix the engine is mounted at in the HOST app ("" when
+    # mounted at root, "/orgs" when mounted there, "" outside Rails).
+    #
+    # Why this exists: engine route helpers called WITHOUT a controller
+    # context (from models/mailers — e.g. building an invitation acceptance
+    # URL) don't know the mount point, so URLs built as
+    # "/invitations/<token>" silently 404 for any host that mounts the
+    # engine anywhere but root. Both known hosts mount at root, which is
+    # exactly why nobody noticed. Memoized — the mount point is fixed at
+    # boot. Source on mounted helpers vs raw engine url_helpers:
+    # https://guides.rubyonrails.org/engines.html#routes
+    # @return [String]
+    def engine_mount_path
+      return @engine_mount_path if defined?(@engine_mount_path)
+
+      @engine_mount_path = compute_engine_mount_path
+    end
+
+    # @api private
+    def compute_engine_mount_path
+      return "" unless defined?(Organizations::Engine)
+      return "" unless defined?(Rails) && Rails.respond_to?(:application) && Rails.application&.routes
+
+      mount = Rails.application.routes.routes.detect do |route|
+        route.app.respond_to?(:app) && route.app.app == Organizations::Engine
+      end
+      return "" unless mount
+
+      # "/orgs(.:format)" → "/orgs"; a root mount "/" → "".
+      mount.path.spec.to_s.sub(/\(\.:format\)\z/, "").chomp("/")
+    rescue StandardError
+      ""
     end
 
     # Get the roles module

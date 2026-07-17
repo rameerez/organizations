@@ -48,7 +48,9 @@ ActiveRecord::Schema.define do
   create_table :organizations_organizations, force: :cascade do |t|
     t.string :name, null: false
     t.integer :memberships_count, default: 0, null: false
-    t.text :metadata, default: "{}"
+    # json (matches the real installs jsonb/json column) so Hash values
+    # round-trip - metadata_flag and the copy-through channel depend on it
+    t.json :metadata, default: {}
     t.timestamps
   end
 

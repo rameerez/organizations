@@ -64,20 +64,12 @@ module Organizations
     end
 
     def invitation_accept_url(invitation)
-      if full_rails_app?
-        # Try to use the engine routes
-        begin
-          Organizations::Engine.routes.url_helpers.invitation_url(
-            invitation.token,
-            host: default_host
-          )
-        rescue StandardError
-          # Fallback to basic URL construction
-          "#{default_host}/invitations/#{invitation.token}"
-        end
-      else
-        "/invitations/#{invitation.token}"
-      end
+      # ONE implementation for acceptance URLs: Invitation#acceptance_url
+      # (mount-point aware via Organizations.engine_mount_path). The previous
+      # engine-url_helpers attempt here was mount-UNAWARE — raw engine route
+      # helpers don't know where the host mounted the engine, so links broke
+      # for any non-root mount.
+      invitation.acceptance_url(base_url: full_rails_app? ? default_host : "")
     end
 
     # ⚠️ `defined?(Rails)` alone is NOT a sufficient guard: several gems

@@ -18,6 +18,10 @@ module Organizations
   class Organization < ActiveRecord::Base
     self.table_name = "organizations_organizations"
 
+    # metadata_flag macro for typed boolean toggles over the metadata bag —
+    # see Organizations::MetadataFlags.
+    extend Organizations::MetadataFlags
+
     # Error raised when trying to perform invalid operations on organization
     class CannotRemoveOwner < Organizations::Error; end
     class CannotDemoteOwner < Organizations::Error; end
@@ -82,6 +86,39 @@ module Organizations
     scope :with_member, ->(user) {
       joins(:memberships).where(organizations_memberships: { user_id: user.id })
     }
+
+    # === Creation ===
+
+    # Create an organization WITH its owner membership in one transaction —
+    # the ops/provisioning primitive. This is what consoles, seed scripts,
+    # and admin provisioning services should call instead of hand-rolling
+    # `create! + Membership.create!(role: "owner")` (which one production
+    # host did, accidentally skipping the organization_created callback).
+    #
+    # Differences from user.create_organization! (the SELF-SERVE path):
+    #   - no session/current-organization switching (there is no session)
+    #   - not subject to max_organizations_per_user (an ops admin may own
+    #     hundreds of provisioned orgs)
+    #   - does NOT fire on_member_joining (owner-at-creation is not
+    #     "joining" — same contract as the rest of the gate)
+    #   - DOES fire on_organization_created, like every creation path.
+    #
+    # @param owner [User] becomes the owner (single-owner invariant holds)
+    # @param attributes [Hash] organization attributes (name:, plus any host columns)
+    # @return [Organizations::Organization]
+    def self.create_with_owner!(owner:, **attributes)
+      raise ArgumentError, "owner is required" unless owner
+
+      organization = nil
+      ActiveRecord::Base.transaction do
+        organization = create!(**attributes)
+        Membership.create!(user: owner, organization: organization, role: "owner")
+      end
+
+      Callbacks.dispatch(:organization_created, organization: organization, user: owner)
+
+      organization
+    end
 
     # === Member Query Methods ===
 

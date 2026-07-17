@@ -344,7 +344,7 @@ module Organizations
         config_value,
         invitation,
         user,
-        default: -> { default_auth_required_redirect_path }
+        default: -> { default_auth_required_redirect_path(invitation) }
       )
     end
 
@@ -746,16 +746,39 @@ module Organizations
       end
     end
 
-    # Default path when invitation requires authentication
+    # Default path when invitation requires authentication.
+    #
+    # KNOWN-USER PROMOTION (default since 0.5.0): an invitation sent to an
+    # address that already has an account lands on SIGN-IN; everyone else
+    # lands on SIGN-UP. Both production hosts overrode the old always-sign-up
+    # default with this exact lambda — when every real host writes the same
+    # override, that's the default. Opt out by configuring
+    # redirect_path_when_invitation_requires_authentication yourself.
+    # @param invitation [Organizations::Invitation, nil]
     # @return [String]
-    def default_auth_required_redirect_path
-      if main_app.respond_to?(:new_user_registration_path)
+    def default_auth_required_redirect_path(invitation = nil)
+      if known_invited_user?(invitation) && main_app.respond_to?(:new_user_session_path)
+        main_app.new_user_session_path
+      elsif main_app.respond_to?(:new_user_registration_path)
         main_app.new_user_registration_path
       elsif main_app.respond_to?(:root_path)
         main_app.root_path
       else
         "/"
       end
+    end
+
+    # Does the invited address already belong to an account? Fails closed
+    # (false → sign-up) if the user class can't answer — never let a lookup
+    # error break the invitation flow.
+    def known_invited_user?(invitation)
+      email = invitation&.email.to_s.downcase
+      return false if email.blank?
+
+      klass = Organizations.user_class
+      klass.respond_to?(:where) && klass.where("LOWER(email) = ?", email).exists?
+    rescue StandardError
+      false
     end
 
     # Default path after invitation acceptance
@@ -780,9 +803,9 @@ module Organizations
 
     def default_pending_invitation_acceptance_notice(result)
       organization_name = result.invitation.organization.name
-      return "You're already a member of #{organization_name}." if result.already_member?
+      return Organizations.t(:"notices.already_member", organization: organization_name) if result.already_member?
 
-      "Welcome to #{organization_name}!"
+      Organizations.t(:"notices.welcome", organization: organization_name)
     end
   end
 end

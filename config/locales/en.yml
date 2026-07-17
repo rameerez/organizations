@@ -103,6 +103,11 @@ en:
       unauthorized_permission: "You don't have permission to %{permission}"
       unauthorized: "You are not authorized to perform this action"
 
+    # Flash notices produced by the controller-helper invitation flow.
+    notices:
+      welcome: "Welcome to %{organization}!"
+      already_member: "You're already a member of %{organization}."
+
     # Model validation messages (errors.add second argument). These read as
     # "<Attribute> <message>" in full_messages — keep them lowercase fragments.
     attributes:

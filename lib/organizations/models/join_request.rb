@@ -298,6 +298,26 @@ module Organizations
       Digest::SHA256.hexdigest("#{code}-#{request_id}")
     end
 
+    # Data-minimization sweep (GDPR posture): decided (rejected/withdrawn)
+    # and expired requests hold a verification email address with no ongoing
+    # purpose — purge them once they're old enough. APPROVED requests are
+    # deliberately kept: they are the join audit trail (provenance for the
+    # membership they created). The retention PERIOD is host policy; the
+    # knowledge of which states hold purposeless PII is the gem's.
+    #
+    # Wire it from a scheduled job/rake task, e.g.:
+    #   Organizations::JoinRequest.purge_stale!(older_than: 12.months)
+    #
+    # @param older_than [ActiveSupport::Duration] minimum age before purging
+    # @return [Integer] number of purged rows
+    def self.purge_stale!(older_than: 12.months)
+      cutoff = Time.current - older_than
+
+      where(status: %w[rejected withdrawn]).where(decided_at: ...cutoff)
+        .or(expired.where(expires_at: ...cutoff))
+        .delete_all
+    end
+
     private
 
     # Raise unless this request is still open (pending and not expired)

@@ -82,6 +82,10 @@ es:
       unauthorized_permission: "No tienes permiso para %{permission}"
       unauthorized: "No estás autorizado para hacer esto"
 
+    notices:
+      welcome: "¡Ya formas parte de %{organization}!"
+      already_member: "Ya eres miembro de %{organization}."
+
     attributes:
       membership_taken: "ya es miembro de esta organización"
       owner_taken: "ya existe un propietario para esta organización"

@@ -25,12 +25,15 @@ module Organizations
       module HasOrganizations
         extend ActiveSupport::Concern
 
-        # Error raised when org limits are exceeded
-        class OrganizationLimitReached < Organizations::Error; end
-        class CannotLeaveLastOrganization < Organizations::Error; end
-        class CannotLeaveAsLastOwner < Organizations::Error; end
-        class CannotDeleteAsOrganizationOwner < Organizations::Error; end
-        class NoCurrentOrganization < Organizations::Error; end
+        # Historical aliases — the CANONICAL constants live at Organizations::
+        # top level since 0.5.0 (rescue Organizations::CannotLeaveAsLastOwner,
+        # not this four-modules-deep path). Same class objects, so existing
+        # rescues of the nested paths keep working.
+        OrganizationLimitReached = Organizations::OrganizationLimitReached
+        CannotLeaveLastOrganization = Organizations::CannotLeaveLastOrganization
+        CannotLeaveAsLastOwner = Organizations::CannotLeaveAsLastOwner
+        CannotDeleteAsOrganizationOwner = Organizations::CannotDeleteAsOrganizationOwner
+        NoCurrentOrganization = Organizations::NoCurrentOrganization
 
         # Module containing class methods to be extended onto ActiveRecord::Base
         module ClassMethods

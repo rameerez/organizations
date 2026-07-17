@@ -210,7 +210,10 @@ module Organizations
     # @return [String]
     def acceptance_url(base_url: nil)
       base = base_url || default_base_url
-      "#{base}/invitations/#{token}"
+      # Organizations.engine_mount_path keeps this correct for hosts that
+      # mount the engine somewhere other than root ("/orgs/invitations/…") —
+      # a hardcoded "/invitations/…" silently 404'd for them.
+      "#{base}#{Organizations.engine_mount_path}/invitations/#{token}"
     end
 
     # Check if invitation matches a specific email

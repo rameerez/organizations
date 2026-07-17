@@ -18,6 +18,10 @@ module Organizations
   class Membership < ActiveRecord::Base
     self.table_name = "organizations_memberships"
 
+    # metadata_flag macro for typed boolean toggles over the metadata bag —
+    # see Organizations::MetadataFlags.
+    extend Organizations::MetadataFlags
+
     # Error raised when trying to demote below current role
     class CannotDemoteOwner < Organizations::Error; end
     class CannotPromoteToOwner < Organizations::Error; end
