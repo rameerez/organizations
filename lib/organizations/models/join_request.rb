@@ -392,7 +392,7 @@ module Organizations
       matched_entry = matched_domain ? nil : organization.allowlist_entries.unclaimed.for_email(address).first
 
       unless matched_domain || matched_entry
-        raise VerificationEmailNotEligible,              Organizations.t(:"errors.verification_email_not_eligible")
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
       end
 
       [matched_domain, matched_entry]
@@ -462,25 +462,7 @@ module Organizations
 
     def create_membership!
       effective_joined_via = joined_via.presence || "manual"
-
-      # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — covers every
-      # verified-joining path, since approval is the only way a request
-      # becomes a membership (codes, domains, allowlists, account-email
-      # shortcut all funnel here). Runs inside approve!'s locked transaction:
-      # a veto rolls back the status flip too, so the request stays PENDING —
-      # a safe, resumable state (approve again once the host unblocks).
-      # ⚠️ Join-code nuance: redemption consumes a use BEFORE approval, so a
-      # vetoed redemption still spends a use — max_uses is an anti-abuse cap,
-      # not a seat count (see README "Verified joining").
-      Callbacks.dispatch(
-        :member_joining,
-        strict: true,
-        organization: organization,
-        user: user,
-        role: "member",
-        joined_via: effective_joined_via,
-        join_request: self
-      )
+      dispatch_member_joining_gate!(effective_joined_via)
 
       organization.memberships.create!(
         user: user,
@@ -501,6 +483,27 @@ module Organizations
 
       raise VerificationEmailAlreadyClaimed,
             Organizations.t(:"errors.verification_email_already_claimed")
+    end
+
+    # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — covers every
+    # verified-joining path, since approval is the only way a request becomes
+    # a membership (codes, domains, allowlists, account-email shortcut all
+    # funnel here). Runs inside approve!'s locked transaction: a veto rolls
+    # back the status flip too, so the request stays PENDING — a safe,
+    # resumable state (approve again once the host unblocks).
+    # ⚠️ Join-code nuance: redemption consumes a use BEFORE approval, so a
+    # vetoed redemption still spends a use — max_uses is an anti-abuse cap,
+    # not a seat count (see README "Verified joining").
+    def dispatch_member_joining_gate!(effective_joined_via)
+      Callbacks.dispatch(
+        :member_joining,
+        strict: true,
+        organization: organization,
+        user: user,
+        role: "member",
+        joined_via: effective_joined_via,
+        join_request: self
+      )
     end
 
     def resolved_membership_metadata
@@ -575,7 +578,7 @@ module Organizations
           verification_sent_at: nil,
           verification_expires_at: nil,
           verification_attempts: 0,
-          verification_sends_count: [ verification_sends_count - 1, 0 ].max
+          verification_sends_count: [verification_sends_count - 1, 0].max
         )
       end
     rescue StandardError => e

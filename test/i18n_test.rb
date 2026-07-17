@@ -52,6 +52,7 @@ class I18nTest < ActiveSupport::TestCase
     end
 
     missing = called_keys.uniq - en
+
     assert_empty missing, "Organizations.t call sites without an en.yml key: #{missing.join(', ')}"
   end
 
@@ -92,11 +93,12 @@ class I18nTest < ActiveSupport::TestCase
     @org.add_member!(other)
 
     duplicate = Organizations::Membership.new(user: other, organization: @org, role: "member")
-    refute duplicate.valid?
+
+    refute_predicate duplicate, :valid?
     assert_includes duplicate.errors[:user_id], "is already a member of this organization"
 
     I18n.with_locale(:es) do
-      refute duplicate.valid?
+      refute_predicate duplicate, :valid?
       assert_includes duplicate.errors[:user_id], "ya es miembro de esta organización"
     end
   end
@@ -114,13 +116,16 @@ class I18nTest < ActiveSupport::TestCase
     request.update!(verification_email: "someone@example.com")
 
     english = Organizations::VerificationMailer.code_email(request, "123456")
+
     assert_equal "123456 is your Localized Org verification code", english.subject
 
     I18n.with_locale(:es) do
       spanish = Organizations::VerificationMailer.code_email(request, "123456")
+
       assert_equal "123456 es tu código de verificación de Localized Org", spanish.subject
       # Multipart mail: `body.to_s` is empty on a multipart — read the part.
       body = spanish.text_part ? spanish.text_part.body.to_s : spanish.body.to_s
+
       assert_match(/El código caduca en \d+ minutos/, body)
     end
   end
@@ -130,8 +135,10 @@ class I18nTest < ActiveSupport::TestCase
 
     I18n.with_locale(:es) do
       mail = Organizations::InvitationMailer.invitation_email(invitation)
+
       assert_equal "I18n User te ha invitado a unirte a Localized Org", mail.subject
       body = mail.text_part ? mail.text_part.body.to_s : mail.body.to_s
+
       assert_match(/Te unirás como: Miembro/, body)
     end
   end
@@ -168,7 +175,7 @@ class I18nTest < ActiveSupport::TestCase
     # Dig into the `organizations:` subtree so flattened keys match the
     # relative keys used at Organizations.t call sites.
     YAML.safe_load_file(File.expand_path("../config/locales/#{locale}.yml", __dir__))
-        .fetch(locale).fetch("organizations")
+      .fetch(locale).fetch("organizations")
   end
 
   def flatten_keys(hash, prefix = nil)

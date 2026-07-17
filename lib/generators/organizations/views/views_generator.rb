@@ -24,7 +24,7 @@ module Organizations
     class ViewsGenerator < Rails::Generators::Base
       source_root File.expand_path("templates", __dir__)
 
-      desc "Copies the organizations reference views (organizations, memberships, invitations) into app/views/organizations"
+      desc "Copies the organizations reference views into app/views/organizations"
 
       def copy_views
         directory "organizations", "app/views/organizations"

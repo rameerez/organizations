@@ -204,18 +204,26 @@ module Organizations
 
     # @api private
     def compute_engine_mount_path
-      return "" unless defined?(Organizations::Engine)
-      return "" unless defined?(Rails) && Rails.respond_to?(:application) && Rails.application&.routes
+      routes = host_application_routes
+      return "" unless routes && defined?(Organizations::Engine)
 
-      mount = Rails.application.routes.routes.detect do |route|
+      mount = routes.routes.detect do |route|
         route.app.respond_to?(:app) && route.app.app == Organizations::Engine
       end
       return "" unless mount
 
       # "/orgs(.:format)" → "/orgs"; a root mount "/" → "".
-      mount.path.spec.to_s.sub(/\(\.:format\)\z/, "").chomp("/")
+      mount.path.spec.to_s.delete_suffix("(.:format)").chomp("/")
     rescue StandardError
       ""
+    end
+
+    # @api private — guarded: a bare Rails module without .application raises
+    # on Rails.application (see the mailers' full_rails_app? note).
+    def host_application_routes
+      return nil unless defined?(Rails) && Rails.respond_to?(:application)
+
+      Rails.application&.routes
     end
 
     # Get the roles module
@@ -254,8 +262,8 @@ module Organizations
     #   e.g. :"errors.join_code_invalid" or "roles.owner"
     # @param options [Hash] I18n options (interpolations, :locale, :default…)
     # @return [String]
-    def translate(key, **options)
-      I18n.t(key, scope: :organizations, **options)
+    def translate(key, **)
+      I18n.t(key, scope: :organizations, **)
     end
     alias t translate
   end

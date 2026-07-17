@@ -90,9 +90,7 @@ module Organizations
 
       user = scoped_organization_viewer
       @current_scoped_membership =
-        if user && current_scoped_organization
-          current_scoped_organization.memberships.find_by(user_id: user.id)
-        end
+        (current_scoped_organization.memberships.find_by(user_id: user.id) if user && current_scoped_organization)
     end
 
     private

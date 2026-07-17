@@ -78,10 +78,15 @@ module Organizations
     # @param verification_code [String, nil] the emailed 6-digit code as typed
     # @param message [String, nil] optional note for manual approval requests
     # @return [Result]
+    # Every parameter is an optional keyword with a safe default — this IS
+    # the public API surface, not incidental complexity (same posture as
+    # Organization#generate_join_code!).
+    # rubocop:disable Metrics/ParameterLists
     def self.attempt(user:, organization:, code: nil, email: nil, verification_code: nil, message: nil)
       new(user: user, organization: organization)
         .attempt(code: code, email: email, verification_code: verification_code, message: message)
     end
+    # rubocop:enable Metrics/ParameterLists
 
     def initialize(user:, organization:)
       @user = user
@@ -113,9 +118,7 @@ module Organizations
 
     def verify_emailed_code(typed_code)
       request = user.pending_join_request_for(organization)
-      unless request
-        return error(:verification_code_missing, Organizations.t(:"errors.verification_code_missing"))
-      end
+      return error(:verification_code_missing, Organizations.t(:"errors.verification_code_missing")) unless request
 
       from_outcome(request.verify_email_code!(typed_code))
     rescue Organizations::VerificationAttemptsExceeded => e

@@ -48,6 +48,7 @@ class VerificationDeliveryFailureTest < ActiveSupport::TestCase
     @request.start_email_verification!(email: "someone@example.com")
 
     @request.reload
+
     assert_nil @request.verification_code_digest, "undelivered code must not stay redeemable"
     assert_nil @request.verification_sent_at, "throttle stamp must be reverted"
     assert_equal 0, @request.verification_sends_count, "the failed send must not count against max_sends"
@@ -63,6 +64,7 @@ class VerificationDeliveryFailureTest < ActiveSupport::TestCase
     @request.reload.start_email_verification!(email: "someone@example.com")
 
     @request.reload
+
     assert_not_nil @request.verification_code_digest
     assert_equal 1, @request.verification_sends_count
   end
@@ -78,6 +80,7 @@ class VerificationDeliveryFailureTest < ActiveSupport::TestCase
 
     assert_equal 1, contexts.size
     ctx = contexts.first
+
     assert_equal :verification_delivery_failed, ctx.event
     assert_equal @org, ctx.organization
     assert_equal @user, ctx.user
@@ -101,6 +104,7 @@ class VerificationDeliveryFailureTest < ActiveSupport::TestCase
     @request.start_email_verification!(email: "someone@example.com")
 
     @request.reload
+
     assert_not_nil @request.verification_code_digest
     assert_not_nil @request.verification_sent_at
     assert_equal 1, @request.verification_sends_count

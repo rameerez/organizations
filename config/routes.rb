@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/BlockLength -- a routes file is one declarative block by nature
 Organizations::Engine.routes.draw do
   # Route groups are drawn per config.engine_routes (devise_for-style
   # only:/except:) so hosts declare what they want instead of shadowing
@@ -16,13 +17,13 @@ Organizations::Engine.routes.draw do
   if groups.include?(:organizations)
     # Organization management
     # All operations are scoped to current_organization (from session)
-    resources :organizations, only: [ :index, :show, :new, :create, :edit, :update, :destroy ]
+    resources :organizations, only: [:index, :show, :new, :create, :edit, :update, :destroy]
   end
 
   if groups.include?(:memberships)
     # Membership management (scoped to current_organization)
     # These are flat routes - the organization is determined by session, not URL
-    resources :memberships, only: [ :index, :update, :destroy ] do
+    resources :memberships, only: [:index, :update, :destroy] do
       member do
         post :transfer_ownership
       end
@@ -36,7 +37,7 @@ Organizations::Engine.routes.draw do
     # Invitation management (scoped to current_organization)
     # These are flat routes - the organization is determined by session, not URL
     # NOTE: Must come BEFORE token-based routes so /invitations/new doesn't match /:token
-    resources :invitations, only: [ :index, :new, :create, :destroy ], as: :organization_invitations do
+    resources :invitations, only: [:index, :new, :create, :destroy], as: :organization_invitations do
       member do
         post :resend
       end
@@ -54,3 +55,4 @@ Organizations::Engine.routes.draw do
     post "invitations/:token/accept", to: "public_invitations#accept", as: :accept_invitation
   end
 end
+# rubocop:enable Metrics/BlockLength

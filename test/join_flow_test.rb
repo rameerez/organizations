@@ -6,6 +6,7 @@ require "test_helper"
 # Pins: dispatch order, every outcome, every REASONS symbol, the security
 # posture (foreign/unknown codes are indistinguishable), veto integration,
 # and that messages ride the i18n catalog.
+# rubocop:disable Metrics/ClassLength -- exhaustive outcome/reason contract suite, one class on purpose
 class JoinFlowTest < ActiveSupport::TestCase
   def setup
     Organizations.reset_configuration!
@@ -18,8 +19,8 @@ class JoinFlowTest < ActiveSupport::TestCase
     Organizations.reset_configuration!
   end
 
-  def attempt(**kwargs)
-    Organizations::JoinFlow.attempt(user: @user, organization: @org, **kwargs)
+  def attempt(**)
+    Organizations::JoinFlow.attempt(user: @user, organization: @org, **)
   end
 
   # === Already a member ===
@@ -30,7 +31,7 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(code: code.code)
 
-    assert result.member?
+    assert_predicate result, :member?
     assert_equal membership, result.membership
     assert_equal 0, code.reload.uses_count, "an existing member must not consume a code use"
   end
@@ -42,7 +43,7 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(code: code.code)
 
-    assert result.member?
+    assert_predicate result, :member?
     assert_equal "code", result.membership.joined_via
   end
 
@@ -51,8 +52,8 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(code: code.code)
 
-    assert result.pending?
-    assert result.join_request.pending?
+    assert_predicate result, :pending?
+    assert_predicate result.join_request, :pending?
   end
 
   test "reinforced code (requires domain email) returns :pending awaiting the challenge" do
@@ -61,7 +62,7 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(code: code.code)
 
-    assert result.pending?
+    assert_predicate result, :pending?
     refute @org.has_member?(@user)
   end
 
@@ -70,9 +71,10 @@ class JoinFlowTest < ActiveSupport::TestCase
     foreign = other_org.generate_join_code!(auto_approve: true)
     revoked = @org.generate_join_code!(auto_approve: true).tap(&:revoke!)
 
-    [ "NOPE-NOPE", foreign.code, revoked.code ].each do |code|
+    ["NOPE-NOPE", foreign.code, revoked.code].each do |code|
       result = attempt(code: code)
-      assert result.error?, "expected error for #{code}"
+
+      assert_predicate result, :error?, "expected error for #{code}"
       assert_equal :join_code_invalid, result.reason
       assert_equal "This code is not valid", result.message
     end
@@ -97,8 +99,8 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(email: "someone@example.com")
 
-    assert result.challenge_sent?
-    assert result.join_request.verification_sent_at.present?
+    assert_predicate result, :challenge_sent?
+    assert_predicate result.join_request.verification_sent_at, :present?
   end
 
   test "ineligible email returns :email_not_eligible" do
@@ -139,7 +141,7 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(verification_code: mint_code(request))
 
-    assert result.member?
+    assert_predicate result, :member?
     assert_equal "domain_email", result.membership.joined_via
     assert_equal "someone@example.com", result.membership.verified_email
   end
@@ -177,7 +179,7 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = Organizations::JoinFlow.attempt(user: confirmed, organization: @org)
 
-    assert result.member?
+    assert_predicate result, :member?
     assert_equal "domain_email", result.membership.joined_via
   end
 
@@ -186,7 +188,7 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(message: "let me in")
 
-    assert result.pending?
+    assert_predicate result, :pending?
     assert_equal "let me in", result.join_request.message
   end
 
@@ -207,8 +209,8 @@ class JoinFlowTest < ActiveSupport::TestCase
 
     result = attempt(code: code.code)
 
-    assert result.vetoed?
-    assert result.failed?
+    assert_predicate result, :vetoed?
+    assert_predicate result, :failed?
     assert_equal :membership_vetoed, result.reason
     assert_equal "Cap reached", result.message
   end
@@ -218,6 +220,7 @@ class JoinFlowTest < ActiveSupport::TestCase
   test "messages localize through the catalog" do
     I18n.with_locale(:es) do
       result = attempt(code: "NOPE-NOPE")
+
       assert_equal "Este código no es válido", result.message
     end
   end
@@ -226,7 +229,7 @@ class JoinFlowTest < ActiveSupport::TestCase
     # Guards the reason vocabulary: a new error path must register its symbol
     # so hosts can exhaustively map reasons to copy.
     emitted = File.read(File.expand_path("../lib/organizations/join_flow.rb", __dir__))
-                  .scan(/error\(:(\w+)/).flatten.map(&:to_sym).uniq
+      .scan(/error\(:(\w+)/).flatten.map(&:to_sym).uniq
     emitted << :membership_vetoed
 
     assert_empty emitted.uniq - Organizations::JoinFlow::REASONS,
@@ -241,3 +244,4 @@ class JoinFlowTest < ActiveSupport::TestCase
     known
   end
 end
+# rubocop:enable Metrics/ClassLength

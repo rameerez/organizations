@@ -105,7 +105,7 @@ module Organizations
       return 0 if sent_at.blank?
 
       interval = Organizations.configuration.verification_resend_interval.to_i
-      [ interval - (Time.current - sent_at).to_i, 0 ].max
+      [interval - (Time.current - sent_at).to_i, 0].max
     end
 
     # Localized message of a just-failed action, nil otherwise.

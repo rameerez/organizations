@@ -20,17 +20,17 @@ class SmallApisTest < ActiveSupport::TestCase
   test "create_with_owner! creates org + owner membership atomically and fires organization_created" do
     events = []
     Organizations.configure do |config|
-      config.on_organization_created { |ctx| events << [ ctx.organization, ctx.user ] }
+      config.on_organization_created { |ctx| events << [ctx.organization, ctx.user] }
       # Must NOT fire — owner-at-creation is not "joining".
       config.on_member_joining { |_ctx| raise Organizations::MembershipVetoed, "never" }
     end
 
     org = Organizations::Organization.create_with_owner!(owner: @owner, name: "Provisioned Org")
 
-    assert org.persisted?
+    assert_predicate org, :persisted?
     assert_equal @owner, org.owner
     assert_equal 1, org.member_count
-    assert_equal [ [ org, @owner ] ], events
+    assert_equal [[org, @owner]], events
   end
 
   test "create_with_owner! ignores max_organizations_per_user (ops primitive)" do
@@ -40,7 +40,8 @@ class SmallApisTest < ActiveSupport::TestCase
     # user.create_organization! would raise OrganizationLimitReached here;
     # the ops primitive must not (an admin provisions many partner orgs).
     org = Organizations::Organization.create_with_owner!(owner: @owner, name: "Two")
-    assert org.persisted?
+
+    assert_predicate org, :persisted?
   end
 
   test "create_with_owner! rolls back the org when the owner membership fails" do
@@ -97,29 +98,34 @@ class SmallApisTest < ActiveSupport::TestCase
     org = @owner.create_organization!("Flag Org")
     membership = org.owner_membership
 
-    assert membership.probe_show_on_profile?, "unset ⇒ default"
+    assert_predicate membership, :probe_show_on_profile?, "unset ⇒ default"
 
     membership.probe_show_on_profile = false
     membership.save!
-    refute membership.reload.probe_show_on_profile?
-    assert_equal false, membership.metadata["probe_show_on_profile"]
+
+    refute_predicate membership.reload, :probe_show_on_profile?
+    refute membership.metadata["probe_show_on_profile"]
 
     # String forms cast like Rails booleans
     membership.update!(metadata: membership.metadata.merge("probe_show_on_profile" => "1"))
-    assert membership.probe_show_on_profile?
+
+    assert_predicate membership, :probe_show_on_profile?
 
     membership.toggle_probe_show_on_profile!
-    refute membership.reload.probe_show_on_profile?
+
+    refute_predicate membership.reload, :probe_show_on_profile?
   end
 
   test "metadata_flag works over a different bag column and false defaults" do
     Organizations::Organization.metadata_flag :probe_beta, default: false
 
     org = @owner.create_organization!("Beta Org")
-    refute org.probe_beta?
+
+    refute_predicate org, :probe_beta?
 
     org.probe_beta = true
-    assert org.probe_beta?
+
+    assert_predicate org, :probe_beta?
   end
 
   # === Top-level error aliases ===
@@ -146,6 +152,7 @@ class SmallApisTest < ActiveSupport::TestCase
 
     # Simulate a host that mounted the engine at /orgs.
     Organizations.instance_variable_set(:@engine_mount_path, "/orgs")
+
     assert_includes invitation.acceptance_url(base_url: "https://app.test"),
                     "https://app.test/orgs/invitations/#{invitation.token}"
   ensure
@@ -169,7 +176,13 @@ class SmallApisTest < ActiveSupport::TestCase
           def new_user_session_path = "/users/sign_in"
           def new_user_registration_path = "/users/sign_up"
           def root_path = "/"
-          def respond_to?(name, _all = false) = %i[new_user_session_path new_user_registration_path root_path].include?(name) || super
+
+          # rubocop:disable Style/OptionalBooleanParameter -- Ruby core respond_to? signature
+          def respond_to?(name, _all = false)
+            # rubocop:enable Style/OptionalBooleanParameter
+            %i[new_user_session_path new_user_registration_path
+               root_path].include?(name) || super
+          end
         end.new
       end
     end.new

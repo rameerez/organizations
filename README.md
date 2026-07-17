@@ -60,6 +60,7 @@ Then:
 bundle install
 rails g organizations:install
 rails db:migrate
+rails g organizations:views   # copies the reference views (see BYO-UI note below)
 ```
 
 Add `has_organizations` to your User model:
@@ -91,10 +92,26 @@ Mount the engine in your routes:
 mount Organizations::Engine => '/'
 ```
 
+Don't want the whole engine UI? Declare which route groups to draw (devise_for-style) instead of shadowing routes:
+
+```ruby
+# config/initializers/organizations.rb
+config.engine_routes = { except: [:organizations] }  # keep switching/memberships/invitations, no org CRUD
+# or: config.engine_routes = { only: [:switching, :public_invitations] }
+# Groups: :switching, :organizations, :memberships, :invitations, :public_invitations
+```
+
+If your account model isn't named `User`:
+
+```ruby
+config.user_class = "Account"   # set BEFORE the models are first referenced (initializers are fine)
+# The install migrations reference `to_table: :users` — adjust them to your user table.
+```
+
 Done. Your app now has full organizations / teams support.
 
 > [!IMPORTANT]
-> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. You'll need to create your own views in `app/views/organizations/`. For a complete working example, check out the demo app in [`test/dummy`](test/dummy/app/views/organizations/).
+> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. Run `rails g organizations:views` to copy the Tailwind reference views into `app/views/organizations/` and retheme them — they're yours. For a complete working example (including the verified-joining screens the generator deliberately doesn't cover), check out the demo app in [`test/dummy`](test/dummy/).
 
 > [!NOTE]
 > This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
@@ -181,28 +198,30 @@ plan :growth do
 end
 ```
 
-Then hook into the `on_member_invited` callback to enforce limits. **This callback runs BEFORE the invitation is persisted**, so raising an error will block the invitation:
+Then enforce the limit in **`on_member_joining` — the membership gate**. It runs strictly, inside the creating transaction, immediately before a membership row is inserted, on EVERY join path: `add_member!`, invitation acceptance, join-request approval (which covers join codes, email domains, allowlists, and the account-email shortcut). Raising vetoes the join and rolls back cleanly:
 
 ```ruby
 # config/initializers/organizations.rb
 Organizations.configure do |config|
-  config.on_member_invited do |ctx|
+  config.on_member_joining do |ctx|
     org = ctx.organization
     limit = org.current_pricing_plan.limit_for(:organization_members)
 
     if limit && org.member_count >= limit
-      raise Organizations::InvitationError, "Member limit reached. Please upgrade your plan."
+      raise Organizations::MembershipVetoed, "Member limit reached. Please upgrade your plan."
     end
   end
 end
 ```
 
-The `on_member_invited` callback is special — it runs in **strict mode**, meaning:
-- It executes **before** the invitation is saved to the database
-- Raising any error will **veto** the invitation (it won't be created)
-- The error message is returned to the user
+> [!WARNING]
+> **Do not enforce seat limits only in `on_member_invited`.** That hook guards the *invitation* path exclusively — the moment your app enables any verified-joining instrument (a join code, an email domain, an allowlist), invite-only enforcement is silently bypassable. `on_member_joining` is the one gate that covers every path. (Keeping an `on_member_invited` check *too* is nice UX — it rejects at invite time instead of accept time — but it's an optimization, not the enforcement.)
 
-This pattern gives you full control over how and when limits are enforced.
+Details worth knowing:
+- A vetoed join-request approval leaves the request **pending** (resumable — approve again after the upgrade); a vetoed invitation acceptance leaves the invitation pending too.
+- The gate deliberately does NOT fire when an owner membership is created together with its organization (creating your own org is not "joining"), for idempotent already-a-member paths, or for role changes.
+- `ctx` carries `organization`, `user`, `role`, `joined_via`, and the instrument (`invitation`/`join_request`) when one applies.
+- Raising bare `Organizations::MembershipVetoed` uses a localized default message.
 
 ## Verified joining: let users prove they belong
 
@@ -266,14 +285,68 @@ membership.verified_email           # => "x@students.acme.edu"
 membership.verified?                # => true
 ```
 
+### Building the join UI: `JoinFlow` + `JoinState`
+
+The models above are the exception-raising programmatic layer. For controllers and views, use the headless join kit — one call in, one state out, no rescue ladders:
+
+```ruby
+# The controller: every join input goes through ONE facade
+result = Organizations::JoinFlow.attempt(
+  user: current_user, organization: @org,
+  code: params[:code],                        # a join code (PIN), if typed
+  email: params[:email],                      # start the emailed challenge
+  verification_code: params[:verification_code],  # the typed 6-digit code
+  message: params[:message]                   # note for manual approval
+)
+result.outcome     # :member | :challenge_sent | :pending | :vetoed | :error
+result.reason      # stable symbol from JoinFlow::REASONS (map your copy off this)
+result.message     # localized human message (rides the i18n catalog)
+result.membership / result.join_request
+
+# The view: one object decides which screen state renders
+@state = Organizations::JoinState.for(user: current_user, organization: @org, result: result)
+@state.status          # :member | :verifying | :pending | :entry
+@state.resend_seconds  # cooldown for the "resend code" button, derived from config
+@state.error_message   # localized message of a just-failed action
+
+# Which entry forms to show — the org's actual instruments decide:
+org.accepts_domain_joining?  # email form (domains or unclaimed allowlist entries)
+org.accepts_code_joining?    # code form (at least one actually-redeemable code)
+org.accepts_join_requests?   # anything at all
+```
+
+**Reference UI to copy:** the demo app ships a complete verified-joining implementation — the four-state join screen ([`test/dummy/app/controllers/joins_controller.rb`](test/dummy/app/controllers/joins_controller.rb) + [view](test/dummy/app/views/joins/show.html.erb)) and the org-admin Access surface (domains/codes/allowlist + request queue, [`access_controller.rb`](test/dummy/app/controllers/access_controller.rb)). Copy them into your app and retheme; their headers carry the production checklist.
+
+### Rate limiting your join endpoints
+
+The gem deliberately ships no join routes/controllers, so it cannot rate-limit them for you — and **code redemption and code verification are enumeration surfaces**. With Rails' built-in [`rate_limit`](https://api.rubyonrails.org/classes/ActionController/RateLimiting.html):
+
+```ruby
+class JoinsController < ApplicationController
+  # Joining/redeeming: per-user, generous but bounded
+  rate_limit to: 10, within: 1.hour, by: -> { current_user.id }, only: :create
+  # Public landings (if any are unauthenticated): per-IP against slug/code enumeration
+  # rate_limit to: 60, within: 1.minute, by: -> { request.remote_ip }, only: :show
+end
+```
+
+Layer them per surface: the gem already throttles **per request** (60s resend interval, 5 sends, 5 attempts per challenge); your controller limits cap **per user/IP across requests** — mail-bombing and brute-force across fresh challenges. And keep the generic error copy for unknown codes: `JoinFlow` already collapses unknown/revoked/expired/foreign codes into one reason — don't "improve" it into an oracle.
+
 ### Security posture
 
 - Codes are stored as **SHA-256 digests only** (peppered by row id), compared in constant time, single-use, expire after `verification_code_ttl` (15 min default), capped at `verification_max_attempts` (5) with resend throttles.
 - Emails are normalized before the uniqueness check (case, whitespace, and `+tag` plus-addressing collapse — override via `config.verification_email_normalizer`).
 - Domain matching is **exact** and evasion-hardened: `acme.com.evil.com`, `evilacme.com`, multi-`@` shapes never match; subdomains are separate domains on purpose (they often mean different cohorts).
-- BYO-UI as always: the gem ships models/APIs/mailers only. **You must rate-limit your join/redemption/verification endpoints** in the host app.
-- After-callbacks (`on_join_request_*`) are error-isolated — enforce hard member caps *before* calling approve/redeem.
-- Verification-code delivery failures are swallowed (logged, never raised) AFTER the challenge row commits — deliberate, so a flaky mailer can't roll back state, but it means a misconfigured mailer silently strands users inside the resend-throttle window. **Monitor delivery failures for your verification mailer.**
+- BYO-UI as always: the gem ships models/APIs/mailers and state; **you must rate-limit your join/redemption/verification endpoints** (see above).
+- Hard member caps belong in **`on_member_joining`** (the strict membership gate) — the `on_join_request_*` after-callbacks are error-isolated and cannot veto.
+- Verification-email delivery failures are handled: the gem rolls the throttle bookkeeping back (immediate retry, the failed send doesn't count) and fires `on_verification_delivery_failed` — wire it to your error tracker so mail outages are visible:
+
+```ruby
+config.on_verification_delivery_failed do |ctx|
+  Rails.error.report(RuntimeError.new("Verification email failed: #{ctx.metadata["error_message"]}"),
+                     context: { join_request_id: ctx.join_request.id })
+end
+```
 
 Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only).
 
@@ -395,6 +468,32 @@ org.memberships.owners          # Memberships with owner role
 org.memberships.admins          # Memberships with admin role
 org.invitations.pending         # Not yet accepted
 org.invitations.expired         # Past expiration date
+
+# Creation (ops/provisioning primitive: no session switching, no per-user
+# cap, fires on_organization_created — for consoles, seeds, admin panels)
+Organizations::Organization.create_with_owner!(owner: admin, name: "Acme Corp")
+
+# Verified joining
+org.domains / org.join_codes / org.allowlist_entries / org.join_requests
+org.add_domain!("acme.com", membership_metadata: {})
+org.generate_join_code!(label:, requires_verified_domain_email:, auto_approve:, expires_at:, max_uses:)
+org.import_allowlist!(emails, source:, membership_metadata: {})
+org.approve_join_request!(req, approved_by:) / org.reject_join_request!(req, rejected_by:, reason:)
+org.join_with_account_email!(user)
+org.accepts_domain_joining?     # email form? (domains or unclaimed roster entries)
+org.accepts_code_joining?       # code form? (at least one actually-redeemable code)
+org.accepts_join_requests?      # any self-serve mechanism at all
+org.join_codes.active           # SQL twin of code.active?
+
+# The join kit (controller/view layer — see "Verified joining")
+Organizations::JoinFlow.attempt(user:, organization:, code:, email:, verification_code:, message:)
+Organizations::JoinState.for(user:, organization:, result:)
+
+# Housekeeping
+Organizations::JoinRequest.purge_stale!(older_than: 12.months)  # GDPR sweep: old decided/expired requests
+
+# Typed boolean toggles over the metadata bag (also on Membership)
+Organizations::Organization.metadata_flag :beta_features, default: false
 ```
 
 ### Membership methods
@@ -872,6 +971,9 @@ Users can belong to multiple organizations. The "current" organization is stored
 1. User logs in → `current_organization` set to their most recently used org
 2. User switches org → Session updated, `current_organization` changes
 3. User is removed from current org → Auto-switches to next available org
+
+> [!WARNING]
+> **The session is the source of truth — always read `current_organization` through the CONTROLLER helper.** The model-level `user.current_organization` reads a per-request attribute that is only seeded *by* that controller helper; called anywhere else (a background job, a view that bypassed the helper, a console) it silently falls back to the user's first organization no matter what they switched to. This burned a production host's org switcher on first render: reading the model in the view showed the first org forever. In jobs/services, pass the organization explicitly.
 
 ### Manual switching
 
@@ -1440,7 +1542,7 @@ assert user.belongs_to_any_organization?
 
 ## Extending the Organization model
 
-The gem provides `Organizations::Organization` as the base model. You can extend it with your app's specific fields by adding migrations and reopening the class:
+The gem provides `Organizations::Organization` as the base model. Extend it with your app's specific fields by adding migrations (host columns on gem tables are the sanctioned path) and registering an extension via **load hooks**:
 
 ```ruby
 # db/migrate/xxx_add_custom_fields_to_organizations.rb
@@ -1454,22 +1556,39 @@ end
 ```
 
 ```ruby
-# config/initializers/organization_extensions.rb
-# Or: app/models/concerns/organization_extensions.rb (then include in initializer)
+# app/models/concerns/organization_extensions.rb
+module OrganizationExtensions
+  extend ActiveSupport::Concern
 
-Organizations::Organization.class_eval do
-  # Add your own associations
-  has_many :projects
-  has_many :documents
+  included do
+    has_many :projects
+    has_many :documents
+    validates :support_email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
+  end
 
-  # Add your own validations
-  validates :support_email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
-
-  # Add your own methods
   def active_projects
     projects.where(archived: false)
   end
 end
+```
+
+```ruby
+# config/initializers/organizations.rb (top of the file, outside the configure block)
+ActiveSupport.on_load(:organizations_organization) do
+  include OrganizationExtensions   # `self` is Organizations::Organization
+end
+ActiveSupport.on_load(:organizations_membership) do
+  # typed boolean toggles over the metadata bag, with defaults:
+  metadata_flag :show_on_profile, default: true
+end
+```
+
+**Why load hooks and not `class_eval` in an initializer:** the gem's model classes are reload-safe under Zeitwerk (they reload in development), and an initializer runs ONCE — a bare `class_eval` patch evaporates on the first code reload, and a hand-rolled `to_prepare` block is one shared basket where a single bad constant silently kills every extension after it. Load hooks re-fire per model on every reload ([ActiveSupport::LazyLoadHooks](https://api.rubyonrails.org/classes/ActiveSupport/LazyLoadHooks.html)). One hook per model: `:organizations_organization`, `:organizations_membership`, `:organizations_invitation`, `:organizations_domain`, `:organizations_join_code`, `:organizations_allowlist_entry`, `:organizations_join_request`, plus `:organizations_application_controller` and `:organizations_public_controller` for the engine controllers.
+
+For the common public-controller case — host layouts on the invitation-acceptance pages need your app's helper modules (the public controller inherits `ActionController::Base`, not your `ApplicationController`) — use the declarative option instead:
+
+```ruby
+config.public_controller_helpers = ["ApplicationHelper", "PageHelper"]
 ```
 
 Alternatively, create your own model that inherits from the gem's model:
@@ -1478,19 +1597,50 @@ Alternatively, create your own model that inherits from the gem's model:
 # app/models/organization.rb
 class Organization < Organizations::Organization
   has_many :projects
-  has_many :documents
-
-  validates :support_email, presence: true
 end
 ```
 
 > **Note:** If you create your own `Organization` class, be aware that internal gem code uses `Organizations::Organization`. Your subclass will work for your app code, but associations from `User#organizations` will return `Organizations::Organization` instances.
 
-This is standard Rails practice — the gem provides the foundation (memberships, invitations, roles), your app extends it with domain-specific features.
+This is standard Rails practice — the gem provides the foundation (memberships, invitations, roles, verified joining), your app extends it with domain-specific features.
+
+## URL-scoped organizations (`OrganizationScoped`)
+
+The engine's controllers are **session-scoped**: one "current" organization per user, workspace-style. Overlay-style apps (communities, marketplaces — users *belong to* orgs but don't "work inside" one) address organizations **by URL** instead: `/org/:slug/admin`. For those surfaces, include the concern:
+
+```ruby
+class Portal::BaseController < ApplicationController
+  include Organizations::OrganizationScoped
+
+  self.organization_param  = :slug
+  self.organization_finder = ->(param) { Organizations::Organization.find_by(slug: param) }
+  require_organization_role :admin   # gate every action behind a minimum role
+end
+```
+
+You get `current_scoped_organization` / `current_scoped_membership` (also as view helpers), and a configurable not-found posture: the default raises `ActionController::RoutingError`, so **unknown orgs, strangers, and under-role members are indistinguishable** — no existence oracle, the right stance for customer-facing portals. Set `self.organization_not_found_behavior = :forbidden` for internal tools where a 403 is fine. Both addressing modes coexist in one app — the concern never touches the session context.
+
+## Internationalization (i18n)
+
+Every user-facing string the gem produces — error messages, validation messages, role/status labels, invitation-flow notices, the stock mailer copy — resolves through locale files under the `organizations.` namespace. **English and Spanish ship with the gem**; add or override any key in your app's locale files (app locale files load after engine ones, so yours win):
+
+```yaml
+# config/locales/en.yml (host app) — override just what you want
+en:
+  organizations:
+    roles:
+      admin: "Manager"
+    errors:
+      join_code_invalid: "Hmm, that code doesn't work."
+```
+
+Two deliberate boundaries: developer-facing errors (`ArgumentError`, `ConfigurationError`) stay English, and custom roles defined via `config.roles` fall back to `humanize` unless you add a matching `organizations.roles.<name>` key.
 
 ## Database schema
 
-The gem creates three tables:
+The gem creates **seven tables** (three core + four for verified joining, all created by `organizations:install`; existing installs get the four via `organizations:upgrade`):
+
+> **Note:** The gem automatically detects your app's primary key type (UUID or integer) and uses it for all tables, and emits adapter-aware DDL (partial unique indexes on PostgreSQL/SQLite, generated-column emulation on MySQL).
 
 ### organizations_organizations
 
@@ -1498,12 +1648,10 @@ The gem creates three tables:
 organizations_organizations
   - id (primary key, auto-detects UUID or integer from your app)
   - name (string, required)
+  - memberships_count (integer, counter cache, default: 0)
   - metadata (jsonb, default: {})
-  - created_at
-  - updated_at
+  - created_at / updated_at
 ```
-
-> **Note:** The gem automatically detects your app's primary key type (UUID or integer) and uses it for all tables.
 
 ### organizations_memberships
 
@@ -1514,10 +1662,16 @@ organizations_memberships
   - organization_id (foreign key, indexed)
   - role (string, default: 'member')
   - invited_by_id (foreign key, nullable)
-  - created_at
-  - updated_at
+  - joined_via (string, nullable: invited|code|domain_email|allowlist|manual)
+  - verified_email / verified_email_normalized (string, nullable)
+  - verified_at (datetime, nullable)
+  - metadata (jsonb, default: {})
+  - created_at / updated_at
 
   unique index: [user_id, organization_id]
+  partial unique index: [organization_id] where role = 'owner'   (single owner)
+  partial unique index: [organization_id, verified_email_normalized]
+    where verified_email_normalized is not null                  (one proven inbox = one member)
 ```
 
 ### organizations_invitations
@@ -1532,10 +1686,70 @@ organizations_invitations
   - invited_by_id (foreign key, nullable)
   - accepted_at (datetime, nullable)
   - expires_at (datetime)
-  - created_at
-  - updated_at
+  - metadata / membership_metadata (jsonb, default: {})
+  - created_at / updated_at
 
-  unique index: [organization_id, email] where accepted_at is null
+  partial unique index: [organization_id, lower(email)] where accepted_at is null
+```
+
+### organizations_domains
+
+```sql
+organizations_domains
+  - id, organization_id (foreign key)
+  - domain (string, required — stored lowercased, no leading '@')
+  - membership_metadata / metadata (jsonb, default: {})
+  - created_at / updated_at
+
+  unique index: [organization_id, domain]; index: [domain] (email → candidate orgs)
+```
+
+### organizations_join_codes
+
+```sql
+organizations_join_codes
+  - id, organization_id (foreign key)
+  - code (string, globally unique)
+  - label (string, nullable — campaign attribution)
+  - requires_verified_domain_email (boolean, default: false)
+  - auto_approve (boolean, default: true)
+  - expires_at (datetime, nullable) / max_uses (integer, nullable) / uses_count (integer, default: 0)
+  - revoked_at (datetime, nullable)
+  - created_by_id (foreign key, nullable)
+  - membership_metadata / metadata (jsonb, default: {})
+  - created_at / updated_at
+```
+
+### organizations_allowlist_entries
+
+```sql
+organizations_allowlist_entries
+  - id, organization_id (foreign key)
+  - email (string, as provided) / email_normalized (string)
+  - source (string, nullable — e.g. "csv_2026-07")
+  - claimed_at (datetime, nullable) / claimed_by_id (foreign key, nullable)
+  - membership_metadata / metadata (jsonb, default: {})
+  - created_at / updated_at
+
+  unique index: [organization_id, email_normalized]
+```
+
+### organizations_join_requests
+
+```sql
+organizations_join_requests
+  - id, organization_id (foreign key), user_id (foreign key)
+  - status (string, default: 'pending': pending|approved|rejected|withdrawn; :expired is derived)
+  - joined_via (string, nullable) / join_code_id (foreign key, nullable) / message (string, nullable)
+  - verification_email / verification_email_normalized (string, nullable)
+  - verification_code_digest (string, nullable — SHA-256 only, never plaintext)
+  - verification_sent_at / verification_expires_at (datetime) / verified_at (datetime)
+  - verification_attempts / verification_sends_count (integer, default: 0)
+  - decided_by_id (foreign key, nullable) / decided_at (datetime) / expires_at (datetime)
+  - metadata (jsonb, default: {})
+  - created_at / updated_at
+
+  partial unique index: [organization_id, user_id] where status = 'pending'
 ```
 
 ## Ownership rules
@@ -1824,9 +2038,49 @@ CREATE INDEX index_organizations_invitations_on_email ON organizations_invitatio
 CREATE UNIQUE INDEX index_organizations_invitations_pending ON organizations_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL;
 ```
 
-## Migration from 1:1 relationships
+## Migrating from a hand-rolled Organization model
 
-If your app currently has `User belongs_to :organization` (1:1), migrate to `User has_many :organizations, through: :memberships` by backfilling memberships and removing direct `organization_id` dependencies incrementally.
+Adopting the gem in an app that already has its own `Organization` model is a well-trodden path — one production host migrated a live SaaS (billing, API keys, usage credits, all tenant-scoped) onto the gem with zero downtime. The distilled playbook, as **four ordered migrations**:
+
+```ruby
+# 1. Park the legacy table (keep it around until you're confident)
+class BackupOrganizationsForGem < ActiveRecord::Migration[8.0]
+  def change
+    # Drop FKs that point INTO the legacy table first, then:
+    rename_table :organizations, :organizations_legacy
+  end
+end
+
+# 2. Create the gem tables — vendor the install generator's migration:
+#    rails g organizations:install   (take the migration, skip the initializer if you have one)
+
+# 3. Re-add YOUR columns onto the gem's organizations table
+class AddAppColumnsToOrganizations < ActiveRecord::Migration[8.0]
+  def change
+    add_column :organizations_organizations, :support_email, :string
+    # ...every host column your legacy table had
+  end
+end
+
+# 4. Copy the data — the load-bearing details:
+class MigrateOrganizationData < ActiveRecord::Migration[8.0]
+  def up
+    # a) Copy legacy rows PRESERVING IDs (every FK in your app keeps working).
+    # b) Create memberships: pick each org's owner deterministically
+    #    (e.g. earliest user) — the gem enforces exactly one owner.
+    # c) Backfill memberships_count.
+    # d) ⚠️ REWRITE POLYMORPHIC TYPE STRINGS: every table storing
+    #    "Organization" in a *_type column must now say
+    #    "Organizations::Organization" — check pay (customers, merchants),
+    #    pricing_plans (assignments, enforcement_states, usages),
+    #    api_keys, usage_credits (wallets, fulfillments), and your own
+    #    polymorphic associations. This is the step everyone forgets.
+    # e) Re-add + validate the FKs you dropped in step 1.
+  end
+end
+```
+
+Afterwards: `has_organizations` on `User`, move your model code into an extension concern (see "Extending the Organization model"), and keep a `users.organization_id`-style pointer only if you need a "last active org" fallback. If you previously had `User belongs_to :organization` (1:1), the same playbook applies — the memberships you create in step 4b simply all have one member.
 
 ## Roadmap
 

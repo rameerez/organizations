@@ -45,6 +45,7 @@ class LoadHooksTest < ActiveSupport::TestCase
     ActiveSupport.on_load(:organizations_organization) { include extension }
 
     org = Organizations::Organization.new(name: "Hooked")
+
     assert_equal "extended-Organizations::Organization", org.load_hook_extension_probe
   end
 

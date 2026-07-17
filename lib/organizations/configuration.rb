@@ -672,7 +672,7 @@ module Organizations
       when Hash
         only = value[:only]
         except = value[:except]
-        if [ only, except ].compact.size != 1
+        if [only, except].compact.size != 1
           raise ConfigurationError, "engine_routes takes exactly one of only:/except: (or an Array meaning only:)"
         end
 

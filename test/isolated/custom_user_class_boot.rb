@@ -139,6 +139,7 @@ class Account < ActiveRecord::Base
   # Outside Rails the engine initializer that extends ActiveRecord::Base
   # never runs — extend explicitly (same as the main test_helper).
   extend Organizations::Models::Concerns::HasOrganizations::ClassMethods
+
   has_organizations
 end
 

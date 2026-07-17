@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "test_helper"
 
 # config.user_class: hosts whose account model is NOT named `User`.
@@ -34,7 +35,7 @@ class UserClassTest < ActiveSupport::TestCase
     script = File.expand_path("isolated/custom_user_class_boot.rb", __dir__)
     output = IO.popen([RbConfig.ruby, script], err: %i[child out], &:read)
 
-    assert $?.success?, "isolated boot failed:\n#{output}"
+    assert_predicate $CHILD_STATUS, :success?, "isolated boot failed:\n#{output}"
     assert_includes output, "OK"
   end
 end

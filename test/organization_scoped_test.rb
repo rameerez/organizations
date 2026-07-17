@@ -87,9 +87,9 @@ class OrganizationScopedTest < ActiveSupport::TestCase
   test "unknown org, non-member, and under-role member are indistinguishable (RoutingError)" do
     # No existence oracle: all three 404 the same way.
     [
-      [ { slug: "Nope Org" }, @owner ],   # unknown org
-      [ { slug: @org_name }, @stranger ], # stranger
-      [ { slug: @org_name }, @member ]    # plain member below :admin
+      [{ slug: "Nope Org" }, @owner],   # unknown org
+      [{ slug: @org_name }, @stranger], # stranger
+      [{ slug: @org_name }, @member]    # plain member below :admin
     ].each do |params, user|
       controller = SlugPortalController.new(params)
       controller.test_current_user = user

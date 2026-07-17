@@ -21,6 +21,7 @@ require "test_helper"
 #   3. The gate does NOT fire for: owner-at-org-creation, already-a-member
 #      idempotent paths, role changes / ownership transfers.
 #   4. Context carries organization, user, role, joined_via + the instrument.
+# rubocop:disable Metrics/ClassLength -- every join path + every non-path, one contract suite on purpose
 class MemberJoiningGateTest < ActiveSupport::TestCase
   def setup
     Organizations.reset_configuration!
@@ -68,6 +69,7 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     @org.add_member!(@user, role: :viewer)
 
     ctx = contexts.last
+
     assert_equal :member_joining, ctx.event
     assert_equal @org, ctx.organization
     assert_equal @user, ctx.user
@@ -86,12 +88,14 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     assert_raises(Organizations::MembershipVetoed) { invitation.accept!(@user) }
 
     invitation.reload
-    assert invitation.pending?, "a vetoed acceptance must leave the invitation pending"
+
+    assert_predicate invitation, :pending?, "a vetoed acceptance must leave the invitation pending"
     refute @org.reload.has_member?(@user)
 
     # Unblock (simulate the host raising the cap) → the SAME invitation works.
     Organizations.reset_configuration!
     membership = invitation.accept!(@user)
+
     assert_equal "invited", membership.joined_via
   end
 
@@ -102,6 +106,7 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     invitation.accept!(@user)
 
     ctx = contexts.last
+
     assert_equal "admin", ctx.role
     assert_equal "invited", ctx.joined_via
     assert_equal invitation, ctx.invitation
@@ -118,14 +123,16 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     end
 
     request.reload
-    assert request.pending?, "a vetoed approval must leave the request pending, not approved"
+
+    assert_predicate request, :pending?, "a vetoed approval must leave the request pending, not approved"
     refute @org.reload.has_member?(@user)
 
     # Unblock → the SAME request approves.
     Organizations.reset_configuration!
     membership = @org.approve_join_request!(request, approved_by: @owner)
+
     assert @org.reload.has_member?(@user)
-    assert_equal membership, request.reload.then { |r| @org.memberships.find_by(user_id: r.user_id) }
+    assert_equal(membership, request.reload.then { |r| @org.memberships.find_by(user_id: r.user_id) })
   end
 
   test "veto aborts instant join-code redemption (use is consumed; request parked pending)" do
@@ -142,7 +149,8 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     assert_equal 1, code.reload.uses_count
     # ...and the request is parked pending — resumable once unblocked.
     request = @org.join_requests.pending.find_by(user_id: @user.id)
-    assert request.present?
+
+    assert_predicate request, :present?
     assert_equal "code", request.joined_via
   end
 
@@ -157,11 +165,12 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
 
     refute @org.reload.has_member?(@user)
     request.reload
-    assert request.pending?
+
+    assert_predicate request, :pending?
     # The verification itself committed before approval ran — the user proved
     # the inbox; only membership creation was vetoed. Approving later works
     # without a fresh challenge:
-    assert request.email_verified?
+    assert_predicate request, :email_verified?
   end
 
   test "veto aborts join_with_account_email! shortcut" do
@@ -180,6 +189,7 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     Organizations::JoinCode.redeem(code.code, user: @user)
 
     ctx = contexts.last
+
     assert_equal "member", ctx.role
     assert_equal "code", ctx.joined_via
     assert_equal @org.join_requests.last, ctx.join_request
@@ -236,7 +246,8 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
 
   test "no configured gate keeps every path working unchanged" do
     membership = @org.add_member!(@user)
-    assert membership.persisted?
+
+    assert_predicate membership, :persisted?
   end
 
   test "the seat-limit pattern: one gate enforces caps across every join path" do
@@ -244,9 +255,7 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     # cap at 2 members total for this org.
     Organizations.configure do |config|
       config.on_member_joining do |ctx|
-        if ctx.organization.member_count >= 2
-          raise Organizations::MembershipVetoed, "Member limit reached"
-        end
+        raise Organizations::MembershipVetoed, "Member limit reached" if ctx.organization.member_count >= 2
       end
     end
 
@@ -275,3 +284,4 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     known
   end
 end
+# rubocop:enable Metrics/ClassLength
