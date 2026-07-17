@@ -131,7 +131,7 @@ module Organizations
       # Validate email matches at model level (security)
       unless skip_email_validation
         if accepting_user.respond_to?(:email) && !for_email?(accepting_user.email)
-          raise EmailMismatch, "This invitation was sent to a different email address"
+          raise EmailMismatch, Organizations.t(:"errors.invitation_email_mismatch")
         end
       end
 
@@ -148,16 +148,16 @@ module Organizations
           existing_membership = organization.memberships.find_by(user_id: accepting_user.id)
           return existing_membership if existing_membership
 
-          raise InvitationAlreadyAccepted, "This invitation has already been accepted"
+          raise InvitationAlreadyAccepted, Organizations.t(:"errors.invitation_already_accepted")
         end
 
         if expired?
-          raise InvitationExpired, "This invitation has expired"
+          raise InvitationExpired, Organizations.t(:"errors.invitation_expired")
         end
 
         # Owner role cannot be assigned via invitation (defense in depth)
         if role.to_sym == :owner
-          raise CannotAcceptAsOwner, "Cannot accept invitation as owner. Invite as admin, then use transfer_ownership_to! after joining."
+          raise CannotAcceptAsOwner, Organizations.t(:"errors.invitation_accept_as_owner")
         end
 
         # Check if user is already a member (race condition from another invitation)
@@ -192,7 +192,7 @@ module Organizations
         lock!
 
         if accepted?
-          raise InvitationAlreadyAccepted, "Cannot resend an accepted invitation"
+          raise InvitationAlreadyAccepted, Organizations.t(:"errors.invitation_cannot_resend_accepted")
         end
 
         update!(
@@ -324,7 +324,7 @@ module Organizations
                            .exists?
 
       if existing
-        errors.add(:email, "has already been invited to this organization")
+        errors.add(:email, Organizations.t(:"attributes.invitation_taken"))
       end
     end
 

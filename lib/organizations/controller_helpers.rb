@@ -624,11 +624,12 @@ module Organizations
 
     def build_unauthorized_message(permission, required_role)
       if required_role
-        "You need #{required_role} access to perform this action"
+        Organizations.t(:"errors.unauthorized_role",
+                        role: Organizations.t(:"roles.#{required_role}", default: required_role.to_s))
       elsif permission
-        "You don't have permission to #{permission.to_s.humanize.downcase}"
+        Organizations.t(:"errors.unauthorized_permission", permission: permission.to_s.humanize.downcase)
       else
-        "You are not authorized to perform this action"
+        Organizations.t(:"errors.unauthorized")
       end
     end
 

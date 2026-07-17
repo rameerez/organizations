@@ -75,7 +75,7 @@ module Organizations
       return if domain.blank? # presence validation covers this
 
       unless domain.match?(/\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/)
-        errors.add(:domain, "is not a valid domain name")
+        errors.add(:domain, Organizations.t(:"attributes.domain_invalid"))
       end
     end
   end

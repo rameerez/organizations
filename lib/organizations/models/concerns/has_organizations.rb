@@ -433,7 +433,7 @@ module Organizations
             settings = self.class.organization_settings
             max = settings[:max_organizations]
             if max && owned_organizations.count >= max
-              raise OrganizationLimitReached, "Maximum number of organizations (#{max}) reached"
+              raise OrganizationLimitReached, Organizations.t(:"errors.organization_limit_reached", max: max)
             end
 
             org = nil
@@ -477,14 +477,14 @@ module Organizations
               if membership.role.to_sym == :owner
                 owner_count = org.memberships.where(role: "owner").count
                 if owner_count == 1
-                  raise CannotLeaveAsLastOwner, "Cannot leave organization as the only owner. Transfer ownership first."
+                  raise CannotLeaveAsLastOwner, Organizations.t(:"errors.cannot_leave_as_last_owner")
                 end
               end
 
               # Check require_organization setting
               settings = self.class.organization_settings
               if settings[:require_organization] && organizations.count == 1
-                raise CannotLeaveLastOrganization, "Cannot leave your only organization"
+                raise CannotLeaveLastOrganization, Organizations.t(:"errors.cannot_leave_last_organization")
               end
 
               membership.destroy!
@@ -506,7 +506,7 @@ module Organizations
           # @raise [NoCurrentOrganization] if no current organization
           def leave_current_organization!
             unless current_organization
-              raise NoCurrentOrganization, "No current organization to leave"
+              raise NoCurrentOrganization, Organizations.t(:"errors.no_current_organization_to_leave")
             end
 
             leave_organization!(current_organization)
@@ -530,7 +530,7 @@ module Organizations
             user_role = role_in(org)
             unless user_role && Roles.has_permission?(user_role, :invite_members)
               raise Organizations::NotAuthorized.new(
-                "You don't have permission to invite members",
+                Organizations.t(:"errors.invite_not_authorized"),
                 permission: :invite_members,
                 organization: org,
                 user: self
@@ -562,7 +562,7 @@ module Organizations
             existing_membership = memberships.find_by(organization_id: organization.id)
             if existing_membership
               raise Organizations::JoinRequestAlreadyDecided,
-                    "You are already a member of this organization"
+                    Organizations.t(:"errors.join_request_already_member")
             end
 
             request = organization.join_requests.create!(user: self, message: message)
@@ -578,7 +578,7 @@ module Organizations
           rescue ActiveRecord::RecordNotUnique
             # Race: a concurrent request slipped past the pre-check.
             pending_join_request_for(organization) ||
-              raise(Organizations::JoinRequestError, "Could not create join request")
+              raise(Organizations::JoinRequestError, Organizations.t(:"errors.join_request_create_failed"))
           end
 
           # This user's open request for an organization, if any

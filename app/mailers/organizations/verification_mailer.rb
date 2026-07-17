@@ -12,6 +12,9 @@ module Organizations
   #   VerificationMailer.code_email(join_request, "492817").deliver_later
   #
   class VerificationMailer < ActionMailer::Base
+    # Self-register the gem's app/views — see InvitationMailer for rationale.
+    append_view_path File.expand_path("../../views", __dir__)
+
     default from: -> { default_from_address }
 
     # Verification code email
@@ -26,7 +29,8 @@ module Organizations
 
       mail(
         to: join_request.verification_email,
-        subject: "#{@code} is your #{@organization.name} verification code"
+        subject: Organizations.t(:"mailers.verification.subject",
+                                 code: @code, organization: @organization.name)
       )
     end
 
@@ -39,15 +43,16 @@ module Organizations
 
     def default_from_address
       # Deliberately identical to InvitationMailer#default_from_address —
-      # keep the two in sync. The long safe-nav chain is the defensive shape
-      # for engines that may boot without a full Rails app.
-      # rubocop:disable Style/SafeNavigationChainLength
-      if defined?(Rails) && Rails.application&.config&.action_mailer&.default_options
+      # keep the two in sync. ⚠️ `defined?(Rails)` alone is NOT enough: a
+      # bare `Rails` module without `.application` (globalid/railtie
+      # fragments, plain test harnesses) makes `Rails.application` raise —
+      # hence the respond_to? guard.
+      if defined?(Rails) && Rails.respond_to?(:application) && Rails.application &&
+         Rails.application.config.action_mailer&.default_options
         Rails.application.config.action_mailer.default_options[:from] || "noreply@example.com"
       else
         "noreply@example.com"
       end
-      # rubocop:enable Style/SafeNavigationChainLength
     end
   end
 end

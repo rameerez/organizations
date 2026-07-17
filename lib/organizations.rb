@@ -113,6 +113,15 @@ module Organizations
     autoload :JoinCode, "organizations/models/join_code"
     autoload :AllowlistEntry, "organizations/models/allowlist_entry"
     autoload :JoinRequest, "organizations/models/join_request"
+
+    # Non-Rails contexts (plain ActiveRecord, the gem's own test suite) don't
+    # get the Rails engine's automatic `config/locales` pickup, so register
+    # the gem's locale files directly. `|=` keeps this idempotent. In Rails
+    # apps the engine handles it (Rails::Engine adds paths["config/locales"]
+    # to I18n.load_path — https://guides.rubyonrails.org/engines.html).
+    # I18n itself is always available: it's a hard dependency of
+    # activesupport, which this gem depends on.
+    I18n.load_path |= Dir[File.expand_path("../config/locales/*.yml", __dir__)]
   end
 
   class << self
@@ -150,5 +159,24 @@ module Organizations
     def roles
       Roles
     end
+
+    # Resolve a gem string through I18n under the `organizations.` namespace.
+    # This is the ONE door every user-facing string the gem produces goes
+    # through — error messages, labels, mailer copy. en.yml is the catalog
+    # SSOT (no inline English defaults on purpose: a missing key renders as
+    # "Translation missing: …", a loud and findable bug, instead of silently
+    # drifting from the catalog).
+    #
+    # Hosts override any key the standard Rails way — app locale files load
+    # after engine locale files, so the host's value wins.
+    #
+    # @param key [String, Symbol] key under the `organizations.` scope,
+    #   e.g. :"errors.join_code_invalid" or "roles.owner"
+    # @param options [Hash] I18n options (interpolations, :locale, :default…)
+    # @return [String]
+    def translate(key, **options)
+      I18n.t(key, scope: :organizations, **options)
+    end
+    alias t translate
   end
 end

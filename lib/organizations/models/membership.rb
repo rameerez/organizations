@@ -38,7 +38,10 @@ module Organizations
     # === Validations ===
 
     validates :role, presence: true, inclusion: { in: ->(_) { Roles::HIERARCHY.map(&:to_s) } }
-    validates :user_id, uniqueness: { scope: :organization_id, message: "is already a member of this organization" }
+    # Proc message: resolved at VALIDATION time so it follows I18n.locale —
+    # a literal string here would be frozen in whatever locale loaded first.
+    validates :user_id, uniqueness: { scope: :organization_id,
+                                      message: ->(*) { Organizations.t(:"attributes.membership_taken") } }
     validate :single_owner_per_organization, if: :owner?
 
     # === Scopes ===
@@ -161,11 +164,11 @@ module Organizations
 
       # Owner role is only assignable via transfer_ownership_to!
       if new_role_sym == :owner
-        raise CannotPromoteToOwner, "Cannot promote to owner. Use organization.transfer_ownership_to! instead."
+        raise CannotPromoteToOwner, Organizations.t(:"errors.cannot_promote_to_owner")
       end
 
       unless Roles.at_least?(new_role_sym, role_sym)
-        raise InvalidRoleChange, "Cannot promote to #{new_role} - it's not a higher role than #{role}"
+        raise InvalidRoleChange, Organizations.t(:"errors.promote_not_higher", new_role: new_role, role: role)
       end
 
       change_role_to!(new_role_sym, changed_by: changed_by)
@@ -182,11 +185,11 @@ module Organizations
       validate_role!(new_role_sym)
 
       if owner?
-        raise CannotDemoteOwner, "Cannot demote owner. Transfer ownership first."
+        raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner")
       end
 
       unless Roles.at_least?(role_sym, new_role_sym)
-        raise InvalidRoleChange, "Cannot demote to #{new_role} - it's not a lower role than #{role}"
+        raise InvalidRoleChange, Organizations.t(:"errors.demote_not_lower", new_role: new_role, role: role)
       end
 
       change_role_to!(new_role_sym, changed_by: changed_by)
@@ -202,7 +205,7 @@ module Organizations
 
       return unless existing_owner.exists?
 
-      errors.add(:role, "owner already exists for this organization")
+      errors.add(:role, Organizations.t(:"attributes.owner_taken"))
     end
 
     def validate_role!(role)

@@ -590,7 +590,7 @@ module Organizations
       @controller.require_organization_role!(:admin)
 
       assert_equal "/", @controller.redirected_to
-      assert_includes @controller.redirect_alert, "admin"
+      assert_includes @controller.redirect_alert, "Admin"
     end
 
     test "default unauthorized handler renders json for json format" do
@@ -606,7 +606,7 @@ module Organizations
 
       assert_equal :forbidden, @controller.rendered_status
       assert_not_nil @controller.rendered_json
-      assert_includes @controller.rendered_json[:error], "admin"
+      assert_includes @controller.rendered_json[:error], "Admin"
     end
 
     # =====================
@@ -883,7 +883,7 @@ module Organizations
 
       @controller.require_organization_role!(:admin)
 
-      assert_includes @controller.rendered_json[:error], "admin"
+      assert_includes @controller.rendered_json[:error], "Admin"
     end
 
     test "unauthorized message includes permission when permission check fails" do

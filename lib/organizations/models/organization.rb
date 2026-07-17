@@ -154,7 +154,7 @@ module Organizations
 
       # Owner role is only assignable via transfer_ownership_to! or initial creation
       if role_sym == :owner
-        raise CannotHaveMultipleOwners, "Cannot add member as owner. Use transfer_ownership_to! instead."
+        raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_add_as_owner")
       end
 
       # Check if already a member (idempotent operation)
@@ -191,7 +191,7 @@ module Organizations
       return unless membership
 
       if membership.role.to_sym == :owner
-        raise CannotRemoveOwner, "Cannot remove the organization owner. Transfer ownership first."
+        raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner")
       end
 
       ActiveRecord::Base.transaction do
@@ -236,12 +236,12 @@ module Organizations
         if new_role == :owner && old_role != :owner
           # Promoting to owner - this is only allowed via transfer_ownership_to!
           # Direct role change to owner is not permitted
-          raise CannotHaveMultipleOwners, "Cannot promote to owner. Use transfer_ownership_to! instead."
+          raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_promote_to_owner")
         end
 
         if old_role == :owner && new_role != :owner
           # Demoting owner - not allowed directly
-          raise CannotDemoteOwner, "Cannot demote owner directly. Use transfer_ownership_to! instead."
+          raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner_directly")
         end
 
         membership.update!(role: new_role.to_s)
@@ -276,16 +276,16 @@ module Organizations
         new_owner_membership = memberships.find_by(user_id: new_owner.id)
 
         unless old_owner_membership
-          raise NoOwnerPresent, "Cannot transfer ownership because organization has no owner membership"
+          raise NoOwnerPresent, Organizations.t(:"errors.transfer_no_owner")
         end
 
         unless new_owner_membership
-          raise CannotTransferToNonMember, "Cannot transfer ownership to a non-member"
+          raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
         end
 
         # New owner must be at least an admin (per README: "Ownership can be transferred to any admin")
         unless Roles.at_least?(new_owner_membership.role.to_sym, :admin)
-          raise CannotTransferToNonAdmin, "Cannot transfer ownership to non-admin. Promote them to admin first."
+          raise CannotTransferToNonAdmin, Organizations.t(:"errors.transfer_to_non_admin")
         end
 
         # No-op transfer to the current owner.
@@ -333,7 +333,7 @@ module Organizations
 
       # Owner role cannot be assigned via invitation - only via transfer_ownership_to!
       if role_sym == :owner
-        raise CannotInviteAsOwner, "Cannot invite as owner. Invite as admin, then use transfer_ownership_to! after they join."
+        raise CannotInviteAsOwner, Organizations.t(:"errors.invite_as_owner")
       end
 
       normalized_email = email.downcase.strip
@@ -344,7 +344,7 @@ module Organizations
 
       # Check if already a member (case-insensitive)
       if users.where("LOWER(email) = ?", normalized_email).exists?
-        raise Organizations::InvitationError, "User is already a member of this organization"
+        raise Organizations::InvitationError, Organizations.t(:"errors.invitation_already_member")
       end
 
       # Allow callback hooks to veto invitations (e.g., plan seat limits) before write.
@@ -496,19 +496,19 @@ module Organizations
     #   the email is unconfirmed, or the feature is disabled
     def join_with_account_email!(user)
       unless Organizations.configuration.trust_confirmed_account_email
-        raise VerificationEmailNotEligible, "Account-email trust is disabled (see config.trust_confirmed_account_email)"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_trust_disabled")
       end
 
       email = user.respond_to?(:email) ? user.email.to_s : ""
       confirmed = user.respond_to?(:confirmed_at) && user.confirmed_at.present?
 
       unless confirmed
-        raise VerificationEmailNotEligible, "The account email has not been confirmed"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_unconfirmed")
       end
 
       matched_domain = domains.matching_email(email).first
       unless matched_domain
-        raise VerificationEmailNotEligible, "This email address is not eligible to join this organization"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
       end
 
       # Uniform funnel: every self-serve join goes through a JoinRequest so
@@ -519,7 +519,7 @@ module Organizations
       ActiveRecord::Base.transaction do
         if Membership.where(organization_id: id, verified_email_normalized: normalized).exists?
           raise VerificationEmailAlreadyClaimed,
-                "This email address is already associated with a member of this organization"
+                Organizations.t(:"errors.verification_email_already_claimed")
         end
 
         request.assign_attributes(
@@ -559,7 +559,7 @@ module Organizations
 
       unless inviter_membership
         raise Organizations::NotAMember.new(
-          "Only organization members can send invitations",
+          Organizations.t(:"errors.invite_not_a_member"),
           organization: self,
           user: inviter
         )
@@ -568,7 +568,7 @@ module Organizations
       return if Roles.has_permission?(inviter_membership.role.to_sym, :invite_members)
 
       raise Organizations::NotAuthorized.new(
-        "You don't have permission to invite members",
+        Organizations.t(:"errors.invite_not_authorized"),
         permission: :invite_members,
         organization: self,
         user: inviter

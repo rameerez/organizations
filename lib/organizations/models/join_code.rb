@@ -128,10 +128,10 @@ module Organizations
     # @raise [JoinCodeExhausted] when max_uses is spent
     def self.redeem(code, user:)
       normalized = normalize(code)
-      raise JoinCodeInvalid, "This code is not valid" if normalized.blank?
+      raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") if normalized.blank?
 
       join_code = find_by(code: normalized)
-      raise JoinCodeInvalid, "This code is not valid" unless join_code
+      raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") unless join_code
 
       join_code.redeem!(user: user)
     end
@@ -180,8 +180,8 @@ module Organizations
     private
 
     def ensure_redeemable!
-      raise JoinCodeInvalid, "This code is not valid" if revoked? || expired?
-      raise JoinCodeExhausted, "This code has reached its usage limit" if exhausted?
+      raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") if revoked? || expired?
+      raise JoinCodeExhausted, Organizations.t(:"errors.join_code_exhausted") if exhausted?
     end
 
     # Attach this code to the user's open request (creating one if needed),

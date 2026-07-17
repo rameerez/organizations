@@ -31,9 +31,10 @@ module Organizations
     # === Validations ===
 
     validates :email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
+    # Proc message: resolved at VALIDATION time so it follows I18n.locale.
     validates :email_normalized, presence: true,
                                  uniqueness: { scope: :organization_id,
-                                               message: "is already on this organization's allowlist" }
+                                               message: ->(*) { Organizations.t(:"attributes.allowlist_taken") } }
 
     # === Callbacks ===
 
