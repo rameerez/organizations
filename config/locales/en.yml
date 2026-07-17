@@ -97,16 +97,22 @@ en:
       cannot_leave_last_organization: "Cannot leave your only organization"
       organization_limit_reached: "Maximum number of organizations (%{max}) reached"
       no_current_organization_to_leave: "No current organization to leave"
+      cannot_delete_user_owns_organizations: "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first."
 
       # — Controller guards (default unauthorized copy) —
       unauthorized_role: "You need %{role} access to perform this action"
       unauthorized_permission: "You don't have permission to %{permission}"
       unauthorized: "You are not authorized to perform this action"
+      not_a_member: "You are not a member of this organization"
+      organization_required: "Organization required"
+      cannot_change_own_role: "You cannot change your own role"
+      invalid_role: "Invalid role: %{role}"
 
     # Flash notices produced by the controller-helper invitation flow.
     notices:
       welcome: "Welcome to %{organization}!"
       already_member: "You're already a member of %{organization}."
+      select_or_create_organization: "Please select or create an organization."
 
     # Model validation messages (errors.add second argument). These read as
     # "<Attribute> <message>" in full_messages — keep them lowercase fragments.

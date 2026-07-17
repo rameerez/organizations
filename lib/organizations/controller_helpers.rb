@@ -419,7 +419,7 @@ module Organizations
       flash_options[:notice] = notice unless notice.nil?
 
       # Keep current behavior for existing apps when nothing is configured/passed.
-      flash_options[:alert] = "Please select or create an organization." if flash_options.empty?
+      flash_options[:alert] = Organizations.t(:"notices.select_or_create_organization") if flash_options.empty?
 
       redirect_to no_organization_redirect_path, **flash_options
       false
@@ -468,7 +468,7 @@ module Organizations
 
       unless membership_exists_for?(acting_user, org)
         raise Organizations::NotAMember.new(
-          "You are not a member of this organization",
+          Organizations.t(:"errors.not_a_member"),
           organization: org,
           user: acting_user
         )
@@ -624,8 +624,10 @@ module Organizations
 
     def build_unauthorized_message(permission, required_role)
       if required_role
+        # Same custom-role fallback as ViewHelpers#organization_role_label:
+        # humanized, so "superfan" renders as "Superfan" in both places.
         Organizations.t(:"errors.unauthorized_role",
-                        role: Organizations.t(:"roles.#{required_role}", default: required_role.to_s))
+                        role: Organizations.t(:"roles.#{required_role}", default: required_role.to_s.humanize))
       elsif permission
         Organizations.t(:"errors.unauthorized_permission", permission: permission.to_s.humanize.downcase)
       else
@@ -663,7 +665,7 @@ module Organizations
             notice: config.no_organization_notice
           )
         end
-        format.json { render json: { error: "Organization required" }, status: :forbidden }
+        format.json { render json: { error: Organizations.t(:"errors.organization_required") }, status: :forbidden }
       end
     end
 

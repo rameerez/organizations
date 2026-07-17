@@ -636,7 +636,7 @@ module Organizations
           def prevent_deletion_while_owning_organizations
             return unless memberships.where(role: "owner").exists?
 
-            errors.add(:base, "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first.")
+            errors.add(:base, Organizations.t(:"errors.cannot_delete_user_owns_organizations"))
             throw(:abort)
           end
         end

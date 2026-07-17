@@ -77,14 +77,20 @@ es:
       cannot_leave_last_organization: "No puedes salir de tu única organización"
       organization_limit_reached: "Has alcanzado el máximo de organizaciones (%{max})"
       no_current_organization_to_leave: "No hay ninguna organización activa de la que salir"
+      cannot_delete_user_owns_organizations: "No se puede eliminar un usuario que aún es propietario de organizaciones. Transfiere la propiedad o elimina esas organizaciones primero."
 
       unauthorized_role: "Necesitas acceso de %{role} para hacer esto"
       unauthorized_permission: "No tienes permiso para %{permission}"
       unauthorized: "No estás autorizado para hacer esto"
+      not_a_member: "No eres miembro de esta organización"
+      organization_required: "Se requiere una organización"
+      cannot_change_own_role: "No puedes cambiar tu propio rol"
+      invalid_role: "Rol no válido: %{role}"
 
     notices:
       welcome: "¡Ya formas parte de %{organization}!"
       already_member: "Ya eres miembro de %{organization}."
+      select_or_create_organization: "Selecciona o crea una organización."
 
     attributes:
       membership_taken: "ya es miembro de esta organización"

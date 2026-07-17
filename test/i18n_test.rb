@@ -56,6 +56,38 @@ class I18nTest < ActiveSupport::TestCase
     assert_empty missing, "Organizations.t call sites without an en.yml key: #{missing.join(', ')}"
   end
 
+  # Key families addressed with interpolated key paths (roles.#{role} etc.)
+  # rather than static literals — exempt from the dead-key sweep below.
+  DYNAMIC_KEY_FAMILIES = %w[roles. invitation_status. join_request_status.].freeze
+
+  test "every en.yml key is referenced from lib/ or app/ (no dead catalog keys)" do
+    en = flatten_keys(load_locale("en"))
+    source = Dir[File.expand_path("../{lib,app}/**/*.{rb,erb}", __dir__)]
+      .map { |file| File.read(file) }.join("\n")
+
+    dead = en.reject do |key|
+      DYNAMIC_KEY_FAMILIES.any? { |family| key.start_with?(family) } || source.include?(key)
+    end
+
+    assert_empty dead,
+                 "en.yml keys never referenced from lib/ or app/ (drifted catalog): #{dead.join(', ')}"
+  end
+
+  test "en.yml and es.yml agree on interpolation variables for every key" do
+    en = flatten_pairs(load_locale("en"))
+    es = flatten_pairs(load_locale("es"))
+
+    mismatched = en.keys.select do |key|
+      next false unless es.key?(key)
+
+      en[key].to_s.scan(/%\{(\w+)\}/).sort != es[key].to_s.scan(/%\{(\w+)\}/).sort
+    end
+
+    assert_empty mismatched,
+                 "Keys whose %{...} interpolation variables differ between en and es " \
+                 "(raises MissingInterpolationArgument at runtime in one locale): #{mismatched.join(', ')}"
+  end
+
   # === Behavioral: errors localize ===
 
   test "error messages resolve from the catalog in English" do
@@ -183,5 +215,12 @@ class I18nTest < ActiveSupport::TestCase
       full = [prefix, key].compact.join(".")
       value.is_a?(Hash) ? flatten_keys(value, full) : [full]
     end
+  end
+
+  def flatten_pairs(hash, prefix = nil)
+    hash.flat_map do |key, value|
+      full = [prefix, key].compact.join(".")
+      value.is_a?(Hash) ? flatten_pairs(value, full).to_a : [[full, value]]
+    end.to_h
   end
 end
