@@ -126,6 +126,29 @@ module Organizations
       user
     end
 
+    # Force a KNOWN verification code onto a join request's active challenge,
+    # so tests can complete the emailed-code flow without intercepting mail.
+    #
+    # The database only ever stores a digest (SHA-256, peppered by row id) —
+    # before this helper, every host test suite reverse-engineered that
+    # recipe by hand (overwriting verification_code_digest with
+    # digest_verification_code). That's gem INTERNALS leaking into host
+    # tests; use this instead:
+    #
+    #   request.start_email_verification!(email: "j.doe@acme.com")
+    #   code = issue_verification_code(request)   # => "424242"
+    #   request.verify_email_code!(code)          # => Membership
+    #
+    # @param join_request [Organizations::JoinRequest] with a challenge started
+    # @param code [String] the plaintext code to force (default "424242")
+    # @return [String] the plaintext code, for typing into the flow
+    def issue_verification_code(join_request, code: "424242")
+      join_request.update!(
+        verification_code_digest: Organizations::JoinRequest.digest_verification_code(code, join_request.id)
+      )
+      code
+    end
+
     # Assert that a user is a member of an organization
     # @param user [User] The user
     # @param org [Organizations::Organization] The organization

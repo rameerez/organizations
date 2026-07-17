@@ -8,6 +8,8 @@ require "test_helper"
 # and that messages ride the i18n catalog.
 # rubocop:disable Metrics/ClassLength -- exhaustive outcome/reason contract suite, one class on purpose
 class JoinFlowTest < ActiveSupport::TestCase
+  include Organizations::TestHelpers
+
   def setup
     Organizations.reset_configuration!
     @owner = User.create!(email: "owner-#{SecureRandom.hex(4)}@example.com")
@@ -238,10 +240,9 @@ class JoinFlowTest < ActiveSupport::TestCase
 
   private
 
+  # The gem-shipped helper (Organizations::TestHelpers).
   def mint_code(request)
-    known = "424242"
-    request.update!(verification_code_digest: Organizations::JoinRequest.digest_verification_code(known, request.id))
-    known
+    issue_verification_code(request)
   end
 end
 # rubocop:enable Metrics/ClassLength

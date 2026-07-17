@@ -23,6 +23,8 @@ require "test_helper"
 #   4. Context carries organization, user, role, joined_via + the instrument.
 # rubocop:disable Metrics/ClassLength -- every join path + every non-path, one contract suite on purpose
 class MemberJoiningGateTest < ActiveSupport::TestCase
+  include Organizations::TestHelpers
+
   def setup
     Organizations.reset_configuration!
     @owner = User.create!(email: "owner-#{SecureRandom.hex(4)}@example.com", name: "Owner")
@@ -276,12 +278,10 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
 
   private
 
-  # Mint a known plaintext code by overwriting the stored digest — the same
-  # technique host apps use in their tests (the DB only ever holds digests).
+  # The gem-shipped helper (Organizations::TestHelpers) - hosts should use
+  # this too instead of reverse-engineering the digest recipe.
   def extract_plaintext_code(request)
-    known = "424242"
-    request.update!(verification_code_digest: Organizations::JoinRequest.digest_verification_code(known, request.id))
-    known
+    issue_verification_code(request)
   end
 end
 # rubocop:enable Metrics/ClassLength

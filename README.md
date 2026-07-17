@@ -1525,6 +1525,13 @@ john_at_acme:
 sign_in_as_organization_member(user, org, role: :admin)
 set_current_organization(org)
 
+# Complete the emailed-code flow without intercepting mail: force a KNOWN
+# plaintext code onto the request's challenge (the DB only stores digests —
+# don't reverse-engineer the digest recipe in your tests)
+request.start_email_verification!(email: "j.doe@acme.com")
+code = issue_verification_code(request)   # => "424242"
+request.verify_email_code!(code)          # => Membership
+
 # Or manually
 sign_in user
 switch_to_organization!(org)
