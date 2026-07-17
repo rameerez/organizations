@@ -366,3 +366,6 @@ module Organizations
     end
   end
 end
+
+# Host extension seam — see the load-hooks note in models/organization.rb.
+ActiveSupport.run_load_hooks(:organizations_invitation, Organizations::Invitation)

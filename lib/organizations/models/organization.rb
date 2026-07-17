@@ -643,3 +643,19 @@ module Organizations
     end
   end
 end
+
+# HOST EXTENSION SEAM (pay-gem style load hooks): fires on EVERY load of this
+# file — including Zeitwerk reloads via the app/models shims — so extensions
+# registered with ActiveSupport.on_load survive code reloading in development.
+# A bare `Organizations::Organization.class_eval` in an initializer runs ONCE
+# and evaporates on the first reload (the shim `load`s a fresh class object);
+# a `to_prepare` block works but is one shared basket — one bad constant in
+# it silently kills every extension after it. Load hooks are per-model and
+# re-run automatically. Register in an initializer:
+#
+#   ActiveSupport.on_load(:organizations_organization) do
+#     include OrganizationExtensions   # `self` is Organizations::Organization
+#   end
+#
+# Docs: https://api.rubyonrails.org/classes/ActiveSupport/LazyLoadHooks.html
+ActiveSupport.run_load_hooks(:organizations_organization, Organizations::Organization)

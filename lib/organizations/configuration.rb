@@ -198,6 +198,14 @@ module Organizations
     # Can be nil (use controller default), String, or Symbol
     attr_accessor :public_controller_layout
 
+    # Host helper modules to mix into the PUBLIC engine controller — it
+    # inherits ActionController::Base (not the host ApplicationController),
+    # so host layouts rendered by public pages need their helper modules
+    # declared here. Array of module names (Strings, constantized lazily at
+    # controller load — safe to set in an initializer) or Modules.
+    # @example config.public_controller_helpers = ["ApplicationHelper", "PageHelper"]
+    attr_accessor :public_controller_helpers
+
     # === Handlers (blocks) ===
     # @private - stored handler blocks
     attr_reader :unauthorized_handler, :no_organization_handler
@@ -274,6 +282,7 @@ module Organizations
       @public_controller = "ActionController::Base"
       @authenticated_controller_layout = nil
       @public_controller_layout = nil
+      @public_controller_helpers = []
 
       # Handlers (nil by default - use default behavior)
       @unauthorized_handler = nil
@@ -588,6 +597,11 @@ module Organizations
     def validate_controller_layouts!
       validate_layout_option!(@authenticated_controller_layout, "authenticated_controller_layout")
       validate_layout_option!(@public_controller_layout, "public_controller_layout")
+
+      unless @public_controller_helpers.is_a?(Array) &&
+             @public_controller_helpers.all? { |h| h.is_a?(String) || h.is_a?(Module) }
+        raise ConfigurationError, "public_controller_helpers must be an Array of Strings or Modules"
+      end
     end
 
     def validate_no_organization_messages!
