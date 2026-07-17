@@ -15,6 +15,14 @@ require "test_helper"
 #     blocks against the FRESH class object — the property that makes this
 #     reload-safe where a bare initializer class_eval is not.
 class LoadHooksTest < ActiveSupport::TestCase
+  def setup
+    Organizations.reset_configuration!
+  end
+
+  def teardown
+    Organizations.reset_configuration!
+  end
+
   MODEL_HOOKS = {
     organizations_organization: "Organizations::Organization",
     organizations_membership: "Organizations::Membership",

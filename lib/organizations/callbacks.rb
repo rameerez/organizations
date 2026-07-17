@@ -90,12 +90,11 @@ module Organizations
     end
 
     # Call callback while supporting flexible callback arities.
+    # (Review cleanup: the old `when 1, -1, -2 / else` branches were
+    # identical — zero-arity is the only special case.)
     def invoke_callback(callback, context)
-      case callback.arity
-      when 0
+      if callback.arity.zero?
         callback.call
-      when 1, -1, -2
-        callback.call(context)
       else
         callback.call(context)
       end

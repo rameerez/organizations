@@ -210,6 +210,14 @@ module Organizations
     end
 
     def error(reason, message)
+      # Developer guard (review finding): REASONS is a published contract
+      # hosts switch on — a typo'd symbol here would silently ship a reason
+      # nobody's copy mapping knows. (Hosts building their OWN Results may
+      # use their own symbols; this guards the gem's internal emissions.)
+      unless REASONS.include?(reason)
+        raise ArgumentError, "unknown JoinFlow reason #{reason.inspect} — add it to JoinFlow::REASONS"
+      end
+
       Result.new(outcome: :error, reason: reason, message: message)
     end
   end

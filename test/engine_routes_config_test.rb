@@ -59,4 +59,28 @@ class EngineRoutesConfigTest < ActiveSupport::TestCase
 
     assert_equal ALL, Organizations.configuration.engine_route_groups
   end
+
+  test "a configure that fails validation leaves the previous configuration intact" do
+    Organizations.configure { |c| c.engine_routes = [:switching] }
+
+    # This block MUTATES two settings, then validate! rejects one of them —
+    # atomicity means NEITHER survives (before the fix, both stuck to the
+    # live config and every later configure re-raised the stale error:
+    # a seed-dependent heisenbug this suite actually hit).
+    assert_raises(Organizations::ConfigurationError) do
+      Organizations.configure do |c|
+        c.engine_routes = [:memberships]
+        c.verification_max_sends = 0
+      end
+    end
+
+    assert_equal [:switching], Organizations.configuration.engine_route_groups,
+                 "the failed block's valid-looking mutation must not survive"
+    assert_equal 5, Organizations.configuration.verification_max_sends
+
+    # And the config is not poisoned: an unrelated configure works.
+    Organizations.configure { |c| c.invitation_expiry = 3.days }
+
+    assert_equal 3.days, Organizations.configuration.invitation_expiry
+  end
 end

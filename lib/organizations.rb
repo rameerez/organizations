@@ -171,9 +171,23 @@ module Organizations
     #     config.invitation_expiry = 7.days
     #   end
     #
+    # ATOMIC on validation failure: a configure block that raises (typically
+    # via validate!) restores the previous configuration instead of leaving
+    # half-applied settings on the live object. Found the hard way: a
+    # validation-failure left its invalid assignment behind on the shared
+    # config, and every LATER configure call re-raised that stale error —
+    # an order-dependent heisenbug in test suites and a real hazard for
+    # hosts rescuing ConfigurationError in initializers.
+    # NOTE: restoration is a shallow dup — use SETTERS in configure blocks
+    # (config.x = [...]), never in-place mutation (config.x << ...), which
+    # is the documented contract anyway.
     def configure
+      snapshot = configuration.dup
       yield(configuration)
       configuration.validate!
+    rescue StandardError
+      @configuration = snapshot
+      raise
     end
 
     # Reset configuration to defaults
