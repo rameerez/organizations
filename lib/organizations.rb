@@ -46,6 +46,19 @@ module Organizations
   class JoinRequestExpired < JoinRequestError; end
   class JoinRequestAlreadyDecided < JoinRequestError; end
 
+  # Raised (typically by the host's `on_member_joining` gate) to VETO a
+  # membership that is about to be created — seat limits, member caps,
+  # compliance holds. The gate dispatches strictly inside the creating
+  # transaction, so raising this rolls everything back cleanly: no membership
+  # row, join requests stay pending (resumable), invitations stay unaccepted.
+  # Raising without a message gets the localized default
+  # (organizations.errors.membership_vetoed).
+  class MembershipVetoed < Error
+    def initialize(message = nil)
+      super(message || Organizations.t(:"errors.membership_vetoed"))
+    end
+  end
+
   # Join code errors (verified joining)
   # JoinCodeInvalid covers unknown, revoked, and expired codes — hosts should
   # show the same generic message for all three (don't leak which codes exist).

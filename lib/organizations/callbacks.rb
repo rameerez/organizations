@@ -13,6 +13,7 @@ module Organizations
     EVENTS = %i[
       organization_created
       member_invited
+      member_joining
       member_joined
       member_removed
       role_changed
@@ -43,6 +44,7 @@ module Organizations
     CALLBACK_READERS = {
       organization_created: :on_organization_created_callback,
       member_invited: :on_member_invited_callback,
+      member_joining: :on_member_joining_callback,
       member_joined: :on_member_joined_callback,
       member_removed: :on_member_removed_callback,
       role_changed: :on_role_changed_callback,

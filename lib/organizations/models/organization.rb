@@ -163,6 +163,19 @@ module Organizations
 
       membership = nil
       ActiveRecord::Base.transaction do
+        # THE MEMBERSHIP GATE (strict, vetoing, pre-persist): the one place a
+        # host can abort ANY membership creation — seat limits, member caps.
+        # Raising here rolls back cleanly (nothing persisted yet). Runs after
+        # the idempotency check on purpose: an existing member isn't joining.
+        Callbacks.dispatch(
+          :member_joining,
+          strict: true,
+          organization: self,
+          user: user,
+          role: role_sym.to_s,
+          joined_via: "manual"
+        )
+
         membership = memberships.create!(
           user: user,
           role: role_sym.to_s

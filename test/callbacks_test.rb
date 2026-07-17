@@ -75,6 +75,7 @@ module Organizations
       expected = %i[
         organization_created
         member_invited
+        member_joining
         member_joined
         member_removed
         role_changed
@@ -386,6 +387,7 @@ module Organizations
       Organizations.configure do |config|
         config.on_organization_created { procs[:org_created] = true }
         config.on_member_invited { procs[:invited] = true }
+        config.on_member_joining { procs[:joining] = true }
         config.on_member_joined { procs[:joined] = true }
         config.on_member_removed { procs[:removed] = true }
         config.on_role_changed { procs[:role] = true }

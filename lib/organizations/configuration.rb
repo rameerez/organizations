@@ -190,6 +190,7 @@ module Organizations
     # @private - stored callback blocks
     attr_reader :on_organization_created_callback,
                 :on_member_invited_callback,
+                :on_member_joining_callback,
                 :on_member_joined_callback,
                 :on_member_removed_callback,
                 :on_role_changed_callback,
@@ -263,6 +264,7 @@ module Organizations
       # Callbacks (nil by default - no-op)
       @on_organization_created_callback = nil
       @on_member_invited_callback = nil
+      @on_member_joining_callback = nil
       @on_member_joined_callback = nil
       @on_member_removed_callback = nil
       @on_role_changed_callback = nil
@@ -317,6 +319,37 @@ module Organizations
     # @yieldparam context [CallbackContext] Context with organization, invitation, invited_by
     def on_member_invited(&block)
       @on_member_invited_callback = block if block_given?
+    end
+
+    # THE MEMBERSHIP GATE — called STRICTLY, inside the creating transaction,
+    # immediately BEFORE any non-owner membership row is inserted, on EVERY
+    # join path: add_member!, invitation acceptance, join-request approval
+    # (which covers join codes, domain-email verification, allowlists, and
+    # join_with_account_email!). Raise Organizations::MembershipVetoed (or any
+    # error) to veto: the transaction rolls back cleanly — no membership, join
+    # requests stay pending (resumable), invitations stay unaccepted.
+    #
+    # This is where hard limits belong (plan seat caps, per-org member caps,
+    # compliance holds). Unlike on_member_joined and the other after-callbacks
+    # (error-isolated by design), this one CAN and SHOULD abort the operation.
+    # It deliberately does NOT fire for owner memberships created with the
+    # organization itself (creating your own org is not "joining"), nor for
+    # idempotent already-a-member paths, nor for role changes.
+    #
+    # @yield [context] Block to execute (raise to veto)
+    # @yieldparam context [CallbackContext] organization, user, role,
+    #   joined_via, and the instrument (invitation/join_request) when one applies
+    #
+    # @example Enforce plan seat limits on every join path (pricing_plans)
+    #   config.on_member_joining do |ctx|
+    #     limit = ctx.organization.current_plan&.limit_for(:team_members)
+    #     if limit && ctx.organization.member_count >= limit
+    #       raise Organizations::MembershipVetoed,
+    #             "This organization has reached its plan's member limit."
+    #     end
+    #   end
+    def on_member_joining(&block)
+      @on_member_joining_callback = block if block_given?
     end
 
     # Called when a member joins (invitation accepted)

@@ -439,10 +439,31 @@ module Organizations
     end
 
     def create_membership!
+      effective_joined_via = joined_via.presence || "manual"
+
+      # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — covers every
+      # verified-joining path, since approval is the only way a request
+      # becomes a membership (codes, domains, allowlists, account-email
+      # shortcut all funnel here). Runs inside approve!'s locked transaction:
+      # a veto rolls back the status flip too, so the request stays PENDING —
+      # a safe, resumable state (approve again once the host unblocks).
+      # ⚠️ Join-code nuance: redemption consumes a use BEFORE approval, so a
+      # vetoed redemption still spends a use — max_uses is an anti-abuse cap,
+      # not a seat count (see README "Verified joining").
+      Callbacks.dispatch(
+        :member_joining,
+        strict: true,
+        organization: organization,
+        user: user,
+        role: "member",
+        joined_via: effective_joined_via,
+        join_request: self
+      )
+
       organization.memberships.create!(
         user: user,
         role: "member",
-        joined_via: joined_via.presence || "manual",
+        joined_via: effective_joined_via,
         verified_email: email_verified? ? verification_email : nil,
         verified_email_normalized: email_verified? ? verification_email_normalized : nil,
         verified_at: verified_at,

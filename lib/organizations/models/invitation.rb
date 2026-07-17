@@ -234,6 +234,20 @@ module Organizations
     # in this org (rare recycled-address edge), the membership is still
     # created, just without the verified-email stamp.
     def create_membership_for!(accepting_user, skip_email_validation)
+      # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — see
+      # Configuration#on_member_joining. Runs inside accept!'s locked
+      # transaction: a veto rolls back accepted_at too, so the invitation
+      # stays pending and can be accepted again once the host unblocks.
+      Callbacks.dispatch(
+        :member_joining,
+        strict: true,
+        organization: organization,
+        user: accepting_user,
+        role: role,
+        joined_via: "invited",
+        invitation: self
+      )
+
       organization.memberships.create!(
         **base_membership_attributes(accepting_user),
         **verified_email_attributes_for(accepting_user, skip_email_validation)

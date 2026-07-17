@@ -11,6 +11,8 @@ module Organizations
   # - :member_removed => organization, membership, user, removed_by
   # - :role_changed => organization, membership, old_role, new_role, changed_by
   # - :ownership_transferred => organization, old_owner, new_owner
+  # - :member_joining => organization, user, role, joined_via, invitation/join_request (whichever instrument applies)
+  #   (STRICT + pre-persist: raise Organizations::MembershipVetoed to veto — see Configuration#on_member_joining)
   # - :join_request_created => organization, user, join_request
   # - :join_request_approved => organization, user, join_request, membership, decided_by (nil for auto-approvals)
   # - :join_request_rejected => organization, user, join_request, decided_by
@@ -35,6 +37,8 @@ module Organizations
     :new_owner,       # User instance - new owner (for ownership_transferred)
     :join_request,    # Organizations::JoinRequest instance (for join_request_* events)
     :decided_by,      # User instance - who approved/rejected the join request (nil for auto)
+    :role,            # String/Symbol - the role the membership will be created with (for member_joining)
+    :joined_via,      # String - membership provenance: invited|code|domain_email|allowlist|manual (for member_joining)
     :permission,      # Symbol - the permission that was required (for unauthorized)
     :required_role,   # Symbol - the role that was required (for unauthorized)
     :metadata,        # Hash - additional contextual data
