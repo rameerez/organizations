@@ -213,7 +213,8 @@ module Organizations
                 :on_ownership_transferred_callback,
                 :on_join_request_created_callback,
                 :on_join_request_approved_callback,
-                :on_join_request_rejected_callback
+                :on_join_request_rejected_callback,
+                :on_verification_delivery_failed_callback
 
     # === Custom Roles ===
     # @private - custom roles definition
@@ -289,6 +290,7 @@ module Organizations
       @on_join_request_created_callback = nil
       @on_join_request_approved_callback = nil
       @on_join_request_rejected_callback = nil
+      @on_verification_delivery_failed_callback = nil
 
       # Custom roles
       @custom_roles_definition = nil
@@ -418,6 +420,18 @@ module Organizations
     # @yieldparam context [CallbackContext] Context with organization, user, join_request, decided_by
     def on_join_request_rejected(&block)
       @on_join_request_rejected_callback = block if block_given?
+    end
+
+    # Called when a verification-code email FAILS to enqueue/deliver.
+    # The gem already rolls the challenge's throttle bookkeeping back (so the
+    # user can retry immediately) — this hook is the host's observability
+    # seam: report to your error tracker (Rails.error, Sentry, …) so silent
+    # mail outages don't strand joiners.
+    # @yield [context] Block to execute
+    # @yieldparam context [CallbackContext] organization, user, join_request,
+    #   metadata: { "error_class" =>, "error_message" => }
+    def on_verification_delivery_failed(&block)
+      @on_verification_delivery_failed_callback = block if block_given?
     end
 
     # === Roles Configuration ===

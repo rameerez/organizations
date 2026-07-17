@@ -524,7 +524,43 @@ module Organizations
       mailer_class = Organizations.configuration.verification_mailer.constantize
       mailer_class.code_email(self, code).deliver_later
     rescue StandardError => e
+      # The challenge row already COMMITTED (throttle stamped, send counted)
+      # before delivery was attempted — if we only logged here, the user
+      # would sit behind the resend throttle (and burn one of max_sends)
+      # waiting for a code that never left the building. Roll the throttle
+      # bookkeeping back so an immediate retry is allowed, and give the host
+      # a real signal (the on_verification_delivery_failed callback) instead
+      # of a log line nobody watches.
+      rollback_undelivered_challenge!(code)
       Callbacks.log_error("[Organizations] Failed to send verification email: #{e.message}")
+      Callbacks.dispatch(
+        :verification_delivery_failed,
+        organization: organization,
+        user: user,
+        join_request: self,
+        metadata: { "error_class" => e.class.name, "error_message" => e.message }
+      )
+    end
+
+    # Revert the challenge bookkeeping for a code that never got delivered.
+    # Digest-guarded under lock: if a concurrent resend already minted a new
+    # code (different digest) or a verify burned this one (nil digest), the
+    # state belongs to that other operation — leave it alone.
+    def rollback_undelivered_challenge!(code)
+      with_lock do
+        break unless verification_code_digest == self.class.digest_verification_code(code, id)
+
+        update!(
+          verification_code_digest: nil,
+          verification_sent_at: nil,
+          verification_expires_at: nil,
+          verification_attempts: 0,
+          verification_sends_count: [ verification_sends_count - 1, 0 ].max
+        )
+      end
+    rescue StandardError => e
+      # Never let cleanup failure mask the original delivery failure.
+      Callbacks.log_error("[Organizations] Failed to roll back undelivered challenge: #{e.message}")
     end
 
     def set_expiry

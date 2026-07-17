@@ -21,6 +21,7 @@ module Organizations
       join_request_created
       join_request_approved
       join_request_rejected
+      verification_delivery_failed
     ].freeze
 
     module_function
@@ -51,7 +52,8 @@ module Organizations
       ownership_transferred: :on_ownership_transferred_callback,
       join_request_created: :on_join_request_created_callback,
       join_request_approved: :on_join_request_approved_callback,
-      join_request_rejected: :on_join_request_rejected_callback
+      join_request_rejected: :on_join_request_rejected_callback,
+      verification_delivery_failed: :on_verification_delivery_failed_callback
     }.freeze
 
     # Get the callback proc for an event

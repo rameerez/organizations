@@ -83,6 +83,7 @@ module Organizations
         join_request_created
         join_request_approved
         join_request_rejected
+        verification_delivery_failed
       ]
       assert_equal expected, Callbacks::EVENTS
     end
@@ -395,6 +396,7 @@ module Organizations
         config.on_join_request_created { procs[:jr_created] = true }
         config.on_join_request_approved { procs[:jr_approved] = true }
         config.on_join_request_rejected { procs[:jr_rejected] = true }
+        config.on_verification_delivery_failed { procs[:delivery_failed] = true }
       end
 
       Callbacks::EVENTS.each do |event|
