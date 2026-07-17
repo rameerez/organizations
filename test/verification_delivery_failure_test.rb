@@ -109,4 +109,51 @@ class VerificationDeliveryFailureTest < ActiveSupport::TestCase
     assert_not_nil @request.verification_sent_at
     assert_equal 1, @request.verification_sends_count
   end
+
+  test "a failed RESEND rolls back to the prior send count, not to zero" do
+    # First send succeeds (send count 1), then the mailer breaks and a resend
+    # fails. The rollback must decrement 2 → 1 — a hard reset to 0 would
+    # wrongly erase the successful first send from the max_sends accounting.
+    Organizations.configure { |config| config.verification_resend_interval = 0.seconds }
+    @request.start_email_verification!(email: "someone@example.com")
+
+    Organizations.configure do |config|
+      config.verification_mailer = "VerificationDeliveryFailureTest::BrokenMailer"
+    end
+    @request.reload.start_email_verification!(email: "someone@example.com")
+
+    @request.reload
+
+    assert_equal 1, @request.verification_sends_count,
+                 "failed resend must roll 2→1, preserving the successful send in the cap"
+    assert_nil @request.verification_code_digest,
+               "the undelivered replacement code must not stay redeemable"
+  end
+
+  test "the rollback digest-guard leaves a challenge alone when the code is not the undelivered one" do
+    # The guard (`break unless digest == digest(code)`) is what protects a
+    # CONCURRENT resend/verify: if another operation already minted a new
+    # code (different digest) or burned this one (nil digest), the state
+    # belongs to that operation and must not be reverted.
+    @request.start_email_verification!(email: "someone@example.com")
+    Organizations::TestHelpers.issue_verification_code(@request, code: "424242") # module-level form on purpose
+    @request.reload
+
+    live_digest = @request.verification_code_digest
+
+    # A rollback for some OTHER code (a stale failed delivery) must not touch
+    # the live challenge.
+    @request.send(:rollback_undelivered_challenge!, "000000")
+    @request.reload
+
+    assert_equal live_digest, @request.verification_code_digest, "guard must protect a foreign digest"
+    assert_equal 1, @request.verification_sends_count
+
+    # A rollback for THE undelivered code does revert it.
+    @request.send(:rollback_undelivered_challenge!, "424242")
+    @request.reload
+
+    assert_nil @request.verification_code_digest
+    assert_equal 0, @request.verification_sends_count
+  end
 end

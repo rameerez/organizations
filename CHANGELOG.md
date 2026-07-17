@@ -33,6 +33,7 @@
 
 ### Changed
 
+- `Organizations.configure` is now **atomic**: if the block (or the `validate!` it triggers) raises, the previous configuration is restored instead of leaving half-applied settings behind — a raising initializer no longer poisons later `configure` calls. Restoration is a shallow snapshot: use setters in configure blocks (`config.x = [...]`), never in-place mutation (`config.x << ...`).
 - `organization_role_label`/`organization_invitation_status_label` and the default unauthorized messages resolve through I18n (English output unchanged; the unauthorized-role message now uses the translated label, e.g. "You need Admin access…").
 - The two near-duplicate cannot-promote-to-owner messages were unified into one catalog key.
 - Stock mailers self-register their view path and guard `Rails.application` access properly, so they render outside a full Rails app (found by the first tests to ever render them).

@@ -184,6 +184,22 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     refute @org.reload.has_member?(confirmed)
   end
 
+  test "gate fires for allowlist-provenance joins with the roster joined_via" do
+    @org.import_allowlist!(["rostered@club-example.com"])
+    request = @user.request_to_join!(@org)
+    request.start_email_verification!(email: "rostered@club-example.com")
+    code = extract_plaintext_code(request)
+    contexts = install_recording_gate
+
+    request.verify_email_code!(code)
+
+    ctx = contexts.last
+
+    assert_equal "allowlist", ctx.joined_via
+    assert_equal request, ctx.join_request
+    assert @org.reload.has_member?(@user)
+  end
+
   test "gate context for join-request approval carries the request and provenance" do
     code = @org.generate_join_code!(label: "poster", auto_approve: true)
     contexts = install_recording_gate
@@ -210,12 +226,19 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
   end
 
   test "gate does not fire for idempotent already-a-member paths" do
+    # Invitation sent BEFORE the user becomes a member (send_invite_to!
+    # rightly refuses to invite existing members), accepted after.
+    invitation = @org.send_invite_to!(@user.email, invited_by: @owner)
     @org.add_member!(@user)
     contexts = install_recording_gate
 
     @org.add_member!(@user) # idempotent no-op
     code = @org.generate_join_code!(auto_approve: true)
     Organizations::JoinCode.redeem(code.code, user: @user) # already a member
+
+    # Accepting an invitation while ALREADY a member reuses the membership —
+    # nobody is joining, so the gate must stay silent on this path too.
+    invitation.accept!(@user)
 
     assert_empty contexts, "an existing member re-joining must not hit the gate"
   end

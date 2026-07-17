@@ -39,6 +39,20 @@ class JoinStateTest < ActiveSupport::TestCase
     assert_equal :pending, state.status
   end
 
+  test "rejected request → :entry (a decided request must not read as waiting)" do
+    request = @user.request_to_join!(@org)
+    request.reject!(rejected_by: @owner)
+
+    assert_equal :entry, state.status
+  end
+
+  test "expired request → :entry (a timed-out request must not read as waiting forever)" do
+    request = @user.request_to_join!(@org)
+    request.update!(expires_at: 1.minute.ago)
+
+    assert_equal :entry, state.status
+  end
+
   test "challenge in flight → :verifying (until verified)" do
     @org.add_domain!("example.com")
     request = @user.request_to_join!(@org)

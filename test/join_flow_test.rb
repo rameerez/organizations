@@ -38,6 +38,21 @@ class JoinFlowTest < ActiveSupport::TestCase
     assert_equal 0, code.reload.uses_count, "an existing member must not consume a code use"
   end
 
+  test "the already-member short-circuit covers the email and verification_code inputs too" do
+    @org.add_domain!("example.com")
+    membership = @org.add_member!(@user)
+
+    email_result = attempt(email: "someone@example.com")
+
+    assert_predicate email_result, :member?, "an existing member must not start a challenge"
+    assert_equal membership, email_result.membership
+    assert_equal 0, @org.join_requests.count, "no request may be minted for a member"
+
+    verify_result = attempt(verification_code: "123456")
+
+    assert_predicate verify_result, :member?, "an existing member must not reach code verification"
+  end
+
   # === Code path ===
 
   test "valid auto-approve code returns :member with the membership" do
@@ -68,12 +83,17 @@ class JoinFlowTest < ActiveSupport::TestCase
     refute @org.has_member?(@user)
   end
 
-  test "unknown, foreign, and revoked codes are indistinguishable (:join_code_invalid)" do
+  test "unknown, foreign, revoked, and expired codes are indistinguishable (:join_code_invalid)" do
     other_org = @owner.create_organization!("Other Org")
     foreign = other_org.generate_join_code!(auto_approve: true)
     revoked = @org.generate_join_code!(auto_approve: true).tap(&:revoke!)
+    # Expired takes a DIFFERENT code path than the others (it survives the
+    # not_revoked lookup and only fails inside redeem! → ensure_redeemable!),
+    # so it must be pinned separately or an existence leak on that branch
+    # ships undetected.
+    expired = @org.generate_join_code!(auto_approve: true, expires_at: 1.minute.ago)
 
-    ["NOPE-NOPE", foreign.code, revoked.code].each do |code|
+    ["NOPE-NOPE", foreign.code, revoked.code, expired.code].each do |code|
       result = attempt(code: code)
 
       assert_predicate result, :error?, "expected error for #{code}"
@@ -82,6 +102,7 @@ class JoinFlowTest < ActiveSupport::TestCase
     end
 
     assert_equal 0, foreign.reload.uses_count, "a foreign code must not be consumed"
+    assert_equal 0, expired.reload.uses_count, "an expired code must not be consumed"
   end
 
   test "exhausted code returns :join_code_exhausted" do

@@ -101,6 +101,9 @@ config.engine_routes = { except: [:organizations] }  # keep switching/membership
 # Groups: :switching, :organizations, :memberships, :invitations, :public_invitations
 ```
 
+> [!WARNING]
+> Excluding a group also removes its **route helpers** — audit anything that references them: a custom `on_no_organization` handler calling `new_organization_path` raises `NameError` once `:organizations` is excluded (the default `redirect_path_when_no_organization = "/organizations/new"` would 404 too — point it somewhere real). The reference views also link across groups (the memberships page links to `organization_path`), so hosts that keep some engine pages while excluding others should retheme the copied views accordingly.
+
 If your account model isn't named `User`:
 
 ```ruby
@@ -1294,7 +1297,10 @@ Organizations.configure do |config|
 
   # === Invitation Flow Redirects ===
   # Where to redirect unauthenticated users when they try to accept an invitation
-  # Default: nil (uses new_user_registration_path or root_path)
+  # Default: nil = known-user promotion (since 0.5.0): if the invited address
+  # already has an account, sign-IN (new_user_session_path); otherwise
+  # sign-UP (new_user_registration_path), falling back to root_path.
+  # Set this to opt out of the lookup.
   config.redirect_path_when_invitation_requires_authentication = "/users/sign_up"
   # Or use a Proc: ->(invitation, user) { "/signup?invite=#{invitation.token}" }
 
@@ -1492,10 +1498,15 @@ end
 |----------|----------------|------|
 | `on_organization_created` | `organization`, `user` | After |
 | `on_member_invited` | `organization`, `invitation`, `invited_by` | **Before (strict)** |
+| `on_member_joining` | `organization`, `user`, `role`, `joined_via`, `invitation`/`join_request` | **Before (strict)** — THE membership gate; fires pre-persist on every join path |
 | `on_member_joined` | `organization`, `membership`, `user` | After |
 | `on_member_removed` | `organization`, `membership`, `user`, `removed_by` | After |
 | `on_role_changed` | `organization`, `membership`, `old_role`, `new_role`, `changed_by` | After |
 | `on_ownership_transferred` | `organization`, `old_owner`, `new_owner` | After |
+| `on_join_request_created` | `organization`, `user`, `join_request` | After |
+| `on_join_request_approved` | `organization`, `user`, `join_request`, `membership`, `decided_by` (nil for auto) | After |
+| `on_join_request_rejected` | `organization`, `user`, `join_request`, `decided_by` | After |
+| `on_verification_delivery_failed` | `organization`, `user`, `join_request`, `metadata` (`error_class`/`error_message`) | After |
 
 **Callback modes:**
 - **After**: Runs after the action completes. Errors are logged but don't block the operation. Use for notifications, analytics, and audit logs.
@@ -1688,9 +1699,10 @@ organizations_memberships
   - created_at / updated_at
 
   unique index: [user_id, organization_id]
-  partial unique index: [organization_id] where role = 'owner'   (single owner)
-  partial unique index: [organization_id, verified_email_normalized]
-    where verified_email_normalized is not null                  (one proven inbox = one member)
+  partial unique index: [organization_id] where role = 'owner'   (single owner; pg/sqlite —
+    generated-column emulation on MySQL)
+  unique index: [organization_id, verified_email_normalized]     (one proven inbox = one member;
+    plain composite — NULLs never collide, so no WHERE clause is needed)
 ```
 
 ### organizations_invitations
@@ -1930,8 +1942,12 @@ These constraints prevent duplicate data at the database level:
 | Constraint | Purpose |
 |------------|---------|
 | `memberships [user_id, organization_id]` | User can only have one membership per org |
-| `invitations [organization_id, email] WHERE accepted_at IS NULL` | Only one pending invitation per email per org |
+| `memberships [organization_id] WHERE role = 'owner'` | Exactly one owner per org |
+| `memberships [organization_id, verified_email_normalized]` | One proven inbox = one member per org |
+| `invitations [organization_id, LOWER(email)] WHERE accepted_at IS NULL` | Only one pending invitation per email per org |
 | `invitations [token]` | Invitation tokens are globally unique |
+| `join_requests [organization_id, user_id] WHERE status = 'pending'` | One open join request per user per org |
+| `join_codes [code]` | Join codes are globally unique |
 
 ### Row-level locking
 
