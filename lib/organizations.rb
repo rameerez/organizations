@@ -104,6 +104,7 @@ module Organizations
   autoload :JoinFlow, "organizations/join_flow"
   autoload :JoinState, "organizations/join_state"
   autoload :MetadataFlags, "organizations/metadata_flags"
+  autoload :OrganizationScoped, "organizations/organization_scoped"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers

@@ -183,6 +183,38 @@ module Organizations
     attr_accessor :additional_organization_params
 
     # === Engine configuration ===
+
+    # Which engine route groups to draw (devise_for-style skip/only, see
+    # https://rubydoc.info/github/heartcombo/devise/main/ActionDispatch/Routing/Mapper#devise_for-instance_method
+    # for the pattern precedent). nil (default) draws everything.
+    #
+    #   config.engine_routes = { except: [:organizations] } # no org CRUD
+    #   config.engine_routes = { only: [:switching, :public_invitations] }
+    #
+    # Groups: :switching (POST /organizations/switch/:id), :organizations
+    # (org CRUD), :memberships, :invitations (authenticated management),
+    # :public_invitations (token acceptance pages).
+    #
+    # Why this exists: hosts that keep the models but not the whole engine
+    # UI (e.g. an app where org creation is admin-vetted) previously had to
+    # SHADOW engine routes with redirects declared before the mount — a
+    # route-order-load-bearing hack that actually bit one production host
+    # (the engine's resources :organizations swallowed an app route as :id).
+    # Declare what you want instead.
+    attr_reader :engine_routes
+
+    ENGINE_ROUTE_GROUPS = %i[switching organizations memberships invitations public_invitations].freeze
+
+    def engine_routes=(value)
+      @engine_routes = value.nil? ? nil : normalize_engine_routes(value)
+    end
+
+    # The resolved set of enabled groups.
+    # @return [Array<Symbol>]
+    def engine_route_groups
+      @engine_routes || ENGINE_ROUTE_GROUPS
+    end
+
     # Base controller for authenticated routes (default: ::ApplicationController)
     attr_accessor :parent_controller
 
@@ -278,6 +310,7 @@ module Organizations
       @additional_organization_params = []
 
       # Engine
+      @engine_routes = nil
       @parent_controller = "::ApplicationController"
       @public_controller = "ActionController::Base"
       @authenticated_controller_layout = nil
@@ -628,6 +661,40 @@ module Organizations
 
       raise ConfigurationError,
             "#{option_name} must be nil or a String"
+    end
+
+    # Normalize {only:}/{except:}/Array(=only) into the enabled-group list,
+    # rejecting unknown group names loudly at configure time.
+    def normalize_engine_routes(value)
+      case value
+      when Array
+        validate_engine_route_groups!(value)
+      when Hash
+        only = value[:only]
+        except = value[:except]
+        if [ only, except ].compact.size != 1
+          raise ConfigurationError, "engine_routes takes exactly one of only:/except: (or an Array meaning only:)"
+        end
+
+        if only
+          validate_engine_route_groups!(Array(only))
+        else
+          ENGINE_ROUTE_GROUPS - validate_engine_route_groups!(Array(except))
+        end
+      else
+        raise ConfigurationError, "engine_routes must be a Hash with only:/except:, an Array, or nil"
+      end
+    end
+
+    def validate_engine_route_groups!(groups)
+      groups = groups.map(&:to_sym)
+      unknown = groups - ENGINE_ROUTE_GROUPS
+      unless unknown.empty?
+        raise ConfigurationError,
+              "Unknown engine route group(s): #{unknown.join(', ')}. Valid: #{ENGINE_ROUTE_GROUPS.join(', ')}"
+      end
+
+      groups
     end
   end
 end
