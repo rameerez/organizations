@@ -139,6 +139,11 @@ module Organizations
     #   code = issue_verification_code(request)   # => "424242"
     #   request.verify_email_code!(code)          # => Membership
     #
+    # Also callable WITHOUT including the module —
+    #   Organizations::TestHelpers.issue_verification_code(request)
+    # — for suites whose own factory names (create_user, …) would collide
+    # with this module's (a real host hit exactly that).
+    #
     # @param join_request [Organizations::JoinRequest] with a challenge started
     # @param code [String] the plaintext code to force (default "424242")
     # @return [String] the plaintext code, for typing into the flow
@@ -148,6 +153,10 @@ module Organizations
       )
       code
     end
+    module_function :issue_verification_code
+    # module_function makes the INSTANCE copy private — fine for included
+    # test usage (implicit receiver) while enabling the module-level call.
+    public :issue_verification_code
 
     # Assert that a user is a member of an organization
     # @param user [User] The user
