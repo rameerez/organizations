@@ -20,7 +20,7 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_v
     # One proven email address => one membership per organization.
     # NULLs never collide in unique indexes on every supported adapter, so
     # existing (unverified) memberships are unconstrained.
-    add_index :organizations_memberships, [:organization_id, :verified_email_normalized],
+    add_index :organizations_memberships, [ :organization_id, :verified_email_normalized ],
               unique: true, name: "index_org_memberships_verified_email_unique"
 
     # === Invitation metadata parity ===
@@ -41,7 +41,7 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_v
       t.timestamps
     end
 
-    add_index :organizations_domains, [:organization_id, :domain], unique: true
+    add_index :organizations_domains, [ :organization_id, :domain ], unique: true
     add_index :organizations_domains, :domain
 
     # === Join codes ("PINs") ===
@@ -80,7 +80,7 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_v
       t.timestamps
     end
 
-    add_index :organizations_allowlist_entries, [:organization_id, :email_normalized], unique: true
+    add_index :organizations_allowlist_entries, [ :organization_id, :email_normalized ], unique: true
 
     # === Join requests ===
 
@@ -143,7 +143,7 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_v
       end
       add_index :organizations_join_requests, :pending_user_key, unique: true, name: "index_org_join_requests_pending_unique"
     else
-      add_index :organizations_join_requests, [:organization_id, :user_id], name: "index_org_join_requests_on_org_and_user"
+      add_index :organizations_join_requests, [ :organization_id, :user_id ], name: "index_org_join_requests_on_org_and_user"
     end
   end
 
@@ -151,7 +151,7 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_v
 
   def primary_and_foreign_key_types
     config = Rails.configuration.generators
-    setting = config.options[config.orm][:primary_key_type]
+    setting = config.options[config.orm][ :primary_key_type ]
     primary_key_type = setting || :primary_key
     foreign_key_type = setting || :bigint
     [primary_key_type, foreign_key_type]
