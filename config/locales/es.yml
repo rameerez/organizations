@@ -50,6 +50,7 @@ es:
       verification_resend_throttled: "Espera un momento antes de pedir otro código"
       account_email_trust_disabled: "La verificación por email de cuenta está desactivada (config.trust_confirmed_account_email)"
       account_email_unconfirmed: "El email de la cuenta no está confirmado"
+      not_accepting_requests: "Esta organización no acepta solicitudes ahora mismo"
 
       invitation_expired: "Esta invitación ha caducado"
       invitation_already_accepted: "Esta invitación ya ha sido aceptada"

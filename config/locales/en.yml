@@ -67,6 +67,7 @@ en:
       verification_resend_throttled: "Please wait before requesting another code"
       account_email_trust_disabled: "Account-email trust is disabled (see config.trust_confirmed_account_email)"
       account_email_unconfirmed: "The account email has not been confirmed"
+      not_accepting_requests: "This organization is not accepting join requests right now"
 
       # — Invitations —
       invitation_expired: "This invitation has expired"

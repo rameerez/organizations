@@ -89,6 +89,8 @@ module Organizations
   autoload :InvitationAcceptanceResult, "organizations/invitation_acceptance_result"
   autoload :InvitationAcceptanceFailure, "organizations/invitation_acceptance_failure"
   autoload :EmailNormalizer, "organizations/email_normalizer"
+  autoload :JoinFlow, "organizations/join_flow"
+  autoload :JoinState, "organizations/join_state"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers

@@ -64,6 +64,15 @@ module Organizations
 
     scope :not_revoked, -> { where(revoked_at: nil) }
 
+    # Codes that can actually be redeemed right now — the SQL twin of
+    # #active? (not revoked, not expired, not exhausted). Powers
+    # Organization#accepts_code_joining? without loading rows.
+    scope :active, lambda {
+      not_revoked
+        .where("expires_at IS NULL OR expires_at > ?", Time.current)
+        .where("max_uses IS NULL OR uses_count < max_uses")
+    }
+
     # === Status ===
 
     # @return [Boolean]

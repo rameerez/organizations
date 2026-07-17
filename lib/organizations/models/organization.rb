@@ -473,10 +473,29 @@ module Organizations
       join_requests.pending
     end
 
-    # Whether this organization exposes any self-serve joining mechanism
+    # Whether this organization accepts EMAIL-PROOF joining: an enrolled
+    # domain or an unclaimed roster entry (both run the same emailed-code
+    # challenge). Drives whether a join screen shows the email form.
+    # @return [Boolean]
+    def accepts_domain_joining?
+      domains.exists? || allowlist_entries.unclaimed.exists?
+    end
+
+    # Whether this organization has at least one code that can actually be
+    # redeemed right now (not revoked/expired/exhausted). Drives whether a
+    # join screen shows the code form.
+    # @return [Boolean]
+    def accepts_code_joining?
+      join_codes.active.exists?
+    end
+
+    # Whether this organization exposes any self-serve joining mechanism.
+    # NOTE (0.5.0 refinement): codes now count only while actually
+    # redeemable — an org whose every code expired or ran out no longer
+    # reads as joinable.
     # @return [Boolean]
     def accepts_join_requests?
-      domains.exists? || join_codes.not_revoked.exists? || allowlist_entries.unclaimed.exists?
+      accepts_domain_joining? || accepts_code_joining?
     end
 
     # Approve a join request (creates the membership). See JoinRequest#approve!.
