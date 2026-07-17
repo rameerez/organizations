@@ -22,7 +22,9 @@ Rails.application.configure do
   # config.asset_host = "http://assets.example.com"
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
-  config.active_storage.service = :local
+  # Guarded: rails/all only loads Active Storage when the activestorage gem
+  # is present, and the gem's own Gemfile boots this dummy WITHOUT it.
+  config.active_storage.service = :local if defined?(ActiveStorage)
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true

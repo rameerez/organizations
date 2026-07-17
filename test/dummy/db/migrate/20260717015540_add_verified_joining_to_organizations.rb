@@ -2,7 +2,7 @@
 
 # Upgrades organizations <= 0.4.x to 0.5.0 ("Verified Joining").
 # Additive only: no existing columns/rows are touched.
-class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_version %>
+class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration[8.1]
   def change
     # ⚠️ If your user model is NOT `User` (config.user_class), adjust every
     # `to_table: :users` below (and `foreign_key: true` on user references)

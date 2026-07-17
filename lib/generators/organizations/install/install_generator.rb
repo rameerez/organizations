@@ -30,6 +30,9 @@ module Organizations
         say "  2. Review and customize 'config/initializers/organizations.rb'."
         say "  3. Add 'has_organizations' to your User model."
         say "  4. Mount the engine in your routes: mount Organizations::Engine => '/'"
+        say "  5. Run 'rails g organizations:views' to copy the reference views"
+        say "     (the engine renders HOST views — without them you'll hit"
+        say "     missing-template errors on the org/membership/invitation pages)."
       end
 
       private

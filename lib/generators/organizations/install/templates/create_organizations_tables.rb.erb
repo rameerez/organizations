@@ -2,6 +2,9 @@
 
 class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %>
   def change
+    # ⚠️ If your user model is NOT `User` (config.user_class), adjust every
+    # `to_table: :users` below (and `foreign_key: true` on user references)
+    # to your user table before migrating.
     primary_key_type, foreign_key_type = primary_and_foreign_key_types
     adapter = connection.adapter_name.downcase
 

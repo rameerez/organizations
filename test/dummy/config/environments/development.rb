@@ -29,7 +29,9 @@ Rails.application.configure do
   config.cache_store = :memory_store
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
-  config.active_storage.service = :local
+  # Guarded: rails/all only loads Active Storage when the activestorage gem
+  # is present, and the gem's own Gemfile boots this dummy WITHOUT it.
+  config.active_storage.service = :local if defined?(ActiveStorage)
 
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = false

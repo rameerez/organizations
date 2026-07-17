@@ -1,0 +1,105 @@
+<%# REFERENCE: verified-joining admin — instruments (domains/codes/allowlist)
+    + the pending-request queue. URL-scoped via OrganizationScoped; every
+    mutation goes through gem APIs. %>
+
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-900">Access — <%= organization.name %></h1>
+  <p class="mt-1 text-sm text-gray-500">Who can join, and how they prove they belong.</p>
+</div>
+
+<div class="space-y-8">
+  <%# ── Pending requests ─────────────────────────────────────────────── %>
+  <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-gray-900">Pending requests</h2>
+    <% if @pending_requests.blank? %>
+      <p class="mt-2 text-sm text-gray-500">Nobody is waiting.</p>
+    <% else %>
+      <ul class="mt-4 divide-y divide-gray-100">
+        <% @pending_requests.each do |request| %>
+          <li class="flex items-center justify-between gap-4 py-3">
+            <div>
+              <div class="text-sm font-medium text-gray-900"><%= request.user.email %></div>
+              <div class="text-xs text-gray-500">
+                <%= request.email_verified? ? "verified #{request.verification_email}" : "unverified" %>
+                · <%= request.message.presence || "no message" %>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <%= button_to "Approve", approve_access_request_path(organization, request_id: request.id),
+                    method: :post, class: "rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 cursor-pointer" %>
+              <%= button_to "Reject", reject_access_request_path(organization, request_id: request.id),
+                    method: :post, class: "rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer" %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <%# ── Email domains ─────────────────────────────────────────────────── %>
+  <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-gray-900">Email domains</h2>
+    <p class="mt-1 text-sm text-gray-500">Anyone proving an inbox under these domains can join (emailed 6-digit code, or instantly with a confirmed account email).</p>
+    <ul class="mt-4 space-y-2">
+      <% @domains.each do |domain| %>
+        <li class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+          <code class="text-sm text-gray-900">@<%= domain.domain %></code>
+          <%= button_to "Remove", remove_access_domain_path(organization, domain_id: domain.id),
+                method: :delete, class: "text-xs font-medium text-gray-500 hover:text-red-600 cursor-pointer bg-transparent" %>
+        </li>
+      <% end %>
+    </ul>
+    <%= form_with url: add_access_domain_path(organization), method: :post, class: "mt-4 flex gap-2" do |form| %>
+      <%= form.text_field :domain, placeholder: "company.com", required: true,
+            class: "block w-full rounded-lg border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
+      <%= form.submit "Add", class: "rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 cursor-pointer" %>
+    <% end %>
+  </section>
+
+  <%# ── Join codes ────────────────────────────────────────────────────── %>
+  <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-gray-900">Join codes</h2>
+    <p class="mt-1 text-sm text-gray-500">Shareable PINs for posters, chats, and onboarding docs. Rotation = revoke + create a new one.</p>
+    <ul class="mt-4 space-y-2">
+      <% @join_codes.each do |code| %>
+        <li class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+          <div>
+            <code class="text-sm font-semibold tracking-widest text-gray-900"><%= code.display_code %></code>
+            <span class="ml-2 text-xs text-gray-500"><%= code.label %></span>
+            <span class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= code.active? ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600" %>">
+              <%= code.status %> · <%= code.uses_count %> uses
+            </span>
+          </div>
+          <% if code.active? %>
+            <%= button_to "Revoke", revoke_access_code_path(organization, code_id: code.id),
+                  method: :post, class: "text-xs font-medium text-gray-500 hover:text-red-600 cursor-pointer bg-transparent" %>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+    <%= form_with url: generate_access_code_path(organization), method: :post, class: "mt-4 flex items-center gap-2" do |form| %>
+      <%= form.text_field :label, placeholder: "Label (e.g. onboarding doc)",
+            class: "block w-full rounded-lg border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
+      <label class="flex shrink-0 items-center gap-1 text-xs text-gray-600">
+        <%= form.check_box :auto_approve, { checked: true }, "1", "0" %> auto-approve
+      </label>
+      <%= form.submit "Create", class: "rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 cursor-pointer" %>
+    <% end %>
+  </section>
+
+  <%# ── Allowlist ─────────────────────────────────────────────────────── %>
+  <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-gray-900">Allowlist</h2>
+    <p class="mt-1 text-sm text-gray-500">Exact addresses (rosters, mixed-provider orgs). Rostered users still verify their inbox — a leaked roster grants nothing.</p>
+    <ul class="mt-4 flex flex-wrap gap-2">
+      <% @allowlist_entries.each do |entry| %>
+        <li class="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"><%= entry.email %></li>
+      <% end %>
+    </ul>
+    <%= form_with url: import_access_allowlist_path(organization), method: :post, class: "mt-4 space-y-2" do |form| %>
+      <%= form.text_area :emails, rows: 2, placeholder: "ana@gmail.com, luis@yahoo.es …",
+            class: "block w-full rounded-lg border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
+      <%= form.submit "Import", class: "rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 cursor-pointer" %>
+    <% end %>
+  </section>
+</div>
