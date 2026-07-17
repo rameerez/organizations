@@ -2,7 +2,7 @@
 
 # Upgrades organizations <= 0.4.x to 0.5.0 ("Verified Joining").
 # Additive only: no existing columns/rows are touched.
-class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration[8.1]
+class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration[8.0]
   def change
     # ⚠️ If your user model is NOT `User` (config.user_class), adjust every
     # `to_table: :users` below (and `foreign_key: true` on user references)
@@ -113,11 +113,13 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration[8.1]
     if adapter.include?("postgresql") || adapter.include?("sqlite")
       reversible do |dir|
         dir.up do
-          execute <<-SQL
-            CREATE UNIQUE INDEX index_org_join_requests_pending_unique
-            ON organizations_join_requests (organization_id, user_id)
-            WHERE status = 'pending'
-          SQL
+          # ONE line on purpose: the SQLite schema dumper only recovers a
+          # partial index's WHERE clause from single-line index SQL — a
+          # multi-line statement dumps as a FULL unique index, and databases
+          # provisioned from schema.rb (db:schema:load, test DBs) silently
+          # lose the partial-index invariant.
+          execute "CREATE UNIQUE INDEX index_org_join_requests_pending_unique " \
+                  "ON organizations_join_requests (organization_id, user_id) WHERE status = 'pending'"
         end
         dir.down do
           execute "DROP INDEX IF EXISTS index_org_join_requests_pending_unique"

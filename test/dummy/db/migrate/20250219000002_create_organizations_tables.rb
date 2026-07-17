@@ -30,12 +30,14 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
 
     # Enforce "at most one owner membership per organization" at DB level where possible.
     # Both PostgreSQL and SQLite support partial indexes with identical syntax.
+    # ⚠️ Partial-index SQL stays on ONE line on purpose: the SQLite schema
+    # dumper only recovers the WHERE clause from single-line index SQL — a
+    # multi-line statement dumps as a FULL unique index, and databases
+    # provisioned from schema.rb (db:schema:load, test DBs) silently lose
+    # the partial-index invariant.
     if adapter.include?("postgresql") || adapter.include?("sqlite")
-      execute <<-SQL
-        CREATE UNIQUE INDEX index_organizations_memberships_single_owner
-        ON organizations_memberships (organization_id)
-        WHERE role = 'owner'
-      SQL
+      execute "CREATE UNIQUE INDEX index_organizations_memberships_single_owner " \
+              "ON organizations_memberships (organization_id) WHERE role = 'owner'"
     end
 
     # Invitations table
@@ -57,12 +59,10 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
 
     # Unique partial index: only one pending (non-accepted) invitation per email per org
     # Both PostgreSQL and SQLite (3.8.0+) support partial indexes with identical syntax.
+    # (One line on purpose — see the single_owner index note above.)
     if adapter.include?("postgresql") || adapter.include?("sqlite")
-      execute <<-SQL
-        CREATE UNIQUE INDEX index_organizations_invitations_pending_unique
-        ON organizations_invitations (organization_id, LOWER(email))
-        WHERE accepted_at IS NULL
-      SQL
+      execute "CREATE UNIQUE INDEX index_organizations_invitations_pending_unique " \
+              "ON organizations_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL"
     elsif adapter.include?("mysql")
       # MySQL doesn't support partial indexes, so we use a generated column that is
       # only non-NULL for pending invitations and enforce uniqueness on that value.

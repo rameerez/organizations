@@ -113,11 +113,13 @@ class AddVerifiedJoiningToOrganizations < ActiveRecord::Migration<%= migration_v
     if adapter.include?("postgresql") || adapter.include?("sqlite")
       reversible do |dir|
         dir.up do
-          execute <<-SQL
-            CREATE UNIQUE INDEX index_org_join_requests_pending_unique
-            ON organizations_join_requests (organization_id, user_id)
-            WHERE status = 'pending'
-          SQL
+          # ONE line on purpose: the SQLite schema dumper only recovers a
+          # partial index's WHERE clause from single-line index SQL — a
+          # multi-line statement dumps as a FULL unique index, and databases
+          # provisioned from schema.rb (db:schema:load, test DBs) silently
+          # lose the partial-index invariant.
+          execute "CREATE UNIQUE INDEX index_org_join_requests_pending_unique " \
+                  "ON organizations_join_requests (organization_id, user_id) WHERE status = 'pending'"
         end
         dir.down do
           execute "DROP INDEX IF EXISTS index_org_join_requests_pending_unique"
