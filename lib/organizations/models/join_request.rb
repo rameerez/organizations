@@ -43,7 +43,9 @@ module Organizations
                class_name: "Organizations::Organization",
                inverse_of: :join_requests
 
-    belongs_to :user
+    # Explicit class_name (NOT inferred from the association name) so hosts
+    # with a differently-named account model work: config.user_class.
+    belongs_to :user, class_name: Organizations.user_class_name
 
     belongs_to :join_code,
                class_name: "Organizations::JoinCode",
@@ -51,7 +53,7 @@ module Organizations
                optional: true
 
     belongs_to :decided_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # === Validations ===

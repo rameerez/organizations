@@ -173,6 +173,22 @@ module Organizations
       Roles
     end
 
+    # The host's user model class name (config.user_class, default "User").
+    # Used as `class_name:` at association-definition time in the gem's
+    # models — they load AFTER initializers in Rails (Zeitwerk shims) and on
+    # first constant reference in plain Ruby, so a configured value is
+    # visible as long as hosts configure before touching the models.
+    # @return [String]
+    def user_class_name
+      configuration.user_class
+    end
+
+    # The host's user model class (constantized user_class_name).
+    # @return [Class]
+    def user_class
+      user_class_name.constantize
+    end
+
     # Resolve a gem string through I18n under the `organizations.` namespace.
     # This is the ONE door every user-facing string the gem produces goes
     # through — error messages, labels, mailer copy. en.yml is the catalog

@@ -37,7 +37,7 @@ module Organizations
                inverse_of: :join_codes
 
     belongs_to :created_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # Requests OUTLIVE the codes that created them (they are the join audit

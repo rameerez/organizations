@@ -28,7 +28,7 @@ module Organizations
 
     # Optional because inviter can be deleted (dependent: :nullify on User)
     belongs_to :invited_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # Alias for invited_by (semantic convenience as per README)

@@ -26,6 +26,22 @@ module Organizations
   #
   class Configuration
     # === Authentication ===
+    # Class name of the host's user model (default: "User").
+    #
+    # Set this when your account model is named differently:
+    #   config.user_class = "Account"
+    #
+    # ⚠️ Configure this BEFORE the gem's models are first referenced: the
+    # class name is read when each model class body executes. In Rails this
+    # is automatic (initializers run before Zeitwerk autoloads the models);
+    # in plain-Ruby usage, call Organizations.configure before touching
+    # Organizations::Organization & friends.
+    #
+    # ⚠️ The install generator's migrations reference `to_table: :users` —
+    # if your user model uses a different table, adjust the generated
+    # migration accordingly (see the comment inside the migration template).
+    attr_accessor :user_class
+
     # Method that returns the current user (default: :current_user)
     attr_accessor :current_user_method
 
@@ -205,6 +221,7 @@ module Organizations
 
     def initialize
       # Authentication defaults
+      @user_class = "User"
       @current_user_method = :current_user
       @authenticate_user_method = :authenticate_user!
 
@@ -467,6 +484,10 @@ module Organizations
     private
 
     def validate_authentication_methods!
+      unless @user_class.is_a?(String) && @user_class.present?
+        raise ConfigurationError, "user_class must be a non-empty String (e.g. \"User\")"
+      end
+
       unless @current_user_method.is_a?(Symbol)
         raise ConfigurationError, "current_user_method must be a Symbol"
       end

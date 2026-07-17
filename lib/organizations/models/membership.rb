@@ -25,14 +25,16 @@ module Organizations
 
     # === Associations ===
 
-    belongs_to :user
+    # Explicit class_name (NOT inferred from the association name) so hosts
+    # with a differently-named account model work: config.user_class.
+    belongs_to :user, class_name: Organizations.user_class_name
     belongs_to :organization,
                class_name: "Organizations::Organization",
                inverse_of: :memberships,
                counter_cache: :memberships_count
 
     belongs_to :invited_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # === Validations ===

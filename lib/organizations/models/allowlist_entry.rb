@@ -25,7 +25,7 @@ module Organizations
                inverse_of: :allowlist_entries
 
     belongs_to :claimed_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # === Validations ===

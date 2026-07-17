@@ -111,7 +111,9 @@ module Organizations
     # @param role [Symbol] Role in the organization
     # @return [User]
     def create_user(email: "user@example.com", name: "Test User", org: nil, role: :member)
-      user = User.create!(email: email, name: name)
+      # Respects config.user_class so hosts with a differently-named account
+      # model can use this helper unchanged.
+      user = Organizations.user_class.create!(email: email, name: name)
 
       if org
         Organizations::Membership.create!(
