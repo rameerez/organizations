@@ -48,6 +48,12 @@ group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
 
+  # minitest 6 changed Runnable.run's arity and breaks railties 8.0's
+  # line filtering (`bin/rails test` crashes with ArgumentError before
+  # running anything). Rails 8.1 is compatible; drop this pin when the
+  # dummy moves to ~> 8.1.
+  gem "minitest", "< 6"
+
   # Static analysis for security vulnerabilities [https://brakemanscanner.org/]
   gem "brakeman", require: false
 

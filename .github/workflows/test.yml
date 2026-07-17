@@ -48,3 +48,37 @@ jobs:
           name: test-results-ruby-${{ matrix.ruby_version }}-${{ matrix.gemfile }}
           path: test/reports/
           retention-days: 7
+
+  # The dummy app is the living 0.5.0 demo AND the reference implementation
+  # hosts copy. Its integration suite is the HTTP smoke of the reference
+  # surfaces (four-state join screen, Access admin, OrganizationScoped 404
+  # posture) — run it under the dummy's OWN bundle so a fresh clone's
+  # `bin/rails test` experience is what CI certifies.
+  dummy-app:
+    runs-on: ubuntu-latest
+
+    env:
+      RAILS_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: test/dummy
+
+      - name: Build Tailwind (app/assets/builds is gitignored)
+        working-directory: test/dummy
+        run: bin/rails tailwindcss:build
+
+      - name: Prepare database
+        working-directory: test/dummy
+        run: bin/rails db:test:prepare
+
+      - name: Run dummy app tests (reference-surface HTTP smoke)
+        working-directory: test/dummy
+        run: bin/rails test
