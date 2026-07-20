@@ -343,7 +343,7 @@ class JoinsController < ApplicationController
 end
 ```
 
-Layer them per surface: the gem already throttles **per request** (60s resend interval, 5 sends, 5 attempts per challenge); your controller limits cap **per user/IP across requests** — mail-bombing and brute-force across fresh challenges. And keep the generic error copy for unknown codes: `JoinFlow` already collapses unknown/revoked/expired/foreign codes into one reason — don't "improve" it into an oracle.
+Layer them per surface: the gem already throttles **per request** (60s resend interval, 5 sends, 5 attempts per challenge); your controller limits cap **per user/IP across requests** — mail-bombing and brute-force across fresh challenges. And keep the generic error copy for unknown codes: `JoinFlow` already collapses unknown/revoked/expired/foreign codes into one reason — don't "improve" it into an oracle. (One narrow residual the rate limits also cover: an expired org-scoped code does slightly more work than the fast-reject paths before raising - identical response shape, but a measurable timing side-channel without endpoint limits.)
 
 ### Security posture
 

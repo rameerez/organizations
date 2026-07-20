@@ -468,15 +468,16 @@ module Organizations
       effective_joined_via = joined_via.presence || "manual"
       dispatch_member_joining_gate!(effective_joined_via)
 
-      organization.memberships.create!(
-        user: user,
-        role: "member",
-        joined_via: effective_joined_via,
-        verified_email: email_verified? ? verification_email : nil,
-        verified_email_normalized: email_verified? ? verification_email_normalized : nil,
-        verified_at: verified_at,
-        metadata: resolved_membership_metadata
-      )
+      # SAVEPOINT (requires_new): this INSERT runs inside approve!'s locked
+      # transaction and its unique-violation is RESCUED below. On PostgreSQL
+      # a statement error ABORTS the whole transaction ("current transaction
+      # is aborted, commands ignored…"), so without the savepoint the rescue
+      # path's queries explode instead of degrading gracefully — proven by
+      # running this suite against PG (SQLite forgives the pattern, which is
+      # how it stayed green). Source: https://www.postgresql.org/docs/current/tutorial-transactions.html
+      ActiveRecord::Base.transaction(requires_new: true) do
+        insert_membership_row!(effective_joined_via)
+      end
     rescue ActiveRecord::RecordNotUnique
       # Two possible unique collisions:
       # 1. (user, org) membership race — another path just made them a member.
@@ -487,6 +488,18 @@ module Organizations
 
       raise VerificationEmailAlreadyClaimed,
             Organizations.t(:"errors.verification_email_already_claimed")
+    end
+
+    def insert_membership_row!(effective_joined_via)
+      organization.memberships.create!(
+        user: user,
+        role: "member",
+        joined_via: effective_joined_via,
+        verified_email: email_verified? ? verification_email : nil,
+        verified_email_normalized: email_verified? ? verification_email_normalized : nil,
+        verified_at: verified_at,
+        metadata: resolved_membership_metadata
+      )
     end
 
     # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — covers every

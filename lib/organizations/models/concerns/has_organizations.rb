@@ -568,7 +568,12 @@ module Organizations
                     Organizations.t(:"errors.join_request_already_member")
             end
 
-            request = organization.join_requests.create!(user: self, message: message)
+            # SAVEPOINT: the RecordNotUnique rescue below must stay reachable
+            # when a HOST wraps this call in its own transaction (PostgreSQL
+            # aborted-transaction semantics — see JoinRequest#create_membership!).
+            request = ActiveRecord::Base.transaction(requires_new: true) do
+              organization.join_requests.create!(user: self, message: message)
+            end
 
             Callbacks.dispatch(
               :join_request_created,

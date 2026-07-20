@@ -251,10 +251,15 @@ module Organizations
         invitation: self
       )
 
-      organization.memberships.create!(
-        **base_membership_attributes(accepting_user),
-        **verified_email_attributes_for(accepting_user, skip_email_validation)
-      )
+      # SAVEPOINT (requires_new): rescued unique-violation inside accept!'s
+      # transaction — see JoinRequest#create_membership! for the PostgreSQL
+      # aborted-transaction rationale (proven by the PG leg of the suite).
+      ActiveRecord::Base.transaction(requires_new: true) do
+        organization.memberships.create!(
+          **base_membership_attributes(accepting_user),
+          **verified_email_attributes_for(accepting_user, skip_email_validation)
+        )
+      end
     rescue ActiveRecord::RecordNotUnique
       # Two unique indexes can fire here (same disambiguation as
       # JoinRequest#create_membership!):
@@ -267,7 +272,11 @@ module Organizations
       existing = organization.memberships.find_by(user_id: accepting_user.id)
       return existing if existing
 
-      organization.memberships.create!(**base_membership_attributes(accepting_user))
+      # Its own savepoint too: this fallback INSERT can itself lose the
+      # (user, org) race, and accept!'s rescue must stay reachable on PG.
+      ActiveRecord::Base.transaction(requires_new: true) do
+        organization.memberships.create!(**base_membership_attributes(accepting_user))
+      end
     end
 
     def base_membership_attributes(accepting_user)

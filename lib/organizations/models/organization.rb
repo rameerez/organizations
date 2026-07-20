@@ -204,7 +204,23 @@ module Organizations
       return existing if existing
 
       membership = nil
-      ActiveRecord::Base.transaction do
+      created = false
+      # requires_new: the rescued unique-violation below must roll back only
+      # a SAVEPOINT — if a HOST wraps add_member! in its own transaction, a
+      # plain nested block joins it, and on PostgreSQL the violation would
+      # poison the host's whole transaction before the rescue could run the
+      # idempotent lookup (see JoinRequest#create_membership!).
+      ActiveRecord::Base.transaction(requires_new: true) do
+        # Re-check under the transaction (review finding): a concurrent
+        # add_member! that already inserted makes this call an idempotent
+        # no-op — resolving here (instead of falling through to the gate)
+        # keeps the gate from firing/vetoing a join that already happened,
+        # and member_joined is NOT re-dispatched for it (the concurrent
+        # creator already fired it). The RecordNotUnique rescue below stays
+        # as the backstop for the window this narrows but cannot close.
+        existing = memberships.find_by(user_id: user.id)
+        next (membership = existing) if existing
+
         # THE MEMBERSHIP GATE (strict, vetoing, pre-persist): the one place a
         # host can abort ANY membership creation — seat limits, member caps.
         # Raising here rolls back cleanly (nothing persisted yet). Runs after
@@ -222,14 +238,17 @@ module Organizations
           user: user,
           role: role_sym.to_s
         )
+        created = true
       end
 
-      Callbacks.dispatch(
-        :member_joined,
-        organization: self,
-        membership: membership,
-        user: user
-      )
+      if created
+        Callbacks.dispatch(
+          :member_joined,
+          organization: self,
+          membership: membership,
+          user: user
+        )
+      end
 
       membership
     rescue ActiveRecord::RecordNotUnique
@@ -419,7 +438,11 @@ module Organizations
       )
 
       invitation = nil
-      ActiveRecord::Base.transaction do
+      # requires_new: the rescued unique-violation must roll back only a
+      # SAVEPOINT so the method-level rescue's lookup still works when a HOST
+      # wraps this call in its own transaction (PostgreSQL poisons the whole
+      # transaction otherwise — see JoinRequest#create_membership!).
+      ActiveRecord::Base.transaction(requires_new: true) do
         # Check for expired invitation and refresh it instead of creating duplicate
         expired_invitation = invitations.expired.for_email(normalized_email).first
         if expired_invitation
@@ -495,11 +518,17 @@ module Organizations
     # @return [Array<AllowlistEntry>] the newly created entries
     def import_allowlist!(emails, source: nil, membership_metadata: {})
       Array(emails).filter_map do |email|
-        entry = allowlist_entries.create!(
-          email: email,
-          source: source,
-          membership_metadata: membership_metadata
-        )
+        # SAVEPOINT per entry: the duplicate-skip rescue below must survive
+        # under a CALLER's transaction (real hosts wrap provisioning in one)
+        # — on PostgreSQL the first duplicate would otherwise poison the
+        # whole wrapping transaction and abort the import mid-list.
+        entry = ActiveRecord::Base.transaction(requires_new: true) do
+          allowlist_entries.create!(
+            email: email,
+            source: source,
+            membership_metadata: membership_metadata
+          )
+        end
         entry
       rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
         # Skip duplicates silently (idempotent import); re-raise anything else.

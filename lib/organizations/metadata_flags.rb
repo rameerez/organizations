@@ -33,8 +33,15 @@ module Organizations
     # @param default [Boolean] value when the key is absent from the bag
     # @param column [Symbol] the json(b) attribute holding the bag
     def metadata_flag(name, default:, column: :metadata)
-      key = name.to_s
+      define_metadata_flag_reader(name, default, column)
+      define_metadata_flag_writer(name, column)
+      define_metadata_flag_toggle(name)
+    end
 
+    private
+
+    def define_metadata_flag_reader(name, default, column)
+      key = name.to_s
       define_method("#{name}?") do
         bag = public_send(column)
         # Defensive: a non-Hash bag (text column, corrupted value) reads as
@@ -43,15 +50,28 @@ module Organizations
         raw = bag.is_a?(Hash) ? bag[key] : nil
         raw.nil? ? default : ActiveModel::Type::Boolean.new.cast(raw)
       end
+    end
 
+    def define_metadata_flag_writer(name, column)
+      key = name.to_s
       define_method("#{name}=") do |value|
         bag = (public_send(column) || {}).merge(key => value)
         public_send("#{column}=", bag)
       end
+    end
 
+    def define_metadata_flag_toggle(name)
       define_method("toggle_#{name}!") do
-        public_send("#{name}=", !public_send("#{name}?"))
-        save!
+        # with_lock (review finding): a bare read-negate-save! races under
+        # concurrent toggles (classic read-modify-write on a JSON column).
+        # The lock reloads, so the negation applies to the CURRENT database
+        # value — two racing toggles serialize instead of both writing the
+        # same flip. New (unpersisted) records just assign.
+        flip = lambda do
+          public_send("#{name}=", !public_send("#{name}?"))
+          save!
+        end
+        persisted? ? with_lock(&flip) : flip.call
         self
       end
     end
