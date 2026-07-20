@@ -103,6 +103,11 @@ module Organizations
     #     "joining" — same contract as the rest of the gate)
     #   - DOES fire on_organization_created, like every creation path.
     #
+    # ⚠️ Because it skips the per-user cap, do NOT expose this from
+    # request-cycle self-serve code — users creating their own organizations
+    # go through user.create_organization!. This is for consoles, seeds, and
+    # admin-vetted provisioning services.
+    #
     # @param owner [User] becomes the owner (single-owner invariant holds)
     # @param attributes [Hash] organization attributes (name:, plus any host columns)
     # @return [Organizations::Organization]

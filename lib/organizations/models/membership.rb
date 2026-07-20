@@ -15,6 +15,16 @@ module Organizations
   #   membership.promote_to!(:admin)
   #   membership.demote_to!(:member)
   #
+  # ⚠️ THE MEMBERSHIP GATE IS NOT ON THIS MODEL. `on_member_joining` (the
+  # strict, vetoing host callback — seat limits, member caps) is dispatched
+  # by the SANCTIONED join paths: Organization#add_member!,
+  # Invitation#accept!, and JoinRequest#approve! (which covers codes,
+  # domains, allowlists, and the account-email shortcut). A direct
+  # `Membership.create!` bypasses the gate entirely — that's deliberate for
+  # ops/console/test usage (Organization.create_with_owner!, TestHelpers),
+  # but NEVER create memberships directly from request-cycle product code,
+  # and any NEW join path added to the gem must dispatch the gate itself
+  # (see Configuration#on_member_joining).
   class Membership < ActiveRecord::Base
     self.table_name = "organizations_memberships"
 

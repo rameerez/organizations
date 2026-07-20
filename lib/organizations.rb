@@ -232,12 +232,21 @@ module Organizations
       ""
     end
 
-    # @api private — guarded: a bare Rails module without .application raises
-    # on Rails.application (see the mailers' full_rails_app? note).
-    def host_application_routes
-      return nil unless defined?(Rails) && Rails.respond_to?(:application)
+    # True only under a real, booted Rails app — the ONE home for this guard
+    # (mailers and URL builders all need it). ⚠️ `defined?(Rails)` alone is
+    # NOT enough: several gems define a bare `Rails` module WITHOUT
+    # `.application` (globalid setups, railtie fragments, bare test
+    # harnesses), where `Rails.application` raises NoMethodError instead of
+    # returning nil. Found by the first tests to ever render the stock mails.
+    def full_rails_app?
+      !!(defined?(Rails) && Rails.respond_to?(:application) && Rails.application)
+    end
 
-      Rails.application&.routes
+    # @api private
+    def host_application_routes
+      return nil unless full_rails_app?
+
+      Rails.application.routes
     end
 
     # Get the roles module

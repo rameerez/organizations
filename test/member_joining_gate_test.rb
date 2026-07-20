@@ -277,9 +277,13 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
 
   test "the seat-limit pattern: one gate enforces caps across every join path" do
     # The exact pattern hosts should use (README "Limit seats per plan"):
-    # cap at 2 members total for this org.
+    # cap at 2 members total for this org. lock! is part of the pattern —
+    # the gate runs inside the creating transaction but does NOT serialize
+    # on the org row, so hard caps must take the lock themselves (it also
+    # refreshes member_count). Copy THIS shape, not a lockless one.
     Organizations.configure do |config|
       config.on_member_joining do |ctx|
+        ctx.organization.lock!
         raise Organizations::MembershipVetoed, "Member limit reached" if ctx.organization.member_count >= 2
       end
     end

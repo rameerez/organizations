@@ -359,7 +359,7 @@ module Organizations
     end
 
     def default_base_url
-      if defined?(Rails) && Rails.application&.routes
+      if Organizations.full_rails_app? && Rails.application.routes
         Rails.application.routes.url_helpers.root_url.chomp("/")
       else
         ""

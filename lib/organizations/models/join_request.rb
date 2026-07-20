@@ -313,8 +313,12 @@ module Organizations
     def self.purge_stale!(older_than: 12.months)
       cutoff = Time.current - older_than
 
+      # in_batches: this is a maintenance sweep over potentially years of
+      # rows — batched deletes keep the lock/undo footprint flat on large
+      # tables (returns the summed count, same contract as delete_all).
       where(status: %w[rejected withdrawn]).where(decided_at: ...cutoff)
         .or(expired.where(expires_at: ...cutoff))
+        .in_batches
         .delete_all
     end
 

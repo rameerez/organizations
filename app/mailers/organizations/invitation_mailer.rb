@@ -72,13 +72,9 @@ module Organizations
       invitation.acceptance_url(base_url: full_rails_app? ? default_host : "")
     end
 
-    # ⚠️ `defined?(Rails)` alone is NOT a sufficient guard: several gems
-    # (railties fragments, globalid setups, bare test harnesses) define a
-    # `Rails` module WITHOUT `.application`, and `Rails.application` then
-    # raises NoMethodError instead of returning nil. Found by the first test
-    # that ever actually RENDERED these mails. Always pair with respond_to?.
+    # SSOT for the bare-`Rails`-module guard — see Organizations.full_rails_app?.
     def full_rails_app?
-      defined?(Rails) && Rails.respond_to?(:application) && Rails.application
+      Organizations.full_rails_app?
     end
 
     def default_from_address

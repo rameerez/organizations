@@ -35,9 +35,15 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
     # multi-line statement dumps as a FULL unique index, and databases
     # provisioned from schema.rb (db:schema:load, test DBs) silently lose
     # the partial-index invariant.
+    # `reversible` + up-only: raw execute in `def change` would raise
+    # IrreversibleMigration on rollback; the indexes die with their tables.
     if adapter.include?("postgresql") || adapter.include?("sqlite")
-      execute "CREATE UNIQUE INDEX index_organizations_memberships_single_owner " \
-              "ON organizations_memberships (organization_id) WHERE role = 'owner'"
+      reversible do |dir|
+        dir.up do
+          execute "CREATE UNIQUE INDEX index_organizations_memberships_single_owner " \
+                  "ON organizations_memberships (organization_id) WHERE role = 'owner'"
+        end
+      end
     end
 
     # Invitations table
@@ -61,21 +67,29 @@ class CreateOrganizationsTables < ActiveRecord::Migration[8.0]
     # Both PostgreSQL and SQLite (3.8.0+) support partial indexes with identical syntax.
     # (One line on purpose — see the single_owner index note above.)
     if adapter.include?("postgresql") || adapter.include?("sqlite")
-      execute "CREATE UNIQUE INDEX index_organizations_invitations_pending_unique " \
-              "ON organizations_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL"
+      reversible do |dir|
+        dir.up do
+          execute "CREATE UNIQUE INDEX index_organizations_invitations_pending_unique " \
+                  "ON organizations_invitations (organization_id, LOWER(email)) WHERE accepted_at IS NULL"
+        end
+      end
     elsif adapter.include?("mysql")
       # MySQL doesn't support partial indexes, so we use a generated column that is
       # only non-NULL for pending invitations and enforce uniqueness on that value.
-      execute <<-SQL
-        ALTER TABLE organizations_invitations
-        ADD COLUMN pending_email VARCHAR(255)
-        GENERATED ALWAYS AS (
-          CASE
-            WHEN accepted_at IS NULL THEN LOWER(email)
-            ELSE NULL
-          END
-        ) STORED
-      SQL
+      reversible do |dir|
+        dir.up do
+          execute <<-SQL
+            ALTER TABLE organizations_invitations
+            ADD COLUMN pending_email VARCHAR(255)
+            GENERATED ALWAYS AS (
+              CASE
+                WHEN accepted_at IS NULL THEN LOWER(email)
+                ELSE NULL
+              END
+            ) STORED
+          SQL
+        end
+      end
 
       add_index :organizations_invitations, [:organization_id, :pending_email], unique: true, name: "index_organizations_invitations_pending_unique"
     else

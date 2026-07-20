@@ -43,11 +43,9 @@ module Organizations
 
     def default_from_address
       # Deliberately identical to InvitationMailer#default_from_address —
-      # keep the two in sync. ⚠️ `defined?(Rails)` alone is NOT enough: a
-      # bare `Rails` module without `.application` (globalid/railtie
-      # fragments, plain test harnesses) makes `Rails.application` raise —
-      # hence the respond_to? guard.
-      if defined?(Rails) && Rails.respond_to?(:application) && Rails.application &&
+      # keep the two in sync. The bare-`Rails`-module guard lives in ONE
+      # place: Organizations.full_rails_app?.
+      if Organizations.full_rails_app? &&
          Rails.application.config.action_mailer&.default_options
         Rails.application.config.action_mailer.default_options[:from] || "noreply@example.com"
       else

@@ -40,7 +40,10 @@ module Organizations
   #     your join endpoints".
   #   - :join_code_invalid deliberately covers unknown, revoked, expired AND
   #     foreign-organization codes with one reason — never tell users which
-  #     codes exist.
+  #     codes exist. (Known narrow residual: response SHAPE is identical, but
+  #     an expired org-scoped code does slightly more work than the
+  #     fast-reject paths — it reaches redeem!'s row lock before raising — a
+  #     timing side-channel your endpoint rate limits should render moot.)
   class JoinFlow
     # Stable machine-readable reasons a host can switch on.
     REASONS = %i[
