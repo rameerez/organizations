@@ -188,8 +188,15 @@ class I18nTest < ActiveSupport::TestCase
   end
 
   test "host locale files override gem keys" do
-    # Simulate a host override: app locale files load AFTER engine files,
-    # which in I18n's simple backend means store_translations wins.
+    # ORDER-SENSITIVE without priming: the simple backend initializes lazily
+    # on first lookup, and that initialization deep-merges the yml files
+    # OVER anything already store_translations'd — so if this test runs
+    # before any other lookup in the process (random seed), the override
+    # would be silently clobbered. Prime initialization first; only then
+    # does store_translations reliably win (which is also the real host
+    # semantics: app locale files load after engine files).
+    I18n.t("organizations.errors.join_code_invalid")
+
     I18n.backend.store_translations(:en, organizations: { errors: { join_code_invalid: "Nope!" } })
 
     error = assert_raises(Organizations::JoinCodeInvalid) do
