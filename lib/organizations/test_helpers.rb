@@ -111,7 +111,9 @@ module Organizations
     # @param role [Symbol] Role in the organization
     # @return [User]
     def create_user(email: "user@example.com", name: "Test User", org: nil, role: :member)
-      user = User.create!(email: email, name: name)
+      # Respects config.user_class so hosts with a differently-named account
+      # model can use this helper unchanged.
+      user = Organizations.user_class.create!(email: email, name: name)
 
       if org
         Organizations::Membership.create!(
@@ -123,6 +125,38 @@ module Organizations
 
       user
     end
+
+    # Force a KNOWN verification code onto a join request's active challenge,
+    # so tests can complete the emailed-code flow without intercepting mail.
+    #
+    # The database only ever stores a digest (SHA-256, peppered by row id) —
+    # before this helper, every host test suite reverse-engineered that
+    # recipe by hand (overwriting verification_code_digest with
+    # digest_verification_code). That's gem INTERNALS leaking into host
+    # tests; use this instead:
+    #
+    #   request.start_email_verification!(email: "j.doe@acme.com")
+    #   code = issue_verification_code(request)   # => "424242"
+    #   request.verify_email_code!(code)          # => Membership
+    #
+    # Also callable WITHOUT including the module —
+    #   Organizations::TestHelpers.issue_verification_code(request)
+    # — for suites whose own factory names (create_user, …) would collide
+    # with this module's (a real host hit exactly that).
+    #
+    # @param join_request [Organizations::JoinRequest] with a challenge started
+    # @param code [String] the plaintext code to force (default "424242")
+    # @return [String] the plaintext code, for typing into the flow
+    def issue_verification_code(join_request, code: "424242")
+      join_request.update!(
+        verification_code_digest: Organizations::JoinRequest.digest_verification_code(code, join_request.id)
+      )
+      code
+    end
+    module_function :issue_verification_code
+    # module_function makes the INSTANCE copy private — fine for included
+    # test usage (implicit receiver) while enabling the module-level call.
+    public :issue_verification_code
 
     # Assert that a user is a member of an organization
     # @param user [User] The user

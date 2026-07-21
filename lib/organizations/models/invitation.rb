@@ -28,7 +28,7 @@ module Organizations
 
     # Optional because inviter can be deleted (dependent: :nullify on User)
     belongs_to :invited_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # Alias for invited_by (semantic convenience as per README)
@@ -131,7 +131,7 @@ module Organizations
       # Validate email matches at model level (security)
       unless skip_email_validation
         if accepting_user.respond_to?(:email) && !for_email?(accepting_user.email)
-          raise EmailMismatch, "This invitation was sent to a different email address"
+          raise EmailMismatch, Organizations.t(:"errors.invitation_email_mismatch")
         end
       end
 
@@ -148,16 +148,16 @@ module Organizations
           existing_membership = organization.memberships.find_by(user_id: accepting_user.id)
           return existing_membership if existing_membership
 
-          raise InvitationAlreadyAccepted, "This invitation has already been accepted"
+          raise InvitationAlreadyAccepted, Organizations.t(:"errors.invitation_already_accepted")
         end
 
         if expired?
-          raise InvitationExpired, "This invitation has expired"
+          raise InvitationExpired, Organizations.t(:"errors.invitation_expired")
         end
 
         # Owner role cannot be assigned via invitation (defense in depth)
         if role.to_sym == :owner
-          raise CannotAcceptAsOwner, "Cannot accept invitation as owner. Invite as admin, then use transfer_ownership_to! after joining."
+          raise CannotAcceptAsOwner, Organizations.t(:"errors.invitation_accept_as_owner")
         end
 
         # Check if user is already a member (race condition from another invitation)
@@ -192,7 +192,7 @@ module Organizations
         lock!
 
         if accepted?
-          raise InvitationAlreadyAccepted, "Cannot resend an accepted invitation"
+          raise InvitationAlreadyAccepted, Organizations.t(:"errors.invitation_cannot_resend_accepted")
         end
 
         update!(
@@ -210,7 +210,10 @@ module Organizations
     # @return [String]
     def acceptance_url(base_url: nil)
       base = base_url || default_base_url
-      "#{base}/invitations/#{token}"
+      # Organizations.engine_mount_path keeps this correct for hosts that
+      # mount the engine somewhere other than root ("/orgs/invitations/…") —
+      # a hardcoded "/invitations/…" silently 404'd for them.
+      "#{base}#{Organizations.engine_mount_path}/invitations/#{token}"
     end
 
     # Check if invitation matches a specific email
@@ -234,10 +237,29 @@ module Organizations
     # in this org (rare recycled-address edge), the membership is still
     # created, just without the verified-email stamp.
     def create_membership_for!(accepting_user, skip_email_validation)
-      organization.memberships.create!(
-        **base_membership_attributes(accepting_user),
-        **verified_email_attributes_for(accepting_user, skip_email_validation)
+      # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — see
+      # Configuration#on_member_joining. Runs inside accept!'s locked
+      # transaction: a veto rolls back accepted_at too, so the invitation
+      # stays pending and can be accepted again once the host unblocks.
+      Callbacks.dispatch(
+        :member_joining,
+        strict: true,
+        organization: organization,
+        user: accepting_user,
+        role: role,
+        joined_via: "invited",
+        invitation: self
       )
+
+      # SAVEPOINT (requires_new): rescued unique-violation inside accept!'s
+      # transaction — see JoinRequest#create_membership! for the PostgreSQL
+      # aborted-transaction rationale (proven by the PG leg of the suite).
+      ActiveRecord::Base.transaction(requires_new: true) do
+        organization.memberships.create!(
+          **base_membership_attributes(accepting_user),
+          **verified_email_attributes_for(accepting_user, skip_email_validation)
+        )
+      end
     rescue ActiveRecord::RecordNotUnique
       # Two unique indexes can fire here (same disambiguation as
       # JoinRequest#create_membership!):
@@ -250,7 +272,11 @@ module Organizations
       existing = organization.memberships.find_by(user_id: accepting_user.id)
       return existing if existing
 
-      organization.memberships.create!(**base_membership_attributes(accepting_user))
+      # Its own savepoint too: this fallback INSERT can itself lose the
+      # (user, org) race, and accept!'s rescue must stay reachable on PG.
+      ActiveRecord::Base.transaction(requires_new: true) do
+        organization.memberships.create!(**base_membership_attributes(accepting_user))
+      end
     end
 
     def base_membership_attributes(accepting_user)
@@ -324,7 +350,7 @@ module Organizations
                            .exists?
 
       if existing
-        errors.add(:email, "has already been invited to this organization")
+        errors.add(:email, Organizations.t(:"attributes.invitation_taken"))
       end
     end
 
@@ -342,7 +368,7 @@ module Organizations
     end
 
     def default_base_url
-      if defined?(Rails) && Rails.application&.routes
+      if Organizations.full_rails_app? && Rails.application.routes
         Rails.application.routes.url_helpers.root_url.chomp("/")
       else
         ""
@@ -352,3 +378,6 @@ module Organizations
     end
   end
 end
+
+# Host extension seam — see the load-hooks note in models/organization.rb.
+ActiveSupport.run_load_hooks(:organizations_invitation, Organizations::Invitation)

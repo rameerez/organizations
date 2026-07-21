@@ -101,13 +101,11 @@ module Organizations
     #   organization_role_label(:admin) # => "Admin"
     #
     def organization_role_label(role)
-      case role.to_sym
-      when :owner then "Owner"
-      when :admin then "Admin"
-      when :member then "Member"
-      when :viewer then "Viewer"
-      else role.to_s.humanize
-      end
+      # I18n-backed (organizations.roles.*) so hosts localize/retheme labels
+      # by overriding locale keys instead of monkey-patching this helper.
+      # Custom roles defined via config.roles fall back to humanize unless
+      # the host adds a matching organizations.roles.<name> key.
+      Organizations.t(:"roles.#{role}", default: role.to_s.humanize)
     end
 
     # Returns a hash of role information for building badges
@@ -143,11 +141,9 @@ module Organizations
     # @param invitation [Organizations::Invitation] The invitation
     # @return [String]
     def organization_invitation_status_label(invitation)
-      case organization_invitation_status(invitation)
-      when :pending then "Pending"
-      when :accepted then "Accepted"
-      when :expired then "Expired"
-      end
+      status = organization_invitation_status(invitation)
+      # I18n-backed (organizations.invitation_status.*) — see role labels.
+      Organizations.t(:"invitation_status.#{status}", default: status.to_s.humanize)
     end
 
     # Returns a hash of invitation status information

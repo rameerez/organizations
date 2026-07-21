@@ -28,6 +28,24 @@ module Organizations
     # Minimal helpers needed for public routes
     helper_method :current_user if respond_to?(:helper_method)
 
+    # Host helper decoration (config.public_controller_helpers): this
+    # controller deliberately does NOT inherit the host ApplicationController
+    # (to dodge auth filters), which also means host layouts rendered by
+    # public pages (invitation acceptance in the app's devise/marketing
+    # layout) are missing the app's helper modules. Both known production
+    # hosts hand-patched exactly this in an initializer — declare it instead:
+    #
+    #   config.public_controller_helpers = ["ApplicationHelper", "PageHelper"]
+    #
+    # Strings are constantized HERE, at controller-class load time (after
+    # initializers, reload-safe), so the initializer never has to reference
+    # autoloadable constants directly.
+    if respond_to?(:helper)
+      Organizations.configuration.public_controller_helpers.each do |helper_module|
+        helper(helper_module.is_a?(Module) ? helper_module : helper_module.to_s.constantize)
+      end
+    end
+
     private
 
     # Returns the current user from the host application (if any).
@@ -59,3 +77,11 @@ module Organizations
     helper_method :main_app if respond_to?(:helper_method)
   end
 end
+
+# Host extension seam — see the load-hooks note in
+# lib/organizations/models/organization.rb. Typical use: decorating this
+# controller with host helper modules its layout needs (it inherits
+# ActionController::Base, NOT the host ApplicationController, so app helpers
+# aren't present by default). Prefer config.public_controller_helpers for
+# that common case; this hook is for arbitrary decoration.
+ActiveSupport.run_load_hooks(:organizations_public_controller, Organizations::PublicController)

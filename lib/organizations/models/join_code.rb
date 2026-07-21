@@ -37,7 +37,7 @@ module Organizations
                inverse_of: :join_codes
 
     belongs_to :created_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # Requests OUTLIVE the codes that created them (they are the join audit
@@ -63,6 +63,15 @@ module Organizations
     # === Scopes ===
 
     scope :not_revoked, -> { where(revoked_at: nil) }
+
+    # Codes that can actually be redeemed right now — the SQL twin of
+    # #active? (not revoked, not expired, not exhausted). Powers
+    # Organization#accepts_code_joining? without loading rows.
+    scope :active, lambda {
+      not_revoked
+        .where("expires_at IS NULL OR expires_at > ?", Time.current)
+        .where("max_uses IS NULL OR uses_count < max_uses")
+    }
 
     # === Status ===
 
@@ -128,10 +137,10 @@ module Organizations
     # @raise [JoinCodeExhausted] when max_uses is spent
     def self.redeem(code, user:)
       normalized = normalize(code)
-      raise JoinCodeInvalid, "This code is not valid" if normalized.blank?
+      raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") if normalized.blank?
 
       join_code = find_by(code: normalized)
-      raise JoinCodeInvalid, "This code is not valid" unless join_code
+      raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") unless join_code
 
       join_code.redeem!(user: user)
     end
@@ -180,8 +189,8 @@ module Organizations
     private
 
     def ensure_redeemable!
-      raise JoinCodeInvalid, "This code is not valid" if revoked? || expired?
-      raise JoinCodeExhausted, "This code has reached its usage limit" if exhausted?
+      raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") if revoked? || expired?
+      raise JoinCodeExhausted, Organizations.t(:"errors.join_code_exhausted") if exhausted?
     end
 
     # Attach this code to the user's open request (creating one if needed),
@@ -228,3 +237,6 @@ module Organizations
     end
   end
 end
+
+# Host extension seam — see the load-hooks note in models/organization.rb.
+ActiveSupport.run_load_hooks(:organizations_join_code, Organizations::JoinCode)

@@ -25,12 +25,15 @@ module Organizations
       module HasOrganizations
         extend ActiveSupport::Concern
 
-        # Error raised when org limits are exceeded
-        class OrganizationLimitReached < Organizations::Error; end
-        class CannotLeaveLastOrganization < Organizations::Error; end
-        class CannotLeaveAsLastOwner < Organizations::Error; end
-        class CannotDeleteAsOrganizationOwner < Organizations::Error; end
-        class NoCurrentOrganization < Organizations::Error; end
+        # Historical aliases — the CANONICAL constants live at Organizations::
+        # top level since 0.5.0 (rescue Organizations::CannotLeaveAsLastOwner,
+        # not this four-modules-deep path). Same class objects, so existing
+        # rescues of the nested paths keep working.
+        OrganizationLimitReached = Organizations::OrganizationLimitReached
+        CannotLeaveLastOrganization = Organizations::CannotLeaveLastOrganization
+        CannotLeaveAsLastOwner = Organizations::CannotLeaveAsLastOwner
+        CannotDeleteAsOrganizationOwner = Organizations::CannotDeleteAsOrganizationOwner
+        NoCurrentOrganization = Organizations::NoCurrentOrganization
 
         # Module containing class methods to be extended onto ActiveRecord::Base
         module ClassMethods
@@ -433,7 +436,7 @@ module Organizations
             settings = self.class.organization_settings
             max = settings[:max_organizations]
             if max && owned_organizations.count >= max
-              raise OrganizationLimitReached, "Maximum number of organizations (#{max}) reached"
+              raise OrganizationLimitReached, Organizations.t(:"errors.organization_limit_reached", max: max)
             end
 
             org = nil
@@ -477,14 +480,14 @@ module Organizations
               if membership.role.to_sym == :owner
                 owner_count = org.memberships.where(role: "owner").count
                 if owner_count == 1
-                  raise CannotLeaveAsLastOwner, "Cannot leave organization as the only owner. Transfer ownership first."
+                  raise CannotLeaveAsLastOwner, Organizations.t(:"errors.cannot_leave_as_last_owner")
                 end
               end
 
               # Check require_organization setting
               settings = self.class.organization_settings
               if settings[:require_organization] && organizations.count == 1
-                raise CannotLeaveLastOrganization, "Cannot leave your only organization"
+                raise CannotLeaveLastOrganization, Organizations.t(:"errors.cannot_leave_last_organization")
               end
 
               membership.destroy!
@@ -506,7 +509,7 @@ module Organizations
           # @raise [NoCurrentOrganization] if no current organization
           def leave_current_organization!
             unless current_organization
-              raise NoCurrentOrganization, "No current organization to leave"
+              raise NoCurrentOrganization, Organizations.t(:"errors.no_current_organization_to_leave")
             end
 
             leave_organization!(current_organization)
@@ -530,7 +533,7 @@ module Organizations
             user_role = role_in(org)
             unless user_role && Roles.has_permission?(user_role, :invite_members)
               raise Organizations::NotAuthorized.new(
-                "You don't have permission to invite members",
+                Organizations.t(:"errors.invite_not_authorized"),
                 permission: :invite_members,
                 organization: org,
                 user: self
@@ -562,10 +565,15 @@ module Organizations
             existing_membership = memberships.find_by(organization_id: organization.id)
             if existing_membership
               raise Organizations::JoinRequestAlreadyDecided,
-                    "You are already a member of this organization"
+                    Organizations.t(:"errors.join_request_already_member")
             end
 
-            request = organization.join_requests.create!(user: self, message: message)
+            # SAVEPOINT: the RecordNotUnique rescue below must stay reachable
+            # when a HOST wraps this call in its own transaction (PostgreSQL
+            # aborted-transaction semantics — see JoinRequest#create_membership!).
+            request = ActiveRecord::Base.transaction(requires_new: true) do
+              organization.join_requests.create!(user: self, message: message)
+            end
 
             Callbacks.dispatch(
               :join_request_created,
@@ -578,7 +586,7 @@ module Organizations
           rescue ActiveRecord::RecordNotUnique
             # Race: a concurrent request slipped past the pre-check.
             pending_join_request_for(organization) ||
-              raise(Organizations::JoinRequestError, "Could not create join request")
+              raise(Organizations::JoinRequestError, Organizations.t(:"errors.join_request_create_failed"))
           end
 
           # This user's open request for an organization, if any
@@ -633,7 +641,7 @@ module Organizations
           def prevent_deletion_while_owning_organizations
             return unless memberships.where(role: "owner").exists?
 
-            errors.add(:base, "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first.")
+            errors.add(:base, Organizations.t(:"errors.cannot_delete_user_owns_organizations"))
             throw(:abort)
           end
         end

@@ -142,16 +142,16 @@ module Organizations
       # Can't change your own role
       if @membership.user_id == current_user.id
         raise Organizations::NotAuthorized.new(
-          "You cannot change your own role",
+          Organizations.t(:"errors.cannot_change_own_role"),
           permission: :edit_member_roles,
           organization: current_organization,
           user: current_user
         )
       end
 
-      # Validate the new role is valid
+      # Validate the new role is valid (user-reachable via form params, so localized)
       unless Roles.valid_role?(new_role)
-        raise Organizations::Error, "Invalid role: #{new_role}"
+        raise Organizations::Error, Organizations.t(:"errors.invalid_role", role: new_role)
       end
 
       # Note: Owner promotion/demotion rules are enforced by Organization#change_role_of!

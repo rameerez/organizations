@@ -41,10 +41,35 @@ module Organizations
   class InvitationAlreadyAccepted < InvitationError; end
   class InvitationEmailMismatch < InvitationError; end
 
+  # User-level membership errors — canonical TOP-LEVEL homes (0.5.0). These
+  # were historically defined four modules deep inside the HasOrganizations
+  # concern, forcing hosts to rescue
+  # Organizations::Models::Concerns::HasOrganizations::CannotLeaveAsLastOwner
+  # — a real papercut found in a production host. The nested constants are
+  # kept as aliases; rescue THESE.
+  class OrganizationLimitReached < Error; end
+  class CannotLeaveLastOrganization < Error; end
+  class CannotLeaveAsLastOwner < Error; end
+  class CannotDeleteAsOrganizationOwner < Error; end
+  class NoCurrentOrganization < Error; end
+
   # Join request errors (verified joining)
   class JoinRequestError < Error; end
   class JoinRequestExpired < JoinRequestError; end
   class JoinRequestAlreadyDecided < JoinRequestError; end
+
+  # Raised (typically by the host's `on_member_joining` gate) to VETO a
+  # membership that is about to be created — seat limits, member caps,
+  # compliance holds. The gate dispatches strictly inside the creating
+  # transaction, so raising this rolls everything back cleanly: no membership
+  # row, join requests stay pending (resumable), invitations stay unaccepted.
+  # Raising without a message gets the localized default
+  # (organizations.errors.membership_vetoed).
+  class MembershipVetoed < Error
+    def initialize(message = nil)
+      super(message || Organizations.t(:"errors.membership_vetoed"))
+    end
+  end
 
   # Join code errors (verified joining)
   # JoinCodeInvalid covers unknown, revoked, and expired codes — hosts should
@@ -76,6 +101,10 @@ module Organizations
   autoload :InvitationAcceptanceResult, "organizations/invitation_acceptance_result"
   autoload :InvitationAcceptanceFailure, "organizations/invitation_acceptance_failure"
   autoload :EmailNormalizer, "organizations/email_normalizer"
+  autoload :JoinFlow, "organizations/join_flow"
+  autoload :JoinState, "organizations/join_state"
+  autoload :MetadataFlags, "organizations/metadata_flags"
+  autoload :OrganizationScoped, "organizations/organization_scoped"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers
@@ -113,6 +142,15 @@ module Organizations
     autoload :JoinCode, "organizations/models/join_code"
     autoload :AllowlistEntry, "organizations/models/allowlist_entry"
     autoload :JoinRequest, "organizations/models/join_request"
+
+    # Non-Rails contexts (plain ActiveRecord, the gem's own test suite) don't
+    # get the Rails engine's automatic `config/locales` pickup, so register
+    # the gem's locale files directly. `|=` keeps this idempotent. In Rails
+    # apps the engine handles it (Rails::Engine adds paths["config/locales"]
+    # to I18n.load_path — https://guides.rubyonrails.org/engines.html).
+    # I18n itself is always available: it's a hard dependency of
+    # activesupport, which this gem depends on.
+    I18n.load_path |= Dir[File.expand_path("../config/locales/*.yml", __dir__)]
   end
 
   class << self
@@ -133,16 +171,82 @@ module Organizations
     #     config.invitation_expiry = 7.days
     #   end
     #
+    # ATOMIC on validation failure: a configure block that raises (typically
+    # via validate!) restores the previous configuration instead of leaving
+    # half-applied settings on the live object. Found the hard way: a
+    # validation-failure left its invalid assignment behind on the shared
+    # config, and every LATER configure call re-raised that stale error —
+    # an order-dependent heisenbug in test suites and a real hazard for
+    # hosts rescuing ConfigurationError in initializers.
+    # NOTE: restoration is a shallow dup — use SETTERS in configure blocks
+    # (config.x = [...]), never in-place mutation (config.x << ...), which
+    # is the documented contract anyway.
     def configure
+      snapshot = configuration.dup
       yield(configuration)
       configuration.validate!
+    rescue StandardError
+      @configuration = snapshot
+      raise
     end
 
     # Reset configuration to defaults
     # Primarily used in tests
     def reset_configuration!
       @configuration = nil
+      remove_instance_variable(:@engine_mount_path) if defined?(@engine_mount_path)
       Roles.reset!
+    end
+
+    # The path prefix the engine is mounted at in the HOST app ("" when
+    # mounted at root, "/orgs" when mounted there, "" outside Rails).
+    #
+    # Why this exists: engine route helpers called WITHOUT a controller
+    # context (from models/mailers — e.g. building an invitation acceptance
+    # URL) don't know the mount point, so URLs built as
+    # "/invitations/<token>" silently 404 for any host that mounts the
+    # engine anywhere but root. Both known hosts mount at root, which is
+    # exactly why nobody noticed. Memoized — the mount point is fixed at
+    # boot. Source on mounted helpers vs raw engine url_helpers:
+    # https://guides.rubyonrails.org/engines.html#routes
+    # @return [String]
+    def engine_mount_path
+      return @engine_mount_path if defined?(@engine_mount_path)
+
+      @engine_mount_path = compute_engine_mount_path
+    end
+
+    # @api private
+    def compute_engine_mount_path
+      routes = host_application_routes
+      return "" unless routes && defined?(Organizations::Engine)
+
+      mount = routes.routes.detect do |route|
+        route.app.respond_to?(:app) && route.app.app == Organizations::Engine
+      end
+      return "" unless mount
+
+      # "/orgs(.:format)" → "/orgs"; a root mount "/" → "".
+      mount.path.spec.to_s.delete_suffix("(.:format)").chomp("/")
+    rescue StandardError
+      ""
+    end
+
+    # True only under a real, booted Rails app — the ONE home for this guard
+    # (mailers and URL builders all need it). ⚠️ `defined?(Rails)` alone is
+    # NOT enough: several gems define a bare `Rails` module WITHOUT
+    # `.application` (globalid setups, railtie fragments, bare test
+    # harnesses), where `Rails.application` raises NoMethodError instead of
+    # returning nil. Found by the first tests to ever render the stock mails.
+    def full_rails_app?
+      !!(defined?(Rails) && Rails.respond_to?(:application) && Rails.application)
+    end
+
+    # @api private
+    def host_application_routes
+      return nil unless full_rails_app?
+
+      Rails.application.routes
     end
 
     # Get the roles module
@@ -150,5 +254,40 @@ module Organizations
     def roles
       Roles
     end
+
+    # The host's user model class name (config.user_class, default "User").
+    # Used as `class_name:` at association-definition time in the gem's
+    # models — they load AFTER initializers in Rails (Zeitwerk shims) and on
+    # first constant reference in plain Ruby, so a configured value is
+    # visible as long as hosts configure before touching the models.
+    # @return [String]
+    def user_class_name
+      configuration.user_class
+    end
+
+    # The host's user model class (constantized user_class_name).
+    # @return [Class]
+    def user_class
+      user_class_name.constantize
+    end
+
+    # Resolve a gem string through I18n under the `organizations.` namespace.
+    # This is the ONE door every user-facing string the gem produces goes
+    # through — error messages, labels, mailer copy. en.yml is the catalog
+    # SSOT (no inline English defaults on purpose: a missing key renders as
+    # "Translation missing: …", a loud and findable bug, instead of silently
+    # drifting from the catalog).
+    #
+    # Hosts override any key the standard Rails way — app locale files load
+    # after engine locale files, so the host's value wins.
+    #
+    # @param key [String, Symbol] key under the `organizations.` scope,
+    #   e.g. :"errors.join_code_invalid" or "roles.owner"
+    # @param options [Hash] I18n options (interpolations, :locale, :default…)
+    # @return [String]
+    def translate(key, **)
+      I18n.t(key, scope: :organizations, **)
+    end
+    alias t translate
   end
 end

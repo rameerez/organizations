@@ -1,0 +1,126 @@
+# Organizations gem — Spanish locale.
+#
+# Ships with the gem so Spanish-market hosts get correct end-user copy out of
+# the box (the first two production hosts of this gem are Spanish products).
+# Keep key parity with en.yml — en.yml is the catalog SSOT; this file must
+# always answer the same keys. Tone: neutral "tú", consistent with typical
+# Spanish SaaS copy.
+es:
+  organizations:
+    roles:
+      owner: "Propietario"
+      admin: "Administrador"
+      member: "Miembro"
+      viewer: "Observador"
+
+    invitation_status:
+      pending: "Pendiente"
+      accepted: "Aceptada"
+      expired: "Caducada"
+
+    # En minúsculas a propósito: se interpolan a mitad de frase en
+    # errors.join_request_already_decided.
+    join_request_status:
+      pending: "pendiente"
+      approved: "aprobada"
+      rejected: "rechazada"
+      withdrawn: "retirada"
+      expired: "caducada"
+
+    errors:
+      join_code_invalid: "Este código no es válido"
+      join_code_exhausted: "Este código ya ha alcanzado su límite de usos"
+
+      join_request_expired: "Esta solicitud ha caducado"
+      join_request_already_decided: "Esta solicitud ya está %{status}"
+      join_request_already_member: "Ya eres miembro de esta organización"
+      join_request_create_failed: "No se ha podido crear la solicitud"
+      join_request_membership_gone: "La solicitud se aprobó pero la membresía ya no existe"
+
+      membership_vetoed: "Ahora mismo no puedes unirte a esta organización"
+
+      verification_email_invalid: "Esta dirección de email no es válida"
+      verification_email_not_eligible: "Ese email no pertenece a esta organización"
+      verification_email_already_claimed: "Ese email ya está asociado a un miembro de esta organización"
+      verification_code_invalid: "El código no es correcto"
+      verification_code_missing: "No hay ningún código de verificación activo para esta solicitud"
+      verification_code_expired: "El código ha caducado — pide uno nuevo"
+      verification_attempts_exceeded: "Demasiados intentos — pide un código nuevo"
+      verification_sends_exceeded: "Se han pedido demasiados códigos para esta solicitud"
+      verification_resend_throttled: "Espera un momento antes de pedir otro código"
+      account_email_trust_disabled: "La verificación por email de cuenta está desactivada (config.trust_confirmed_account_email)"
+      account_email_unconfirmed: "El email de la cuenta no está confirmado"
+      not_accepting_requests: "Esta organización no acepta solicitudes ahora mismo"
+
+      invitation_expired: "Esta invitación ha caducado"
+      invitation_already_accepted: "Esta invitación ya ha sido aceptada"
+      invitation_cannot_resend_accepted: "No se puede reenviar una invitación ya aceptada"
+      invitation_email_mismatch: "Esta invitación se envió a otra dirección de email"
+      invitation_accept_as_owner: "No se puede aceptar una invitación como propietario. Invita como administrador y transfiere la propiedad después."
+      invitation_already_member: "Esa persona ya es miembro de esta organización"
+      invite_as_owner: "No se puede invitar como propietario. Invita como administrador y transfiere la propiedad después."
+      invite_not_a_member: "Solo los miembros de la organización pueden enviar invitaciones"
+      invite_not_authorized: "No tienes permiso para invitar miembros"
+
+      cannot_remove_owner: "No se puede eliminar al propietario de la organización. Transfiere la propiedad primero."
+      cannot_add_as_owner: "No se puede añadir un miembro como propietario. Usa la transferencia de propiedad."
+      cannot_promote_to_owner: "No se puede ascender a propietario. Usa la transferencia de propiedad."
+      cannot_demote_owner_directly: "No se puede degradar al propietario directamente. Usa la transferencia de propiedad."
+      cannot_demote_owner: "No se puede degradar al propietario. Transfiere la propiedad primero."
+      promote_not_higher: "No se puede ascender a %{new_role}: no es un rol superior a %{role}"
+      demote_not_lower: "No se puede degradar a %{new_role}: no es un rol inferior a %{role}"
+      transfer_no_owner: "No se puede transferir la propiedad porque la organización no tiene propietario"
+      transfer_to_non_member: "No se puede transferir la propiedad a alguien que no es miembro"
+      transfer_to_non_admin: "No se puede transferir la propiedad a alguien que no es administrador. Asciéndele primero."
+
+      cannot_leave_as_last_owner: "No puedes salir de la organización siendo su único propietario. Transfiere la propiedad primero."
+      cannot_leave_last_organization: "No puedes salir de tu única organización"
+      organization_limit_reached: "Has alcanzado el máximo de organizaciones (%{max})"
+      no_current_organization_to_leave: "No hay ninguna organización activa de la que salir"
+      cannot_delete_user_owns_organizations: "No se puede eliminar un usuario que aún es propietario de organizaciones. Transfiere la propiedad o elimina esas organizaciones primero."
+
+      unauthorized_role: "Necesitas acceso de %{role} para hacer esto"
+      unauthorized_permission: "No tienes permiso para %{permission}"
+      unauthorized: "No estás autorizado para hacer esto"
+      not_a_member: "No eres miembro de esta organización"
+      organization_required: "Se requiere una organización"
+      cannot_change_own_role: "No puedes cambiar tu propio rol"
+      invalid_role: "Rol no válido: %{role}"
+
+    notices:
+      welcome: "¡Ya formas parte de %{organization}!"
+      already_member: "Ya eres miembro de %{organization}."
+      select_or_create_organization: "Selecciona o crea una organización."
+
+    attributes:
+      membership_taken: "ya es miembro de esta organización"
+      owner_taken: "ya existe un propietario para esta organización"
+      pending_request_taken: "ya tiene una solicitud pendiente para esta organización"
+      invitation_taken: "ya ha sido invitado a esta organización"
+      allowlist_taken: "ya está en la lista de esta organización"
+      domain_invalid: "no es un nombre de dominio válido"
+
+    mailers:
+      from_team: "El equipo"
+      invitation:
+        subject: "%{inviter} te ha invitado a unirte a %{organization}"
+        header: "¡Te han invitado!"
+        title: "¡Te han invitado a unirte a %{organization}!"
+        greeting: "Hola,"
+        invited_by: "%{inviter} te ha invitado a unirte a %{organization}."
+        invited_by_html: "<strong>%{inviter}</strong> te ha invitado a unirte a <strong>%{organization}</strong>."
+        invited_generic: "Te han invitado a unirte a %{organization}."
+        invited_generic_html: "Te han invitado a unirte a <strong>%{organization}</strong>."
+        joining_as: "Te unirás como: %{role}"
+        joining_as_label: "Te unirás como:"
+        accept_cta: "Acepta tu invitación aquí:"
+        accept_button: "Aceptar invitación"
+        copy_link: "O copia y pega este enlace en tu navegador:"
+        expires_on: "Esta invitación caducará el %{date}."
+        ignore: "Si no esperabas esta invitación, puedes ignorar este email."
+      verification:
+        subject: "%{code} es tu código de verificación de %{organization}"
+        lead: "Usa este código para verificar tu email y unirte a %{organization}:"
+        lead_html: "Usa este código para verificar tu email y unirte a <strong>%{organization}</strong>:"
+        expires: "El código caduca en %{minutes} minutos."
+        ignore: "Si no has pedido este código, puedes ignorar este email — nadie puede unirse a %{organization} con tu dirección sin él."

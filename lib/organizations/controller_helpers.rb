@@ -344,7 +344,7 @@ module Organizations
         config_value,
         invitation,
         user,
-        default: -> { default_auth_required_redirect_path }
+        default: -> { default_auth_required_redirect_path(invitation) }
       )
     end
 
@@ -419,7 +419,7 @@ module Organizations
       flash_options[:notice] = notice unless notice.nil?
 
       # Keep current behavior for existing apps when nothing is configured/passed.
-      flash_options[:alert] = "Please select or create an organization." if flash_options.empty?
+      flash_options[:alert] = Organizations.t(:"notices.select_or_create_organization") if flash_options.empty?
 
       redirect_to no_organization_redirect_path, **flash_options
       false
@@ -468,7 +468,7 @@ module Organizations
 
       unless membership_exists_for?(acting_user, org)
         raise Organizations::NotAMember.new(
-          "You are not a member of this organization",
+          Organizations.t(:"errors.not_a_member"),
           organization: org,
           user: acting_user
         )
@@ -624,11 +624,14 @@ module Organizations
 
     def build_unauthorized_message(permission, required_role)
       if required_role
-        "You need #{required_role} access to perform this action"
+        # Same custom-role fallback as ViewHelpers#organization_role_label:
+        # humanized, so "superfan" renders as "Superfan" in both places.
+        Organizations.t(:"errors.unauthorized_role",
+                        role: Organizations.t(:"roles.#{required_role}", default: required_role.to_s.humanize))
       elsif permission
-        "You don't have permission to #{permission.to_s.humanize.downcase}"
+        Organizations.t(:"errors.unauthorized_permission", permission: permission.to_s.humanize.downcase)
       else
-        "You are not authorized to perform this action"
+        Organizations.t(:"errors.unauthorized")
       end
     end
 
@@ -662,7 +665,7 @@ module Organizations
             notice: config.no_organization_notice
           )
         end
-        format.json { render json: { error: "Organization required" }, status: :forbidden }
+        format.json { render json: { error: Organizations.t(:"errors.organization_required") }, status: :forbidden }
       end
     end
 
@@ -745,16 +748,39 @@ module Organizations
       end
     end
 
-    # Default path when invitation requires authentication
+    # Default path when invitation requires authentication.
+    #
+    # KNOWN-USER PROMOTION (default since 0.5.0): an invitation sent to an
+    # address that already has an account lands on SIGN-IN; everyone else
+    # lands on SIGN-UP. Both production hosts overrode the old always-sign-up
+    # default with this exact lambda — when every real host writes the same
+    # override, that's the default. Opt out by configuring
+    # redirect_path_when_invitation_requires_authentication yourself.
+    # @param invitation [Organizations::Invitation, nil]
     # @return [String]
-    def default_auth_required_redirect_path
-      if main_app.respond_to?(:new_user_registration_path)
+    def default_auth_required_redirect_path(invitation = nil)
+      if known_invited_user?(invitation) && main_app.respond_to?(:new_user_session_path)
+        main_app.new_user_session_path
+      elsif main_app.respond_to?(:new_user_registration_path)
         main_app.new_user_registration_path
       elsif main_app.respond_to?(:root_path)
         main_app.root_path
       else
         "/"
       end
+    end
+
+    # Does the invited address already belong to an account? Fails closed
+    # (false → sign-up) if the user class can't answer — never let a lookup
+    # error break the invitation flow.
+    def known_invited_user?(invitation)
+      email = invitation&.email.to_s.downcase
+      return false if email.blank?
+
+      klass = Organizations.user_class
+      klass.respond_to?(:where) && klass.where("LOWER(email) = ?", email).exists?
+    rescue StandardError
+      false
     end
 
     # Default path after invitation acceptance
@@ -779,9 +805,9 @@ module Organizations
 
     def default_pending_invitation_acceptance_notice(result)
       organization_name = result.invitation.organization.name
-      return "You're already a member of #{organization_name}." if result.already_member?
+      return Organizations.t(:"notices.already_member", organization: organization_name) if result.already_member?
 
-      "Welcome to #{organization_name}!"
+      Organizations.t(:"notices.welcome", organization: organization_name)
     end
   end
 end

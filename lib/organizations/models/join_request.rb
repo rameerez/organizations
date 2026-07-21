@@ -43,7 +43,9 @@ module Organizations
                class_name: "Organizations::Organization",
                inverse_of: :join_requests
 
-    belongs_to :user
+    # Explicit class_name (NOT inferred from the association name) so hosts
+    # with a differently-named account model work: config.user_class.
+    belongs_to :user, class_name: Organizations.user_class_name
 
     belongs_to :join_code,
                class_name: "Organizations::JoinCode",
@@ -51,7 +53,7 @@ module Organizations
                optional: true
 
     belongs_to :decided_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # === Validations ===
@@ -144,7 +146,7 @@ module Organizations
       address = email.to_s.strip
 
       unless address.match?(URI::MailTo::EMAIL_REGEXP)
-        raise VerificationEmailNotEligible, "This is not a valid email address"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_invalid")
       end
 
       code = nil
@@ -190,7 +192,7 @@ module Organizations
           # raising here would roll the increment back and give attackers
           # unlimited tries.
           update!(verification_attempts: verification_attempts + 1)
-          failure = VerificationCodeInvalid.new("The code is incorrect")
+          failure = VerificationCodeInvalid.new(Organizations.t(:"errors.verification_code_invalid"))
         end
       end
 
@@ -296,18 +298,50 @@ module Organizations
       Digest::SHA256.hexdigest("#{code}-#{request_id}")
     end
 
+    # Data-minimization sweep (GDPR posture): decided (rejected/withdrawn)
+    # and expired requests hold a verification email address with no ongoing
+    # purpose — purge them once they're old enough. APPROVED requests are
+    # deliberately kept: they are the join audit trail (provenance for the
+    # membership they created). The retention PERIOD is host policy; the
+    # knowledge of which states hold purposeless PII is the gem's.
+    #
+    # Wire it from a scheduled job/rake task, e.g.:
+    #   Organizations::JoinRequest.purge_stale!(older_than: 12.months)
+    #
+    # @param older_than [ActiveSupport::Duration] minimum age before purging
+    # @return [Integer] number of purged rows
+    def self.purge_stale!(older_than: 12.months)
+      cutoff = Time.current - older_than
+
+      # in_batches: this is a maintenance sweep over potentially years of
+      # rows — batched deletes keep the lock/undo footprint flat on large
+      # tables (returns the summed count, same contract as delete_all).
+      where(status: %w[rejected withdrawn]).where(decided_at: ...cutoff)
+        .or(expired.where(expires_at: ...cutoff))
+        .in_batches
+        .delete_all
+    end
+
     private
 
     # Raise unless this request is still open (pending and not expired)
     def ensure_open!
-      raise JoinRequestExpired, "This join request has expired" if expired?
-      raise JoinRequestAlreadyDecided, "This join request has already been #{status}" if decided?
+      raise JoinRequestExpired, Organizations.t(:"errors.join_request_expired") if expired?
+      raise JoinRequestAlreadyDecided, already_decided_message if decided?
     end
 
     # Like ensure_open! but tolerates expiry — used by reject!/withdraw! so
     # stale requests can still be cleaned up explicitly.
     def ensure_undecided!
-      raise JoinRequestAlreadyDecided, "This join request has already been #{status}" if decided?
+      raise JoinRequestAlreadyDecided, already_decided_message if decided?
+    end
+
+    # "…has already been %{status}" — the status word itself is translated
+    # (organizations.join_request_status.*, lowercase for mid-sentence use)
+    # so the whole sentence localizes as one unit.
+    def already_decided_message
+      Organizations.t(:"errors.join_request_already_decided",
+                      status: Organizations.t(:"join_request_status.#{status}", default: status))
     end
 
     def auto_approvable_after_verification?
@@ -324,7 +358,7 @@ module Organizations
     # Raises if it was removed after approval — the request can't be reused.
     def approved_membership!
       membership = existing_membership
-      raise JoinRequestAlreadyDecided, "Request was approved but the membership no longer exists" unless membership
+      raise JoinRequestAlreadyDecided, Organizations.t(:"errors.join_request_membership_gone") unless membership
 
       membership
     end
@@ -362,8 +396,7 @@ module Organizations
       matched_entry = matched_domain ? nil : organization.allowlist_entries.unclaimed.for_email(address).first
 
       unless matched_domain || matched_entry
-        raise VerificationEmailNotEligible,
-              "This email address is not eligible to join this organization"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
       end
 
       [matched_domain, matched_entry]
@@ -376,34 +409,34 @@ module Organizations
       return unless Membership.where(organization_id: organization_id, verified_email_normalized: normalized).exists?
 
       raise VerificationEmailAlreadyClaimed,
-            "This email address is already associated with a member of this organization"
+            Organizations.t(:"errors.verification_email_already_claimed")
     end
 
     def ensure_send_allowed!
       config = Organizations.configuration
 
       if verification_sends_count >= config.verification_max_sends
-        raise VerificationThrottled, "Too many codes requested for this request"
+        raise VerificationThrottled, Organizations.t(:"errors.verification_sends_exceeded")
       end
 
       resend_floor = interval_ago(config.verification_resend_interval)
       return unless verification_sent_at.present? && verification_sent_at > resend_floor
 
-      raise VerificationThrottled, "Please wait before requesting another code"
+      raise VerificationThrottled, Organizations.t(:"errors.verification_resend_throttled")
     end
 
     def ensure_active_challenge!
       config = Organizations.configuration
 
-      raise VerificationCodeInvalid, "No verification code is active for this request" if verification_code_digest.blank?
+      raise VerificationCodeInvalid, Organizations.t(:"errors.verification_code_missing") if verification_code_digest.blank?
 
       if verification_attempts >= config.verification_max_attempts
-        raise VerificationAttemptsExceeded, "Too many incorrect attempts — request a new code"
+        raise VerificationAttemptsExceeded, Organizations.t(:"errors.verification_attempts_exceeded")
       end
 
       return unless verification_expires_at.blank? || verification_expires_at <= Time.current
 
-      raise VerificationCodeExpired, "This code has expired — request a new one"
+      raise VerificationCodeExpired, Organizations.t(:"errors.verification_code_expired")
     end
 
     def correct_code?(code)
@@ -432,15 +465,19 @@ module Organizations
     end
 
     def create_membership!
-      organization.memberships.create!(
-        user: user,
-        role: "member",
-        joined_via: joined_via.presence || "manual",
-        verified_email: email_verified? ? verification_email : nil,
-        verified_email_normalized: email_verified? ? verification_email_normalized : nil,
-        verified_at: verified_at,
-        metadata: resolved_membership_metadata
-      )
+      effective_joined_via = joined_via.presence || "manual"
+      dispatch_member_joining_gate!(effective_joined_via)
+
+      # SAVEPOINT (requires_new): this INSERT runs inside approve!'s locked
+      # transaction and its unique-violation is RESCUED below. On PostgreSQL
+      # a statement error ABORTS the whole transaction ("current transaction
+      # is aborted, commands ignored…"), so without the savepoint the rescue
+      # path's queries explode instead of degrading gracefully — proven by
+      # running this suite against PG (SQLite forgives the pattern, which is
+      # how it stayed green). Source: https://www.postgresql.org/docs/current/tutorial-transactions.html
+      ActiveRecord::Base.transaction(requires_new: true) do
+        insert_membership_row!(effective_joined_via)
+      end
     rescue ActiveRecord::RecordNotUnique
       # Two possible unique collisions:
       # 1. (user, org) membership race — another path just made them a member.
@@ -450,7 +487,40 @@ module Organizations
       return existing if existing
 
       raise VerificationEmailAlreadyClaimed,
-            "This email address is already associated with a member of this organization"
+            Organizations.t(:"errors.verification_email_already_claimed")
+    end
+
+    def insert_membership_row!(effective_joined_via)
+      organization.memberships.create!(
+        user: user,
+        role: "member",
+        joined_via: effective_joined_via,
+        verified_email: email_verified? ? verification_email : nil,
+        verified_email_normalized: email_verified? ? verification_email_normalized : nil,
+        verified_at: verified_at,
+        metadata: resolved_membership_metadata
+      )
+    end
+
+    # THE MEMBERSHIP GATE (strict, vetoing, pre-persist) — covers every
+    # verified-joining path, since approval is the only way a request becomes
+    # a membership (codes, domains, allowlists, account-email shortcut all
+    # funnel here). Runs inside approve!'s locked transaction: a veto rolls
+    # back the status flip too, so the request stays PENDING — a safe,
+    # resumable state (approve again once the host unblocks).
+    # ⚠️ Join-code nuance: redemption consumes a use BEFORE approval, so a
+    # vetoed redemption still spends a use — max_uses is an anti-abuse cap,
+    # not a seat count (see README "Verified joining").
+    def dispatch_member_joining_gate!(effective_joined_via)
+      Callbacks.dispatch(
+        :member_joining,
+        strict: true,
+        organization: organization,
+        user: user,
+        role: "member",
+        joined_via: effective_joined_via,
+        join_request: self
+      )
     end
 
     def resolved_membership_metadata
@@ -494,7 +564,43 @@ module Organizations
       mailer_class = Organizations.configuration.verification_mailer.constantize
       mailer_class.code_email(self, code).deliver_later
     rescue StandardError => e
+      # The challenge row already COMMITTED (throttle stamped, send counted)
+      # before delivery was attempted — if we only logged here, the user
+      # would sit behind the resend throttle (and burn one of max_sends)
+      # waiting for a code that never left the building. Roll the throttle
+      # bookkeeping back so an immediate retry is allowed, and give the host
+      # a real signal (the on_verification_delivery_failed callback) instead
+      # of a log line nobody watches.
+      rollback_undelivered_challenge!(code)
       Callbacks.log_error("[Organizations] Failed to send verification email: #{e.message}")
+      Callbacks.dispatch(
+        :verification_delivery_failed,
+        organization: organization,
+        user: user,
+        join_request: self,
+        metadata: { "error_class" => e.class.name, "error_message" => e.message }
+      )
+    end
+
+    # Revert the challenge bookkeeping for a code that never got delivered.
+    # Digest-guarded under lock: if a concurrent resend already minted a new
+    # code (different digest) or a verify burned this one (nil digest), the
+    # state belongs to that other operation — leave it alone.
+    def rollback_undelivered_challenge!(code)
+      with_lock do
+        break unless verification_code_digest == self.class.digest_verification_code(code, id)
+
+        update!(
+          verification_code_digest: nil,
+          verification_sent_at: nil,
+          verification_expires_at: nil,
+          verification_attempts: 0,
+          verification_sends_count: [verification_sends_count - 1, 0].max
+        )
+      end
+    rescue StandardError => e
+      # Never let cleanup failure mask the original delivery failure.
+      Callbacks.log_error("[Organizations] Failed to roll back undelivered challenge: #{e.message}")
     end
 
     def set_expiry
@@ -511,8 +617,11 @@ module Organizations
         .where.not(id: id)
         .exists?
 
-      errors.add(:user_id, "already has a pending request for this organization") if existing
+      errors.add(:user_id, Organizations.t(:"attributes.pending_request_taken")) if existing
     end
   end
   # rubocop:enable Metrics/ClassLength
 end
+
+# Host extension seam — see the load-hooks note in models/organization.rb.
+ActiveSupport.run_load_hooks(:organizations_join_request, Organizations::JoinRequest)

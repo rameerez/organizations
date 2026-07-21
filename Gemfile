@@ -23,6 +23,10 @@ group :development, :test do
   gem "minitest-mock"
   gem "rack-test"
   gem "sqlite3", ">= 2.1"
+  # For the OPTIONAL PostgreSQL leg of the suite (ORGS_TEST_DATABASE_URL) -
+  # PG transaction semantics differ where it hurts (aborted-transaction
+  # poisoning on unique violations), so CI runs one PG cell too.
+  gem "pg"
   gem "ostruct"
   gem "simplecov", require: false
   # Required explicitly for tests since we don't load the full Rails stack

@@ -1,8 +1,7 @@
-Use this code to verify your email address and join <%= @organization.name %>:
+<%= Organizations.t(:"mailers.verification.lead", organization: @organization.name) %>
 
   <%= @code %>
 
-The code expires in <%= @expires_in_minutes %> minutes.
+<%= Organizations.t(:"mailers.verification.expires", minutes: @expires_in_minutes) %>
 
-If you didn't request this code, you can safely ignore this email —
-nobody can join <%= @organization.name %> with your address without it.
+<%= Organizations.t(:"mailers.verification.ignore", organization: @organization.name) %>

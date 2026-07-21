@@ -48,3 +48,79 @@ jobs:
           name: test-results-ruby-${{ matrix.ruby_version }}-${{ matrix.gemfile }}
           path: test/reports/
           retention-days: 7
+
+  # The dummy app is the living 0.5.0 demo AND the reference implementation
+  # hosts copy. Its integration suite is the HTTP smoke of the reference
+  # surfaces (four-state join screen, Access admin, OrganizationScoped 404
+  # posture) — run it under the dummy's OWN bundle so a fresh clone's
+  # `bin/rails test` experience is what CI certifies.
+  dummy-app:
+    runs-on: ubuntu-latest
+
+    env:
+      RAILS_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: test/dummy
+
+      - name: Build Tailwind (app/assets/builds is gitignored)
+        working-directory: test/dummy
+        run: bin/rails tailwindcss:build
+
+      - name: Prepare database
+        working-directory: test/dummy
+        run: bin/rails db:test:prepare
+
+      - name: Run dummy app tests (reference-surface HTTP smoke)
+        working-directory: test/dummy
+        run: bin/rails test
+
+  # PostgreSQL leg (review finding, empirically confirmed): PG aborts the
+  # whole transaction on a unique violation, so every
+  # rescue-RecordNotUnique-inside-a-transaction fallback only works under a
+  # SAVEPOINT (transaction(requires_new: true)). SQLite forgives the broken
+  # pattern silently — two race-form tests failed on PG before the savepoint
+  # fix while the SQLite matrix stayed green. This cell keeps that class of
+  # bug from ever shipping again.
+  test-postgres:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: organizations_gem_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RAILS_ENV: test
+      ORGS_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/organizations_gem_test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Run tests against PostgreSQL
+        run: bundle exec rake test

@@ -18,6 +18,10 @@ module Organizations
   class Organization < ActiveRecord::Base
     self.table_name = "organizations_organizations"
 
+    # metadata_flag macro for typed boolean toggles over the metadata bag —
+    # see Organizations::MetadataFlags.
+    extend Organizations::MetadataFlags
+
     # Error raised when trying to perform invalid operations on organization
     class CannotRemoveOwner < Organizations::Error; end
     class CannotDemoteOwner < Organizations::Error; end
@@ -82,6 +86,44 @@ module Organizations
     scope :with_member, ->(user) {
       joins(:memberships).where(organizations_memberships: { user_id: user.id })
     }
+
+    # === Creation ===
+
+    # Create an organization WITH its owner membership in one transaction —
+    # the ops/provisioning primitive. This is what consoles, seed scripts,
+    # and admin provisioning services should call instead of hand-rolling
+    # `create! + Membership.create!(role: "owner")` (which one production
+    # host did, accidentally skipping the organization_created callback).
+    #
+    # Differences from user.create_organization! (the SELF-SERVE path):
+    #   - no session/current-organization switching (there is no session)
+    #   - not subject to max_organizations_per_user (an ops admin may own
+    #     hundreds of provisioned orgs)
+    #   - does NOT fire on_member_joining (owner-at-creation is not
+    #     "joining" — same contract as the rest of the gate)
+    #   - DOES fire on_organization_created, like every creation path.
+    #
+    # ⚠️ Because it skips the per-user cap, do NOT expose this from
+    # request-cycle self-serve code — users creating their own organizations
+    # go through user.create_organization!. This is for consoles, seeds, and
+    # admin-vetted provisioning services.
+    #
+    # @param owner [User] becomes the owner (single-owner invariant holds)
+    # @param attributes [Hash] organization attributes (name:, plus any host columns)
+    # @return [Organizations::Organization]
+    def self.create_with_owner!(owner:, **attributes)
+      raise ArgumentError, "owner is required" unless owner
+
+      organization = nil
+      ActiveRecord::Base.transaction do
+        organization = create!(**attributes)
+        Membership.create!(user: owner, organization: organization, role: "owner")
+      end
+
+      Callbacks.dispatch(:organization_created, organization: organization, user: owner)
+
+      organization
+    end
 
     # === Member Query Methods ===
 
@@ -154,7 +196,7 @@ module Organizations
 
       # Owner role is only assignable via transfer_ownership_to! or initial creation
       if role_sym == :owner
-        raise CannotHaveMultipleOwners, "Cannot add member as owner. Use transfer_ownership_to! instead."
+        raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_add_as_owner")
       end
 
       # Check if already a member (idempotent operation)
@@ -162,19 +204,51 @@ module Organizations
       return existing if existing
 
       membership = nil
-      ActiveRecord::Base.transaction do
+      created = false
+      # requires_new: the rescued unique-violation below must roll back only
+      # a SAVEPOINT — if a HOST wraps add_member! in its own transaction, a
+      # plain nested block joins it, and on PostgreSQL the violation would
+      # poison the host's whole transaction before the rescue could run the
+      # idempotent lookup (see JoinRequest#create_membership!).
+      ActiveRecord::Base.transaction(requires_new: true) do
+        # Re-check under the transaction (review finding): a concurrent
+        # add_member! that already inserted makes this call an idempotent
+        # no-op — resolving here (instead of falling through to the gate)
+        # keeps the gate from firing/vetoing a join that already happened,
+        # and member_joined is NOT re-dispatched for it (the concurrent
+        # creator already fired it). The RecordNotUnique rescue below stays
+        # as the backstop for the window this narrows but cannot close.
+        existing = memberships.find_by(user_id: user.id)
+        next (membership = existing) if existing
+
+        # THE MEMBERSHIP GATE (strict, vetoing, pre-persist): the one place a
+        # host can abort ANY membership creation — seat limits, member caps.
+        # Raising here rolls back cleanly (nothing persisted yet). Runs after
+        # the idempotency check on purpose: an existing member isn't joining.
+        Callbacks.dispatch(
+          :member_joining,
+          strict: true,
+          organization: self,
+          user: user,
+          role: role_sym.to_s,
+          joined_via: "manual"
+        )
+
         membership = memberships.create!(
           user: user,
           role: role_sym.to_s
         )
+        created = true
       end
 
-      Callbacks.dispatch(
-        :member_joined,
-        organization: self,
-        membership: membership,
-        user: user
-      )
+      if created
+        Callbacks.dispatch(
+          :member_joined,
+          organization: self,
+          membership: membership,
+          user: user
+        )
+      end
 
       membership
     rescue ActiveRecord::RecordNotUnique
@@ -191,7 +265,7 @@ module Organizations
       return unless membership
 
       if membership.role.to_sym == :owner
-        raise CannotRemoveOwner, "Cannot remove the organization owner. Transfer ownership first."
+        raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner")
       end
 
       ActiveRecord::Base.transaction do
@@ -236,12 +310,12 @@ module Organizations
         if new_role == :owner && old_role != :owner
           # Promoting to owner - this is only allowed via transfer_ownership_to!
           # Direct role change to owner is not permitted
-          raise CannotHaveMultipleOwners, "Cannot promote to owner. Use transfer_ownership_to! instead."
+          raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_promote_to_owner")
         end
 
         if old_role == :owner && new_role != :owner
           # Demoting owner - not allowed directly
-          raise CannotDemoteOwner, "Cannot demote owner directly. Use transfer_ownership_to! instead."
+          raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner_directly")
         end
 
         membership.update!(role: new_role.to_s)
@@ -276,16 +350,16 @@ module Organizations
         new_owner_membership = memberships.find_by(user_id: new_owner.id)
 
         unless old_owner_membership
-          raise NoOwnerPresent, "Cannot transfer ownership because organization has no owner membership"
+          raise NoOwnerPresent, Organizations.t(:"errors.transfer_no_owner")
         end
 
         unless new_owner_membership
-          raise CannotTransferToNonMember, "Cannot transfer ownership to a non-member"
+          raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
         end
 
         # New owner must be at least an admin (per README: "Ownership can be transferred to any admin")
         unless Roles.at_least?(new_owner_membership.role.to_sym, :admin)
-          raise CannotTransferToNonAdmin, "Cannot transfer ownership to non-admin. Promote them to admin first."
+          raise CannotTransferToNonAdmin, Organizations.t(:"errors.transfer_to_non_admin")
         end
 
         # No-op transfer to the current owner.
@@ -333,7 +407,7 @@ module Organizations
 
       # Owner role cannot be assigned via invitation - only via transfer_ownership_to!
       if role_sym == :owner
-        raise CannotInviteAsOwner, "Cannot invite as owner. Invite as admin, then use transfer_ownership_to! after they join."
+        raise CannotInviteAsOwner, Organizations.t(:"errors.invite_as_owner")
       end
 
       normalized_email = email.downcase.strip
@@ -344,7 +418,7 @@ module Organizations
 
       # Check if already a member (case-insensitive)
       if users.where("LOWER(email) = ?", normalized_email).exists?
-        raise Organizations::InvitationError, "User is already a member of this organization"
+        raise Organizations::InvitationError, Organizations.t(:"errors.invitation_already_member")
       end
 
       # Allow callback hooks to veto invitations (e.g., plan seat limits) before write.
@@ -364,7 +438,11 @@ module Organizations
       )
 
       invitation = nil
-      ActiveRecord::Base.transaction do
+      # requires_new: the rescued unique-violation must roll back only a
+      # SAVEPOINT so the method-level rescue's lookup still works when a HOST
+      # wraps this call in its own transaction (PostgreSQL poisons the whole
+      # transaction otherwise — see JoinRequest#create_membership!).
+      ActiveRecord::Base.transaction(requires_new: true) do
         # Check for expired invitation and refresh it instead of creating duplicate
         expired_invitation = invitations.expired.for_email(normalized_email).first
         if expired_invitation
@@ -440,11 +518,17 @@ module Organizations
     # @return [Array<AllowlistEntry>] the newly created entries
     def import_allowlist!(emails, source: nil, membership_metadata: {})
       Array(emails).filter_map do |email|
-        entry = allowlist_entries.create!(
-          email: email,
-          source: source,
-          membership_metadata: membership_metadata
-        )
+        # SAVEPOINT per entry: the duplicate-skip rescue below must survive
+        # under a CALLER's transaction (real hosts wrap provisioning in one)
+        # — on PostgreSQL the first duplicate would otherwise poison the
+        # whole wrapping transaction and abort the import mid-list.
+        entry = ActiveRecord::Base.transaction(requires_new: true) do
+          allowlist_entries.create!(
+            email: email,
+            source: source,
+            membership_metadata: membership_metadata
+          )
+        end
         entry
       rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
         # Skip duplicates silently (idempotent import); re-raise anything else.
@@ -460,10 +544,29 @@ module Organizations
       join_requests.pending
     end
 
-    # Whether this organization exposes any self-serve joining mechanism
+    # Whether this organization accepts EMAIL-PROOF joining: an enrolled
+    # domain or an unclaimed roster entry (both run the same emailed-code
+    # challenge). Drives whether a join screen shows the email form.
+    # @return [Boolean]
+    def accepts_domain_joining?
+      domains.exists? || allowlist_entries.unclaimed.exists?
+    end
+
+    # Whether this organization has at least one code that can actually be
+    # redeemed right now (not revoked/expired/exhausted). Drives whether a
+    # join screen shows the code form.
+    # @return [Boolean]
+    def accepts_code_joining?
+      join_codes.active.exists?
+    end
+
+    # Whether this organization exposes any self-serve joining mechanism.
+    # NOTE (0.5.0 refinement): codes now count only while actually
+    # redeemable — an org whose every code expired or ran out no longer
+    # reads as joinable.
     # @return [Boolean]
     def accepts_join_requests?
-      domains.exists? || join_codes.not_revoked.exists? || allowlist_entries.unclaimed.exists?
+      accepts_domain_joining? || accepts_code_joining?
     end
 
     # Approve a join request (creates the membership). See JoinRequest#approve!.
@@ -496,19 +599,19 @@ module Organizations
     #   the email is unconfirmed, or the feature is disabled
     def join_with_account_email!(user)
       unless Organizations.configuration.trust_confirmed_account_email
-        raise VerificationEmailNotEligible, "Account-email trust is disabled (see config.trust_confirmed_account_email)"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_trust_disabled")
       end
 
       email = user.respond_to?(:email) ? user.email.to_s : ""
       confirmed = user.respond_to?(:confirmed_at) && user.confirmed_at.present?
 
       unless confirmed
-        raise VerificationEmailNotEligible, "The account email has not been confirmed"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_unconfirmed")
       end
 
       matched_domain = domains.matching_email(email).first
       unless matched_domain
-        raise VerificationEmailNotEligible, "This email address is not eligible to join this organization"
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
       end
 
       # Uniform funnel: every self-serve join goes through a JoinRequest so
@@ -519,7 +622,7 @@ module Organizations
       ActiveRecord::Base.transaction do
         if Membership.where(organization_id: id, verified_email_normalized: normalized).exists?
           raise VerificationEmailAlreadyClaimed,
-                "This email address is already associated with a member of this organization"
+                Organizations.t(:"errors.verification_email_already_claimed")
         end
 
         request.assign_attributes(
@@ -559,7 +662,7 @@ module Organizations
 
       unless inviter_membership
         raise Organizations::NotAMember.new(
-          "Only organization members can send invitations",
+          Organizations.t(:"errors.invite_not_a_member"),
           organization: self,
           user: inviter
         )
@@ -568,7 +671,7 @@ module Organizations
       return if Roles.has_permission?(inviter_membership.role.to_sym, :invite_members)
 
       raise Organizations::NotAuthorized.new(
-        "You don't have permission to invite members",
+        Organizations.t(:"errors.invite_not_authorized"),
         permission: :invite_members,
         organization: self,
         user: inviter
@@ -611,3 +714,19 @@ module Organizations
     end
   end
 end
+
+# HOST EXTENSION SEAM (pay-gem style load hooks): fires on EVERY load of this
+# file — including Zeitwerk reloads via the app/models shims — so extensions
+# registered with ActiveSupport.on_load survive code reloading in development.
+# A bare `Organizations::Organization.class_eval` in an initializer runs ONCE
+# and evaporates on the first reload (the shim `load`s a fresh class object);
+# a `to_prepare` block works but is one shared basket — one bad constant in
+# it silently kills every extension after it. Load hooks are per-model and
+# re-run automatically. Register in an initializer:
+#
+#   ActiveSupport.on_load(:organizations_organization) do
+#     include OrganizationExtensions   # `self` is Organizations::Organization
+#   end
+#
+# Docs: https://api.rubyonrails.org/classes/ActiveSupport/LazyLoadHooks.html
+ActiveSupport.run_load_hooks(:organizations_organization, Organizations::Organization)

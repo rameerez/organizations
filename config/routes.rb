@@ -1,40 +1,58 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/BlockLength -- a routes file is one declarative block by nature
 Organizations::Engine.routes.draw do
-  # Organization switching
-  # POST /organizations/switch/:id
-  post "organizations/switch/:id", to: "switch#create", as: :switch_organization
+  # Route groups are drawn per config.engine_routes (devise_for-style
+  # only:/except:) so hosts declare what they want instead of shadowing
+  # engine routes with order-load-bearing redirects before the mount.
+  # Routes re-draw on every reload_routes!, so config is always respected.
+  groups = Organizations.configuration.engine_route_groups
 
-  # Organization management
-  # All operations are scoped to current_organization (from session)
-  resources :organizations, only: [:index, :show, :new, :create, :edit, :update, :destroy]
+  if groups.include?(:switching)
+    # Organization switching
+    # POST /organizations/switch/:id
+    post "organizations/switch/:id", to: "switch#create", as: :switch_organization
+  end
 
-  # Membership management (scoped to current_organization)
-  # These are flat routes - the organization is determined by session, not URL
-  resources :memberships, only: [:index, :update, :destroy] do
-    member do
-      post :transfer_ownership
-    end
-    collection do
-      delete :leave
+  if groups.include?(:organizations)
+    # Organization management
+    # All operations are scoped to current_organization (from session)
+    resources :organizations, only: [:index, :show, :new, :create, :edit, :update, :destroy]
+  end
+
+  if groups.include?(:memberships)
+    # Membership management (scoped to current_organization)
+    # These are flat routes - the organization is determined by session, not URL
+    resources :memberships, only: [:index, :update, :destroy] do
+      member do
+        post :transfer_ownership
+      end
+      collection do
+        delete :leave
+      end
     end
   end
 
-  # Invitation management (scoped to current_organization)
-  # These are flat routes - the organization is determined by session, not URL
-  # NOTE: Must come BEFORE token-based routes so /invitations/new doesn't match /:token
-  resources :invitations, only: [:index, :new, :create, :destroy], as: :organization_invitations do
-    member do
-      post :resend
+  if groups.include?(:invitations)
+    # Invitation management (scoped to current_organization)
+    # These are flat routes - the organization is determined by session, not URL
+    # NOTE: Must come BEFORE token-based routes so /invitations/new doesn't match /:token
+    resources :invitations, only: [:index, :new, :create, :destroy], as: :organization_invitations do
+      member do
+        post :resend
+      end
     end
   end
 
-  # Invitation acceptance (public routes with token)
-  # These use PublicInvitationsController which inherits from a minimal base controller
-  # to avoid host app filters that might enforce authentication.
-  # GET  /invitations/:token        → View invitation details
-  # POST /invitations/:token/accept → Accept the invitation
-  # NOTE: These must come AFTER resourceful routes to avoid matching "new" as a token
-  get "invitations/:token", to: "public_invitations#show", as: :invitation
-  post "invitations/:token/accept", to: "public_invitations#accept", as: :accept_invitation
+  if groups.include?(:public_invitations)
+    # Invitation acceptance (public routes with token)
+    # These use PublicInvitationsController which inherits from a minimal base controller
+    # to avoid host app filters that might enforce authentication.
+    # GET  /invitations/:token        → View invitation details
+    # POST /invitations/:token/accept → Accept the invitation
+    # NOTE: These must come AFTER resourceful routes to avoid matching "new" as a token
+    get "invitations/:token", to: "public_invitations#show", as: :invitation
+    post "invitations/:token/accept", to: "public_invitations#accept", as: :accept_invitation
+  end
 end
+# rubocop:enable Metrics/BlockLength

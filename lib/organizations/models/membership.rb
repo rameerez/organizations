@@ -15,8 +15,22 @@ module Organizations
   #   membership.promote_to!(:admin)
   #   membership.demote_to!(:member)
   #
+  # ⚠️ THE MEMBERSHIP GATE IS NOT ON THIS MODEL. `on_member_joining` (the
+  # strict, vetoing host callback — seat limits, member caps) is dispatched
+  # by the SANCTIONED join paths: Organization#add_member!,
+  # Invitation#accept!, and JoinRequest#approve! (which covers codes,
+  # domains, allowlists, and the account-email shortcut). A direct
+  # `Membership.create!` bypasses the gate entirely — that's deliberate for
+  # ops/console/test usage (Organization.create_with_owner!, TestHelpers),
+  # but NEVER create memberships directly from request-cycle product code,
+  # and any NEW join path added to the gem must dispatch the gate itself
+  # (see Configuration#on_member_joining).
   class Membership < ActiveRecord::Base
     self.table_name = "organizations_memberships"
+
+    # metadata_flag macro for typed boolean toggles over the metadata bag —
+    # see Organizations::MetadataFlags.
+    extend Organizations::MetadataFlags
 
     # Error raised when trying to demote below current role
     class CannotDemoteOwner < Organizations::Error; end
@@ -25,20 +39,25 @@ module Organizations
 
     # === Associations ===
 
-    belongs_to :user
+    # Explicit class_name (NOT inferred from the association name) so hosts
+    # with a differently-named account model work: config.user_class.
+    belongs_to :user, class_name: Organizations.user_class_name
     belongs_to :organization,
                class_name: "Organizations::Organization",
                inverse_of: :memberships,
                counter_cache: :memberships_count
 
     belongs_to :invited_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # === Validations ===
 
     validates :role, presence: true, inclusion: { in: ->(_) { Roles::HIERARCHY.map(&:to_s) } }
-    validates :user_id, uniqueness: { scope: :organization_id, message: "is already a member of this organization" }
+    # Proc message: resolved at VALIDATION time so it follows I18n.locale —
+    # a literal string here would be frozen in whatever locale loaded first.
+    validates :user_id, uniqueness: { scope: :organization_id,
+                                      message: ->(*) { Organizations.t(:"attributes.membership_taken") } }
     validate :single_owner_per_organization, if: :owner?
 
     # === Scopes ===
@@ -161,11 +180,11 @@ module Organizations
 
       # Owner role is only assignable via transfer_ownership_to!
       if new_role_sym == :owner
-        raise CannotPromoteToOwner, "Cannot promote to owner. Use organization.transfer_ownership_to! instead."
+        raise CannotPromoteToOwner, Organizations.t(:"errors.cannot_promote_to_owner")
       end
 
       unless Roles.at_least?(new_role_sym, role_sym)
-        raise InvalidRoleChange, "Cannot promote to #{new_role} - it's not a higher role than #{role}"
+        raise InvalidRoleChange, Organizations.t(:"errors.promote_not_higher", new_role: new_role, role: role)
       end
 
       change_role_to!(new_role_sym, changed_by: changed_by)
@@ -182,11 +201,11 @@ module Organizations
       validate_role!(new_role_sym)
 
       if owner?
-        raise CannotDemoteOwner, "Cannot demote owner. Transfer ownership first."
+        raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner")
       end
 
       unless Roles.at_least?(role_sym, new_role_sym)
-        raise InvalidRoleChange, "Cannot demote to #{new_role} - it's not a lower role than #{role}"
+        raise InvalidRoleChange, Organizations.t(:"errors.demote_not_lower", new_role: new_role, role: role)
       end
 
       change_role_to!(new_role_sym, changed_by: changed_by)
@@ -202,7 +221,7 @@ module Organizations
 
       return unless existing_owner.exists?
 
-      errors.add(:role, "owner already exists for this organization")
+      errors.add(:role, Organizations.t(:"attributes.owner_taken"))
     end
 
     def validate_role!(role)
@@ -235,3 +254,6 @@ module Organizations
     end
   end
 end
+
+# Host extension seam — see the load-hooks note in models/organization.rb.
+ActiveSupport.run_load_hooks(:organizations_membership, Organizations::Membership)

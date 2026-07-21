@@ -13,6 +13,7 @@ module Organizations
     EVENTS = %i[
       organization_created
       member_invited
+      member_joining
       member_joined
       member_removed
       role_changed
@@ -20,6 +21,7 @@ module Organizations
       join_request_created
       join_request_approved
       join_request_rejected
+      verification_delivery_failed
     ].freeze
 
     module_function
@@ -43,13 +45,15 @@ module Organizations
     CALLBACK_READERS = {
       organization_created: :on_organization_created_callback,
       member_invited: :on_member_invited_callback,
+      member_joining: :on_member_joining_callback,
       member_joined: :on_member_joined_callback,
       member_removed: :on_member_removed_callback,
       role_changed: :on_role_changed_callback,
       ownership_transferred: :on_ownership_transferred_callback,
       join_request_created: :on_join_request_created_callback,
       join_request_approved: :on_join_request_approved_callback,
-      join_request_rejected: :on_join_request_rejected_callback
+      join_request_rejected: :on_join_request_rejected_callback,
+      verification_delivery_failed: :on_verification_delivery_failed_callback
     }.freeze
 
     # Get the callback proc for an event
@@ -86,12 +90,11 @@ module Organizations
     end
 
     # Call callback while supporting flexible callback arities.
+    # (Review cleanup: the old `when 1, -1, -2 / else` branches were
+    # identical — zero-arity is the only special case.)
     def invoke_callback(callback, context)
-      case callback.arity
-      when 0
+      if callback.arity.zero?
         callback.call
-      when 1, -1, -2
-        callback.call(context)
       else
         callback.call(context)
       end

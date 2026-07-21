@@ -1,0 +1,158 @@
+# Organizations gem — English (default) locale.
+#
+# This file is the SINGLE SOURCE OF TRUTH for every user-facing string the
+# gem produces: error messages raised by the models, role/status labels used
+# by the view helpers, model validation messages, and the stock mailer copy.
+#
+# Hosts override any of these the standard Rails way: define the same keys in
+# the app's own locale files (app files load after engine files, so they win).
+# See README "Internationalization (i18n)".
+#
+# ⚠️ Developer-facing errors (ArgumentError, ConfigurationError, wrong-API
+# usage like "user is required") are deliberately NOT translated — they are
+# for programmers, and English keeps them greppable/searchable.
+#
+# ⚠️ Keys under `errors:` are 1:1 with raise sites in lib/organizations/**.
+# If you add a raise site, add its key HERE (and to es.yml) — a missing key
+# renders as "Translation missing: ..." which is a loud, findable bug.
+en:
+  organizations:
+    # Role labels (used by organization_role_label / organization_role_info)
+    roles:
+      owner: "Owner"
+      admin: "Admin"
+      member: "Member"
+      viewer: "Viewer"
+
+    # Invitation status labels (organization_invitation_status_label)
+    invitation_status:
+      pending: "Pending"
+      accepted: "Accepted"
+      expired: "Expired"
+
+    # Join request statuses — lowercase on purpose: interpolated mid-sentence
+    # into errors.join_request_already_decided ("...has already been %{status}").
+    join_request_status:
+      pending: "pending"
+      approved: "approved"
+      rejected: "rejected"
+      withdrawn: "withdrawn"
+      expired: "expired"
+
+    errors:
+      # — Join codes —
+      join_code_invalid: "This code is not valid"
+      join_code_exhausted: "This code has reached its usage limit"
+
+      # — Join requests —
+      join_request_expired: "This join request has expired"
+      join_request_already_decided: "This join request has already been %{status}"
+      join_request_already_member: "You are already a member of this organization"
+      join_request_create_failed: "Could not create join request"
+      join_request_membership_gone: "Request was approved but the membership no longer exists"
+
+      # — Membership veto gate (on_member_joining raising MembershipVetoed) —
+      # Default shown when the host's veto raises without its own message.
+      membership_vetoed: "You can't join this organization right now"
+
+      # — Email verification challenge —
+      verification_email_invalid: "This is not a valid email address"
+      verification_email_not_eligible: "This email address is not eligible to join this organization"
+      verification_email_already_claimed: "This email address is already associated with a member of this organization"
+      verification_code_invalid: "The code is incorrect"
+      verification_code_missing: "No verification code is active for this request"
+      verification_code_expired: "This code has expired — request a new one"
+      verification_attempts_exceeded: "Too many incorrect attempts — request a new code"
+      verification_sends_exceeded: "Too many codes requested for this request"
+      verification_resend_throttled: "Please wait before requesting another code"
+      account_email_trust_disabled: "Account-email trust is disabled (see config.trust_confirmed_account_email)"
+      account_email_unconfirmed: "The account email has not been confirmed"
+      not_accepting_requests: "This organization is not accepting join requests right now"
+
+      # — Invitations —
+      invitation_expired: "This invitation has expired"
+      invitation_already_accepted: "This invitation has already been accepted"
+      invitation_cannot_resend_accepted: "Cannot resend an accepted invitation"
+      invitation_email_mismatch: "This invitation was sent to a different email address"
+      invitation_accept_as_owner: "Cannot accept invitation as owner. Invite as admin, then use transfer_ownership_to! after joining."
+      invitation_already_member: "User is already a member of this organization"
+      invite_as_owner: "Cannot invite as owner. Invite as admin, then use transfer_ownership_to! after they join."
+      invite_not_a_member: "Only organization members can send invitations"
+      invite_not_authorized: "You don't have permission to invite members"
+
+      # — Ownership / role invariants (reachable from admin UIs) —
+      cannot_remove_owner: "Cannot remove the organization owner. Transfer ownership first."
+      cannot_add_as_owner: "Cannot add member as owner. Use transfer_ownership_to! instead."
+      cannot_promote_to_owner: "Cannot promote to owner. Use transfer_ownership_to! instead."
+      cannot_demote_owner_directly: "Cannot demote owner directly. Use transfer_ownership_to! instead."
+      cannot_demote_owner: "Cannot demote owner. Transfer ownership first."
+      promote_not_higher: "Cannot promote to %{new_role} - it's not a higher role than %{role}"
+      demote_not_lower: "Cannot demote to %{new_role} - it's not a lower role than %{role}"
+      transfer_no_owner: "Cannot transfer ownership because organization has no owner membership"
+      transfer_to_non_member: "Cannot transfer ownership to a non-member"
+      transfer_to_non_admin: "Cannot transfer ownership to non-admin. Promote them to admin first."
+
+      # — Leaving / user-level —
+      cannot_leave_as_last_owner: "Cannot leave organization as the only owner. Transfer ownership first."
+      cannot_leave_last_organization: "Cannot leave your only organization"
+      organization_limit_reached: "Maximum number of organizations (%{max}) reached"
+      no_current_organization_to_leave: "No current organization to leave"
+      cannot_delete_user_owns_organizations: "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first."
+
+      # — Controller guards (default unauthorized copy) —
+      unauthorized_role: "You need %{role} access to perform this action"
+      unauthorized_permission: "You don't have permission to %{permission}"
+      unauthorized: "You are not authorized to perform this action"
+      not_a_member: "You are not a member of this organization"
+      organization_required: "Organization required"
+      cannot_change_own_role: "You cannot change your own role"
+      invalid_role: "Invalid role: %{role}"
+
+    # Flash notices produced by the controller-helper invitation flow.
+    notices:
+      welcome: "Welcome to %{organization}!"
+      already_member: "You're already a member of %{organization}."
+      select_or_create_organization: "Please select or create an organization."
+
+    # Model validation messages (errors.add second argument). These read as
+    # "<Attribute> <message>" in full_messages — keep them lowercase fragments.
+    attributes:
+      membership_taken: "is already a member of this organization"
+      owner_taken: "owner already exists for this organization"
+      pending_request_taken: "already has a pending request for this organization"
+      invitation_taken: "has already been invited to this organization"
+      allowlist_taken: "is already on this organization's allowlist"
+      domain_invalid: "is not a valid domain name"
+
+    # Stock mailer copy. Hosts that swap in their own mailer
+    # (config.invitation_mailer / config.verification_mailer) ignore all of
+    # this; hosts that keep the stock mailers can retheme by overriding keys.
+    mailers:
+      from_team: "The team"
+      invitation:
+        subject: "%{inviter} invited you to join %{organization}"
+        header: "You're invited!"
+        title: "You're invited to join %{organization}!"
+        greeting: "Hi there,"
+        invited_by: "%{inviter} has invited you to join %{organization}."
+        # _html variants: rendered through the view `t` helper, whose *_html
+        # convention marks the string html_safe and HTML-escapes every
+        # interpolated argument (Rails i18n guide §4.1.2 "HTML translations",
+        # https://guides.rubyonrails.org/i18n.html) — keep markup here, never
+        # in the interpolated values.
+        invited_by_html: "<strong>%{inviter}</strong> has invited you to join <strong>%{organization}</strong>."
+        invited_generic: "You've been invited to join %{organization}."
+        invited_generic_html: "You've been invited to join <strong>%{organization}</strong>."
+        joining_as: "You'll be joining as: %{role}"
+        joining_as_label: "You'll be joining as:"
+        accept_cta: "Accept your invitation here:"
+        accept_button: "Accept Invitation"
+        copy_link: "Or copy and paste this link into your browser:"
+        expires_on: "This invitation will expire on %{date}."
+        ignore: "If you weren't expecting this invitation, you can safely ignore this email."
+      verification:
+        subject: "%{code} is your %{organization} verification code"
+        lead: "Use this code to verify your email address and join %{organization}:"
+        lead_html: "Use this code to verify your email address and join <strong>%{organization}</strong>:"
+        expires: "The code expires in %{minutes} minutes."
+        ignore: "If you didn't request this code, you can safely ignore this email — nobody can join %{organization} with your address without it."

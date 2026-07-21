@@ -1,0 +1,112 @@
+<div class="mb-8 flex justify-between items-center">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Invitations</h1>
+    <p class="mt-1 text-sm text-gray-500">Manage organization invitations and resend or revoke pending invites.</p>
+  </div>
+  <%= link_to new_organization_invitation_path,
+    class: "inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
+    <%= heroicon "plus", variant: :mini, options: { class: "h-4 w-4" } %>
+    Invite Member
+  <% end %>
+</div>
+
+<% if @invitations.blank? %>
+  <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-12 text-center">
+    <%= heroicon "envelope", variant: :outline, options: { class: "mx-auto h-12 w-12 text-gray-400" } %>
+    <h3 class="mt-2 text-sm font-semibold text-gray-900">No invitations</h3>
+    <p class="mt-1 text-sm text-gray-500">Invite members to join your organization.</p>
+    <div class="mt-6">
+      <%= link_to new_organization_invitation_path,
+        class: "inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-500" do %>
+        <%= heroicon "plus", variant: :mini, options: { class: "h-4 w-4" } %>
+        Send Invitation
+      <% end %>
+    </div>
+  </div>
+<% else %>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invited By</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expires</th>
+          <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="bg-white divide-y divide-gray-200">
+        <% @invitations.each do |invitation| %>
+          <tr class="hover:bg-gray-50">
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="flex items-center gap-3">
+                <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-gray-600 font-medium text-sm">
+                  <%= invitation.email.first.upcase %>
+                </span>
+                <span class="text-sm font-medium text-gray-900"><%= invitation.email %></span>
+              </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+                <%= case invitation.role
+                    when 'admin' then 'bg-purple-100 text-purple-800'
+                    when 'member' then 'bg-blue-100 text-blue-800'
+                    else 'bg-gray-100 text-gray-800'
+                    end %>">
+                <%= invitation.role.capitalize %>
+              </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                <%= case invitation.status.to_s
+                    when 'pending' then 'bg-amber-100 text-amber-800'
+                    when 'accepted' then 'bg-emerald-100 text-emerald-800'
+                    when 'declined', 'revoked' then 'bg-red-100 text-red-800'
+                    when 'expired' then 'bg-gray-100 text-gray-800'
+                    else 'bg-gray-100 text-gray-800'
+                    end %>">
+                <%= invitation.status.to_s.capitalize %>
+              </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <%= invitation.invited_by&.respond_to?(:email) ? invitation.invited_by.email : "-" %>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <% if invitation.expires_at %>
+                <% if invitation.expires_at > Time.current %>
+                  in <%= distance_of_time_in_words(Time.current, invitation.expires_at) %>
+                <% else %>
+                  <span class="text-red-600">Expired</span>
+                <% end %>
+              <% else %>
+                Never
+              <% end %>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right">
+              <% if invitation.pending? %>
+                <div class="flex items-center justify-end gap-2">
+                  <%= button_to resend_organization_invitation_path(invitation),
+                    method: :post,
+                    class: "inline-flex items-center gap-1 rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" do %>
+                    <%= heroicon "arrow-path", variant: :mini, options: { class: "h-3.5 w-3.5" } %>
+                    Resend
+                  <% end %>
+                  <%= button_to organization_invitation_path(invitation),
+                    method: :delete,
+                    data: { turbo_confirm: "Revoke this invitation?" },
+                    class: "inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" do %>
+                    <%= heroicon "x-mark", variant: :mini, options: { class: "h-3.5 w-3.5" } %>
+                    Revoke
+                  <% end %>
+                </div>
+              <% else %>
+                <span class="text-sm text-gray-400 italic">No actions</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% end %>

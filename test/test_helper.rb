@@ -26,8 +26,19 @@ ActionMailer::Base.delivery_method = :test
 ActionMailer::Base.perform_deliveries = true
 ActiveJob::Base.queue_adapter = :test
 
-# In-memory SQLite database
-ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
+# In-memory SQLite by default. Set ORGS_TEST_DATABASE_URL to run the SAME
+# suite against another adapter — PostgreSQL is the important one: PG aborts
+# the whole transaction on a unique violation ("current transaction is
+# aborted"), so every rescue-RecordNotUnique-inside-a-transaction path only
+# works when the violating INSERT ran under its own SAVEPOINT
+# (transaction(requires_new: true)). SQLite forgives the pattern silently —
+# which is exactly how a broken-on-PG fallback stays green in CI.
+#   ORGS_TEST_DATABASE_URL=postgres://localhost/organizations_gem_test rake test
+if ENV["ORGS_TEST_DATABASE_URL"].to_s.strip.empty?
+  ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
+else
+  ActiveRecord::Base.establish_connection(ENV.fetch("ORGS_TEST_DATABASE_URL", nil))
+end
 ActiveRecord::Base.logger = Logger.new(nil) # Silence SQL logging in tests
 
 # Load organizations gem
@@ -48,7 +59,9 @@ ActiveRecord::Schema.define do
   create_table :organizations_organizations, force: :cascade do |t|
     t.string :name, null: false
     t.integer :memberships_count, default: 0, null: false
-    t.text :metadata, default: "{}"
+    # json (matches the real installs jsonb/json column) so Hash values
+    # round-trip - metadata_flag and the copy-through channel depend on it
+    t.json :metadata, default: {}
     t.timestamps
   end
 

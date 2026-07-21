@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>You're invited to join <%= @organization.name %></title>
+  <title><%= Organizations.t(:"mailers.invitation.title", organization: @organization.name) %></title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -53,45 +53,48 @@
 </head>
 <body>
   <div class="header">
-    <h1>You're invited!</h1>
+    <h1><%= Organizations.t(:"mailers.invitation.header") %></h1>
   </div>
 
   <div class="content">
-    <p>Hi there,</p>
+    <p><%= Organizations.t(:"mailers.invitation.greeting") %></p>
 
     <p>
+      <%# The *_html keys go through the view `t` helper: its _html-suffix
+          convention marks the translation html_safe while HTML-escaping every
+          interpolated value (inviter/org names are user input). Source:
+          https://guides.rubyonrails.org/i18n.html#using-safe-html-translations %>
       <% if @inviter %>
-        <strong><%= @inviter.respond_to?(:name) && @inviter.name.present? ? @inviter.name : @inviter.email %></strong>
-        has invited you to join <strong><%= @organization.name %></strong>.
+        <%= t("organizations.mailers.invitation.invited_by_html", inviter: @inviter_name, organization: @organization.name) %>
       <% else %>
-        You've been invited to join <strong><%= @organization.name %></strong>.
+        <%= t("organizations.mailers.invitation.invited_generic_html", organization: @organization.name) %>
       <% end %>
     </p>
 
     <p>
-      You'll be joining as:
-      <span class="role-badge"><%= @invitation.role.to_s.capitalize %></span>
+      <%= Organizations.t(:"mailers.invitation.joining_as_label") %>
+      <span class="role-badge"><%= Organizations.t(:"roles.#{@invitation.role}", default: @invitation.role.to_s.capitalize) %></span>
     </p>
 
     <p style="text-align: center;">
-      <a href="<%= @accept_url %>" class="button">Accept Invitation</a>
+      <a href="<%= @accept_url %>" class="button"><%= Organizations.t(:"mailers.invitation.accept_button") %></a>
     </p>
 
     <p>
-      Or copy and paste this link into your browser:<br>
+      <%= Organizations.t(:"mailers.invitation.copy_link") %><br>
       <a href="<%= @accept_url %>"><%= @accept_url %></a>
     </p>
 
-    <% if @invitation.expires_at %>
+    <% if @expires_on %>
     <p style="color: #666; font-size: 14px;">
-      This invitation will expire on <%= @invitation.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>.
+      <%= Organizations.t(:"mailers.invitation.expires_on", date: @expires_on) %>
     </p>
     <% end %>
   </div>
 
   <div class="footer">
     <p>
-      If you weren't expecting this invitation, you can safely ignore this email.
+      <%= Organizations.t(:"mailers.invitation.ignore") %>
     </p>
   </div>
 </body>

@@ -26,6 +26,22 @@ module Organizations
   #
   class Configuration
     # === Authentication ===
+    # Class name of the host's user model (default: "User").
+    #
+    # Set this when your account model is named differently:
+    #   config.user_class = "Account"
+    #
+    # ⚠️ Configure this BEFORE the gem's models are first referenced: the
+    # class name is read when each model class body executes. In Rails this
+    # is automatic (initializers run before Zeitwerk autoloads the models);
+    # in plain-Ruby usage, call Organizations.configure before touching
+    # Organizations::Organization & friends.
+    #
+    # ⚠️ The install generator's migrations reference `to_table: :users` —
+    # if your user model uses a different table, adjust the generated
+    # migration accordingly (see the comment inside the migration template).
+    attr_accessor :user_class
+
     # Method that returns the current user (default: :current_user)
     attr_accessor :current_user_method
 
@@ -167,6 +183,38 @@ module Organizations
     attr_accessor :additional_organization_params
 
     # === Engine configuration ===
+
+    # Which engine route groups to draw (devise_for-style skip/only, see
+    # https://rubydoc.info/github/heartcombo/devise/main/ActionDispatch/Routing/Mapper#devise_for-instance_method
+    # for the pattern precedent). nil (default) draws everything.
+    #
+    #   config.engine_routes = { except: [:organizations] } # no org CRUD
+    #   config.engine_routes = { only: [:switching, :public_invitations] }
+    #
+    # Groups: :switching (POST /organizations/switch/:id), :organizations
+    # (org CRUD), :memberships, :invitations (authenticated management),
+    # :public_invitations (token acceptance pages).
+    #
+    # Why this exists: hosts that keep the models but not the whole engine
+    # UI (e.g. an app where org creation is admin-vetted) previously had to
+    # SHADOW engine routes with redirects declared before the mount — a
+    # route-order-load-bearing hack that actually bit one production host
+    # (the engine's resources :organizations swallowed an app route as :id).
+    # Declare what you want instead.
+    attr_reader :engine_routes
+
+    ENGINE_ROUTE_GROUPS = %i[switching organizations memberships invitations public_invitations].freeze
+
+    def engine_routes=(value)
+      @engine_routes = value.nil? ? nil : normalize_engine_routes(value)
+    end
+
+    # The resolved set of enabled groups.
+    # @return [Array<Symbol>]
+    def engine_route_groups
+      @engine_routes || ENGINE_ROUTE_GROUPS
+    end
+
     # Base controller for authenticated routes (default: ::ApplicationController)
     attr_accessor :parent_controller
 
@@ -182,6 +230,14 @@ module Organizations
     # Can be nil (use controller default), String, or Symbol
     attr_accessor :public_controller_layout
 
+    # Host helper modules to mix into the PUBLIC engine controller — it
+    # inherits ActionController::Base (not the host ApplicationController),
+    # so host layouts rendered by public pages need their helper modules
+    # declared here. Array of module names (Strings, constantized lazily at
+    # controller load — safe to set in an initializer) or Modules.
+    # @example config.public_controller_helpers = ["ApplicationHelper", "PageHelper"]
+    attr_accessor :public_controller_helpers
+
     # === Handlers (blocks) ===
     # @private - stored handler blocks
     attr_reader :unauthorized_handler, :no_organization_handler
@@ -190,13 +246,15 @@ module Organizations
     # @private - stored callback blocks
     attr_reader :on_organization_created_callback,
                 :on_member_invited_callback,
+                :on_member_joining_callback,
                 :on_member_joined_callback,
                 :on_member_removed_callback,
                 :on_role_changed_callback,
                 :on_ownership_transferred_callback,
                 :on_join_request_created_callback,
                 :on_join_request_approved_callback,
-                :on_join_request_rejected_callback
+                :on_join_request_rejected_callback,
+                :on_verification_delivery_failed_callback
 
     # === Custom Roles ===
     # @private - custom roles definition
@@ -204,6 +262,7 @@ module Organizations
 
     def initialize
       # Authentication defaults
+      @user_class = "User"
       @current_user_method = :current_user
       @authenticate_user_method = :authenticate_user!
 
@@ -251,10 +310,12 @@ module Organizations
       @additional_organization_params = []
 
       # Engine
+      @engine_routes = nil
       @parent_controller = "::ApplicationController"
       @public_controller = "ActionController::Base"
       @authenticated_controller_layout = nil
       @public_controller_layout = nil
+      @public_controller_helpers = []
 
       # Handlers (nil by default - use default behavior)
       @unauthorized_handler = nil
@@ -263,6 +324,7 @@ module Organizations
       # Callbacks (nil by default - no-op)
       @on_organization_created_callback = nil
       @on_member_invited_callback = nil
+      @on_member_joining_callback = nil
       @on_member_joined_callback = nil
       @on_member_removed_callback = nil
       @on_role_changed_callback = nil
@@ -270,6 +332,7 @@ module Organizations
       @on_join_request_created_callback = nil
       @on_join_request_approved_callback = nil
       @on_join_request_rejected_callback = nil
+      @on_verification_delivery_failed_callback = nil
 
       # Custom roles
       @custom_roles_definition = nil
@@ -317,6 +380,37 @@ module Organizations
     # @yieldparam context [CallbackContext] Context with organization, invitation, invited_by
     def on_member_invited(&block)
       @on_member_invited_callback = block if block_given?
+    end
+
+    # THE MEMBERSHIP GATE — called STRICTLY, inside the creating transaction,
+    # immediately BEFORE any non-owner membership row is inserted, on EVERY
+    # join path: add_member!, invitation acceptance, join-request approval
+    # (which covers join codes, domain-email verification, allowlists, and
+    # join_with_account_email!). Raise Organizations::MembershipVetoed (or any
+    # error) to veto: the transaction rolls back cleanly — no membership, join
+    # requests stay pending (resumable), invitations stay unaccepted.
+    #
+    # This is where hard limits belong (plan seat caps, per-org member caps,
+    # compliance holds). Unlike on_member_joined and the other after-callbacks
+    # (error-isolated by design), this one CAN and SHOULD abort the operation.
+    # It deliberately does NOT fire for owner memberships created with the
+    # organization itself (creating your own org is not "joining"), nor for
+    # idempotent already-a-member paths, nor for role changes.
+    #
+    # @yield [context] Block to execute (raise to veto)
+    # @yieldparam context [CallbackContext] organization, user, role,
+    #   joined_via, and the instrument (invitation/join_request) when one applies
+    #
+    # @example Enforce plan seat limits on every join path (pricing_plans)
+    #   config.on_member_joining do |ctx|
+    #     limit = ctx.organization.current_plan&.limit_for(:team_members)
+    #     if limit && ctx.organization.member_count >= limit
+    #       raise Organizations::MembershipVetoed,
+    #             "This organization has reached its plan's member limit."
+    #     end
+    #   end
+    def on_member_joining(&block)
+      @on_member_joining_callback = block if block_given?
     end
 
     # Called when a member joins (invitation accepted)
@@ -368,6 +462,18 @@ module Organizations
     # @yieldparam context [CallbackContext] Context with organization, user, join_request, decided_by
     def on_join_request_rejected(&block)
       @on_join_request_rejected_callback = block if block_given?
+    end
+
+    # Called when a verification-code email FAILS to enqueue/deliver.
+    # The gem already rolls the challenge's throttle bookkeeping back (so the
+    # user can retry immediately) — this hook is the host's observability
+    # seam: report to your error tracker (Rails.error, Sentry, …) so silent
+    # mail outages don't strand joiners.
+    # @yield [context] Block to execute
+    # @yieldparam context [CallbackContext] organization, user, join_request,
+    #   metadata: { "error_class" =>, "error_message" => }
+    def on_verification_delivery_failed(&block)
+      @on_verification_delivery_failed_callback = block if block_given?
     end
 
     # === Roles Configuration ===
@@ -434,6 +540,10 @@ module Organizations
     private
 
     def validate_authentication_methods!
+      unless @user_class.is_a?(String) && @user_class.present?
+        raise ConfigurationError, "user_class must be a non-empty String (e.g. \"User\")"
+      end
+
       unless @current_user_method.is_a?(Symbol)
         raise ConfigurationError, "current_user_method must be a Symbol"
       end
@@ -520,6 +630,11 @@ module Organizations
     def validate_controller_layouts!
       validate_layout_option!(@authenticated_controller_layout, "authenticated_controller_layout")
       validate_layout_option!(@public_controller_layout, "public_controller_layout")
+
+      unless @public_controller_helpers.is_a?(Array) &&
+             @public_controller_helpers.all? { |h| h.is_a?(String) || h.is_a?(Module) }
+        raise ConfigurationError, "public_controller_helpers must be an Array of Strings or Modules"
+      end
     end
 
     def validate_no_organization_messages!
@@ -546,6 +661,40 @@ module Organizations
 
       raise ConfigurationError,
             "#{option_name} must be nil or a String"
+    end
+
+    # Normalize {only:}/{except:}/Array(=only) into the enabled-group list,
+    # rejecting unknown group names loudly at configure time.
+    def normalize_engine_routes(value)
+      case value
+      when Array
+        validate_engine_route_groups!(value)
+      when Hash
+        only = value[:only]
+        except = value[:except]
+        if [only, except].compact.size != 1
+          raise ConfigurationError, "engine_routes takes exactly one of only:/except: (or an Array meaning only:)"
+        end
+
+        if only
+          validate_engine_route_groups!(Array(only))
+        else
+          ENGINE_ROUTE_GROUPS - validate_engine_route_groups!(Array(except))
+        end
+      else
+        raise ConfigurationError, "engine_routes must be a Hash with only:/except:, an Array, or nil"
+      end
+    end
+
+    def validate_engine_route_groups!(groups)
+      groups = groups.map(&:to_sym)
+      unknown = groups - ENGINE_ROUTE_GROUPS
+      unless unknown.empty?
+        raise ConfigurationError,
+              "Unknown engine route group(s): #{unknown.join(', ')}. Valid: #{ENGINE_ROUTE_GROUPS.join(', ')}"
+      end
+
+      groups
     end
   end
 end

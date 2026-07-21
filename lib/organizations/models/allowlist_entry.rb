@@ -25,15 +25,16 @@ module Organizations
                inverse_of: :allowlist_entries
 
     belongs_to :claimed_by,
-               class_name: "User",
+               class_name: Organizations.user_class_name,
                optional: true
 
     # === Validations ===
 
     validates :email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
+    # Proc message: resolved at VALIDATION time so it follows I18n.locale.
     validates :email_normalized, presence: true,
                                  uniqueness: { scope: :organization_id,
-                                               message: "is already on this organization's allowlist" }
+                                               message: ->(*) { Organizations.t(:"attributes.allowlist_taken") } }
 
     # === Callbacks ===
 
@@ -82,3 +83,6 @@ module Organizations
     end
   end
 end
+
+# Host extension seam — see the load-hooks note in models/organization.rb.
+ActiveSupport.run_load_hooks(:organizations_allowlist_entry, Organizations::AllowlistEntry)
