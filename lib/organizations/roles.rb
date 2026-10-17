@@ -56,6 +56,9 @@ module Organizations
       ].freeze
     }.freeze
 
+    # One published roles configuration (see Roles.snapshot).
+    Snapshot = Struct.new(:definition, :hierarchy, :permissions, :permission_sets)
+
     class << self
       # Get the default permission structure
       # @return [Hash<Symbol, Array<Symbol>>]
@@ -66,13 +69,13 @@ module Organizations
       # Get the role hierarchy
       # @return [Array<Symbol>]
       def hierarchy
-        HIERARCHY
+        snapshot.hierarchy
       end
 
       # Get all valid role names
       # @return [Array<Symbol>]
       def valid_roles
-        HIERARCHY
+        hierarchy
       end
 
       # Check if a role is valid
@@ -81,7 +84,7 @@ module Organizations
       def valid_role?(role)
         return false if role.nil?
 
-        HIERARCHY.include?(role.to_sym)
+        hierarchy.include?(role.to_sym)
       end
 
       # Check if role_a is at least as high as role_b in hierarchy
@@ -96,8 +99,9 @@ module Organizations
       def at_least?(role_a, role_b)
         return false if role_a.nil? || role_b.nil?
 
-        idx_a = HIERARCHY.index(role_a.to_sym)
-        idx_b = HIERARCHY.index(role_b.to_sym)
+        order = hierarchy # one snapshot for both lookups
+        idx_a = order.index(role_a.to_sym)
+        idx_b = order.index(role_b.to_sym)
 
         return false unless idx_a && idx_b
 
@@ -110,8 +114,10 @@ module Organizations
       # @param role_b [Symbol, String] Second role
       # @return [Integer] -1 if a > b, 0 if equal, 1 if a < b
       def compare(role_a, role_b)
-        idx_a = HIERARCHY.index(role_a.to_sym)
-        idx_b = HIERARCHY.index(role_b.to_sym)
+        # A role that is no longer configured ranks below every configured role.
+        order = hierarchy # one snapshot for both lookups
+        idx_a = order.index(role_a.to_sym) || order.length
+        idx_b = order.index(role_b.to_sym) || order.length
 
         return 0 if idx_a == idx_b
 
@@ -146,19 +152,18 @@ module Organizations
       # Get the pre-computed permission hash (for direct access)
       # @return [Hash<Symbol, Array<Symbol>>]
       def permissions
-        @permissions ||= compute_permissions
+        snapshot.permissions
       end
 
       # Get the pre-computed permission sets (for O(1) lookups)
       # @return [Hash<Symbol, Set<Symbol>>]
       def permission_sets
-        @permission_sets ||= permissions.transform_values { |perms| Set.new(perms) }
+        snapshot.permission_sets
       end
 
       # Reset computed permissions (used when custom roles are defined)
       def reset!
-        @permissions = nil
-        @permission_sets = nil
+        @snapshot = nil
       end
 
       # Get the next role up in hierarchy
@@ -167,10 +172,11 @@ module Organizations
       def higher_role(role)
         return nil if role.nil?
 
-        idx = HIERARCHY.index(role.to_sym)
+        order = hierarchy # one snapshot for the lookup and the result
+        idx = order.index(role.to_sym)
         return nil unless idx && idx > 0
 
-        HIERARCHY[idx - 1]
+        order[idx - 1]
       end
 
       # Get the next role down in hierarchy
@@ -179,23 +185,54 @@ module Organizations
       def lower_role(role)
         return nil if role.nil?
 
-        idx = HIERARCHY.index(role.to_sym)
-        return nil unless idx && idx < HIERARCHY.length - 1
+        order = hierarchy # one snapshot for the lookup and the result
+        idx = order.index(role.to_sym)
+        return nil unless idx && idx < order.length - 1
 
-        HIERARCHY[idx + 1]
+        order[idx + 1]
+      end
+
+      # The role hierarchy (highest first) of a roles definition: the four
+      # built-in roles, and each custom role directly above the role it
+      # inherits from (a custom role without `inherits:` sits at the bottom).
+      def hierarchy_for(definition)
+        return HIERARCHY unless definition
+
+        builder = RoleBuilder.new
+        builder.instance_eval(&definition)
+        builder.validate_privileges!
+        builder.hierarchy
       end
 
       private
 
-      def compute_permissions
-        # Use custom roles if defined, otherwise use defaults
-        custom_def = Organizations.configuration&.custom_roles_definition
-        return DEFAULT_PERMISSIONS.dup unless custom_def
+      # The hierarchy and permissions of one roles definition, computed
+      # together and published as one immutable value. It belongs to the
+      # definition object it was built from: after a reconfiguration (or a
+      # rolled-back one) the next reader sees the identity change and builds a
+      # new snapshot, so a reader that raced a reset can never keep an
+      # obsolete hierarchy in place.
+      def snapshot
+        definition = Organizations.configuration&.custom_roles_definition
+        current = @snapshot
+        return current if current && current.definition.equal?(definition)
 
-        # Build custom permissions using DSL
-        builder = RoleBuilder.new
-        builder.instance_eval(&custom_def)
-        builder.to_permissions
+        @snapshot = build_snapshot(definition)
+      end
+
+      def build_snapshot(definition)
+        if definition
+          builder = RoleBuilder.new
+          builder.instance_eval(&definition)
+          builder.validate_privileges!
+          hierarchy = builder.hierarchy
+          permissions = builder.to_permissions
+        else
+          hierarchy = HIERARCHY
+          permissions = DEFAULT_PERMISSIONS
+        end
+        sets = permissions.transform_values { |perms| Set.new(perms).freeze }.freeze
+        Snapshot.new(definition, hierarchy, permissions, sets).freeze
       end
     end
 
@@ -211,6 +248,10 @@ module Organizations
       # @param inherits [Symbol, nil] Role to inherit from
       # @yield Block to define permissions
       def role(name, inherits: nil, &block)
+        name = name.to_sym
+        inherits = inherits&.to_sym
+        validate_role_definition!(name, inherits)
+
         @roles[name] = {
           inherits: inherits,
           permissions: []
@@ -228,28 +269,94 @@ module Organizations
         @roles[@current_role][:permissions] << permission.to_sym
       end
 
+      # The hierarchy, highest first: the built-in roles in their fixed order,
+      # and each custom role inserted directly above the role it inherits from.
+      # @return [Array<Symbol>]
+      def hierarchy
+        order = Roles::HIERARCHY.dup
+        custom_roles.each do |name|
+          parent = @roles[name][:inherits]
+          parent ? order.insert(order.index(parent), name) : order << name
+        end
+        order.freeze
+      end
+
       # Build final permissions hash with inheritance resolved
       # @return [Hash<Symbol, Array<Symbol>>]
       def to_permissions
-        result = {}
-
         # Process roles in reverse hierarchy order (lowest first)
         # so inheritance works correctly
-        Roles::HIERARCHY.reverse_each do |role_name|
-          next unless @roles.key?(role_name)
+        hierarchy.reverse_each.with_object({}) do |role_name, result|
+          perms = @roles.key?(role_name) ? defined_permissions(role_name, result) : omitted_permissions(role_name)
+          result[role_name] = perms.freeze if perms
+        end.freeze
+      end
 
-          role_def = @roles[role_name]
-          perms = role_def[:permissions].dup
+      # An admin can assign a custom role, so a custom role may not grant a
+      # permission that the owner role has and the admin role lacks (for
+      # example manage_billing or transfer_ownership). Otherwise an admin
+      # could give another account a power that the admin does not have.
+      def validate_privileges!
+        validate_built_in_parents!
+        permissions = to_permissions
+        owner_only = (permissions[:owner] || DEFAULT_PERMISSIONS[:owner]) -
+                     (permissions[:admin] || DEFAULT_PERMISSIONS[:admin])
+        custom_roles.each do |name|
+          granted = @roles[name][:permissions] & owner_only
+          next if granted.empty?
 
-          # Add inherited permissions
-          if role_def[:inherits] && result.key?(role_def[:inherits])
-            perms = (result[role_def[:inherits]] + perms).uniq
-          end
-
-          result[role_name] = perms.freeze
+          raise ConfigurationError, "Custom role #{name} cannot grant #{granted.join(', ')}: " \
+                                    "admins can assign it, and only the owner has that permission"
         end
+      end
 
-        result.freeze
+      private
+
+      # A built-in role may inherit a custom role only when that custom role
+      # ranks below it; otherwise the inheritance would be dropped silently.
+      def validate_built_in_parents!
+        order = hierarchy
+        (@roles.keys & Roles::HIERARCHY).each do |name|
+          parent = @roles[name][:inherits]
+          next unless parent && custom_roles.include?(parent)
+          next if order.index(parent) > order.index(name)
+
+          raise ConfigurationError, "Role #{name} cannot inherit from #{parent}: #{parent} ranks above #{name}"
+        end
+      end
+
+      def custom_roles = @roles.keys - Roles::HIERARCHY
+
+      # A role's own permissions plus its parent's. A custom role that inherits
+      # a built-in role the block does not redefine inherits its defaults.
+      def defined_permissions(role_name, result)
+        role_def = @roles[role_name]
+        parent = role_def[:inherits]
+        inherited = parent && (result[parent] || (custom_roles.include?(role_name) && DEFAULT_PERMISSIONS[parent]))
+        inherited ? (inherited + role_def[:permissions]).uniq : role_def[:permissions].dup
+      end
+
+      # A block that only adds custom roles keeps the built-in roles' defaults.
+      # An empty block still defines no permissions, as before custom roles.
+      def omitted_permissions(role_name) = custom_only? ? DEFAULT_PERMISSIONS[role_name] : nil
+      def custom_only? = custom_roles.any? && !@roles.keys.intersect?(Roles::HIERARCHY)
+
+      # A custom role needs a plain name, and a parent that already exists (a
+      # built-in role below admin or a custom role defined above it). Nothing
+      # inherits admin or owner.
+      def validate_role_definition!(name, inherits)
+        unless name.to_s.match?(/\A[a-z][a-z0-9_]{0,31}\z/)
+          raise ConfigurationError, "Role name #{name.inspect} must be lowercase letters, digits and underscores"
+        end
+        return if Roles::HIERARCHY.include?(name)
+        raise ConfigurationError, "Role #{name} is defined twice" if @roles.key?(name)
+        # A custom role ranks below admin, so it never outranks the people who can assign it.
+        if %i[owner admin].include?(inherits)
+          raise ConfigurationError, "Custom role #{name} cannot inherit from #{inherits}: a custom role ranks below admin"
+        end
+        return if inherits.nil? || %i[member viewer].include?(inherits) || @roles.key?(inherits)
+
+        raise ConfigurationError, "Custom role #{name} inherits from #{inherits}, which is not defined above it"
       end
     end
   end

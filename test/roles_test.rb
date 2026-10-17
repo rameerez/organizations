@@ -576,7 +576,7 @@ module Organizations
       end
     end
 
-    test "RoleBuilder processes roles only from HIERARCHY" do
+    test "RoleBuilder keeps a role outside HIERARCHY as a custom role" do
       builder = Roles::RoleBuilder.new
       builder.role(:viewer) { builder.can(:read) }
       builder.role(:unknown_role) { builder.can(:special) }
@@ -585,8 +585,9 @@ module Organizations
       builder.role(:owner, inherits: :admin) { builder.can(:own) }
 
       result = builder.to_permissions
-      # :unknown_role is not in HIERARCHY so it should be excluded
-      refute result.key?(:unknown_role)
+      # :unknown_role has no parent, so it sits at the bottom with only its own permissions
+      assert_equal [:special], result[:unknown_role]
+      assert_equal :unknown_role, builder.hierarchy.last
       assert result.key?(:viewer)
     end
 

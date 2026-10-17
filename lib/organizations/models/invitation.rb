@@ -38,7 +38,9 @@ module Organizations
 
     validates :email, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP }
     validates :token, presence: true, uniqueness: true
-    validates :role, presence: true, inclusion: { in: ->(_) { Roles::HIERARCHY.map(&:to_s) } }
+    validates :role, presence: true
+    validates :role, inclusion: { in: ->(_) { Roles.valid_roles.map(&:to_s) } },
+                     if: -> { new_record? || will_save_change_to_role? }
 
     # Validate only one non-accepted invitation per email per organization
     # This matches the DB constraint (accepted_at IS NULL), not expiry status
