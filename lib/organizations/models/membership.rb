@@ -53,7 +53,7 @@ module Organizations
 
     # === Validations ===
 
-    validates :role, presence: true, inclusion: { in: ->(_) { Roles::HIERARCHY.map(&:to_s) } }
+    validates :role, presence: true, inclusion: { in: ->(_) { Roles.valid_roles.map(&:to_s) } }
     # Proc message: resolved at VALIDATION time so it follows I18n.locale —
     # a literal string here would be frozen in whatever locale loaded first.
     validates :user_id, uniqueness: { scope: :organization_id,

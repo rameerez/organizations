@@ -558,8 +558,9 @@ module Organizations
         raise ConfigurationError, "invitation_expiry must be a Duration (e.g., 7.days) or nil"
       end
 
-      unless Roles::HIERARCHY.include?(@default_invitation_role.to_sym)
-        raise ConfigurationError, "default_invitation_role must be one of: #{Roles::HIERARCHY.join(', ')}"
+      roles = Roles.hierarchy_for(@custom_roles_definition)
+      unless roles.include?(@default_invitation_role.to_sym)
+        raise ConfigurationError, "default_invitation_role must be one of: #{roles.join(', ')}"
       end
     end
 

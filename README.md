@@ -804,6 +804,32 @@ Organizations.configure do |config|
 end
 ```
 
+### Add custom roles
+
+Need a role that is not a step on the owner > admin > member > viewer ladder — a `client` who sees and answers for their own records, an `auditor`, a `guest`? Define it in the same block. A custom role inherits from one role and sits directly above it in the hierarchy:
+
+```ruby
+Organizations.configure do |config|
+  config.roles do
+    role :client, inherits: :viewer do
+      can :view_own_records
+      can :answer_questions
+    end
+  end
+end
+
+Organizations::Roles.hierarchy             # => [:owner, :admin, :member, :client, :viewer]
+org.add_member!(user, role: :client)
+user.role_in(org)                          # => :client
+user.has_organization_permission_to?(:answer_questions)  # => true
+require_organization_role!(:client)        # clients and everyone above them
+```
+
+- A custom role gets its own permissions plus its parent's (the parent's defaults when the block does not redefine a built-in parent).
+- A custom role without `inherits:` sits at the bottom of the hierarchy. Two custom roles with the same parent stack in the order you define them, the first one highest.
+- Nothing inherits `owner`: the owner stays the single top of every organization. A role name is lowercase letters, digits and underscores; a parent must be a built-in role or a custom role defined above it. Both are checked when the configuration loads.
+- Memberships, invitations, `default_invitation_role`, `add_member!`, promotions and demotions and every permission helper accept custom roles. The generated views list them in the role pickers.
+
 ### Add custom permissions
 
 ```ruby
