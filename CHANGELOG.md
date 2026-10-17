@@ -1,8 +1,21 @@
-## [Unreleased]
+## [0.6.0] - 2026-10-18
+
+**Custom role names.** Register a role outside owner > admin > member > viewer (a `client`, an `auditor`, a `guest`) in the existing `config.roles` block. No migration is needed. Installs without custom roles change nothing.
 
 ### Added
 
-- **Custom role names.** `config.roles do role :client, inherits: :viewer do ... end end` registers a role outside the four built-in ones, with its own permissions plus its parent's. It sits directly above its parent in `Roles.hierarchy` (no parent: at the bottom), and works in `add_member!`, memberships, invitations, `default_invitation_role`, promotions, demotions, `at_least?` and the permission helpers. A custom role ranks below admin (it inherits from `member`, `viewer` or a custom role), and it cannot grant a permission that the owner role has and the admin role lacks (`manage_billing`, `transfer_ownership`, `delete_organization` by default), because admins can assign it; a block that only adds custom roles keeps the built-in defaults, and an empty block still defines no permissions; a retired role no longer blocks unrelated membership updates; `by_role_hierarchy` follows the configured hierarchy; the hierarchy and permissions are published as one snapshot per definition, and each comparison reads one snapshot. Move memberships of a retired role with `org.change_role_of!(user, to: :member)`. Names and parents are checked at configuration time. `Roles.hierarchy_for(definition)` gives the hierarchy of a definition. The generated views list custom roles in the role pickers.
+- **Custom roles.** `role :client, inherits: :viewer do can :answer_questions end` in `config.roles` adds a role with its own permissions plus its parent's. A custom role sits directly above its parent in `Roles.hierarchy`. A custom role without `inherits:` sits at the bottom. Two custom roles with the same parent stack in the order you define them.
+- Custom roles work in `add_member!`, memberships, invitations, `default_invitation_role`, promotions, demotions, `at_least?`, `by_role_hierarchy` and every permission helper. The generated views and the dummy reference views list them in the role pickers.
+- **Safety rules, checked when the configuration loads.** A custom role inherits from `member`, `viewer` or another custom role, never from `admin` or `owner`, so it ranks below admin. A custom role cannot grant a permission that the owner role has and the admin role lacks (`manage_billing`, `transfer_ownership`, `delete_organization` by default), because admins can assign it. A built-in role cannot inherit a custom role that ranks above it. A role name is lowercase letters, digits and underscores, and a parent must be defined above its child.
+- `Roles.hierarchy_for(definition)` returns the hierarchy of a roles definition.
+
+### Changed
+
+- `RoleBuilder` keeps roles outside the four built-in ones as custom roles. Before, it dropped them without an error. A `config.roles` block with such a role now registers it, or raises `ConfigurationError` when the role breaks a safety rule.
+- A block that only adds custom roles keeps the default permissions of the built-in roles. A block that redefines a built-in role defines only the built-in roles it lists, as before. An empty block still defines no permissions.
+- `Membership` and `Invitation` check the role against the configured roles only when the role is set or changed. A membership of a role that you remove from the configuration stays readable and updatable, and ranks below every configured role. Move such memberships with `org.change_role_of!(user, to: :member)`. A pending invitation for a removed role cannot be accepted.
+- `by_role_hierarchy` follows the configured hierarchy, custom roles included, with unknown roles last.
+- The hierarchy and the permissions are one immutable snapshot for each roles definition, and each comparison reads one snapshot. A reconfiguration, or a rolled-back one, can no longer leave a stale hierarchy in place.
 
 ## [0.5.0] - 2026-07-16
 
