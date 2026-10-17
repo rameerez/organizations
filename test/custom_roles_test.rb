@@ -195,5 +195,59 @@ module Organizations
 
       assert_equal %w[owner member client viewer], org.memberships.by_role_hierarchy.pluck(:role)
     end
+
+    test "a custom role cannot grant a permission that only the owner has" do
+      %i[manage_billing transfer_ownership delete_organization].each do |permission|
+        error = assert_raises(ConfigurationError) do
+          Organizations.configure do |config|
+            config.roles { role(:finance, inherits: :viewer) { can permission } }
+          end
+        end
+        assert_match(/finance cannot grant #{permission}/, error.message)
+        Organizations.reset_configuration!
+      end
+
+      Organizations.configure { |config| config.roles { role(:finance, inherits: :viewer) { can :view_billing } } }
+
+      assert Roles.has_permission?(:finance, :view_billing)
+    end
+
+    test "the owner-only rule follows a redefined owner and admin" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.roles do
+            role(:member) { can :view_organization }
+            role(:admin, inherits: :member) { can :invite_members }
+            role(:owner, inherits: :admin) { can :approve_payouts }
+            role(:finance, inherits: :member) { can :approve_payouts }
+          end
+        end
+      end
+    end
+
+    test "an empty roles block still defines no permissions" do
+      Organizations.configure { |config| config.roles { nil } } # a block that defines no role
+
+      assert_equal Roles::HIERARCHY, Roles.hierarchy
+      assert_empty Roles.permissions
+      refute Roles.has_permission?(:owner, :view_organization)
+    end
+
+    test "a comparison reads the hierarchy once, so a reconfiguration in between cannot mix two orders" do
+      orders = [%i[owner admin member viewer], %i[owner admin a b c member viewer]]
+      calls = 0
+      next_order = lambda do
+        calls += 1
+        orders[(calls - 1) % 2]
+      end
+
+      Roles.stub(:hierarchy, next_order) do
+        refute Roles.at_least?(:viewer, :member)
+        assert_equal 1, Roles.compare(:viewer, :member)
+        assert_equal :member, Roles.higher_role(:viewer)
+        assert_equal :a, Roles.lower_role(:admin)
+      end
+      assert_equal 4, calls
+    end
   end
 end

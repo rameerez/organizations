@@ -99,8 +99,9 @@ module Organizations
       def at_least?(role_a, role_b)
         return false if role_a.nil? || role_b.nil?
 
-        idx_a = hierarchy.index(role_a.to_sym)
-        idx_b = hierarchy.index(role_b.to_sym)
+        order = hierarchy # one snapshot for both lookups
+        idx_a = order.index(role_a.to_sym)
+        idx_b = order.index(role_b.to_sym)
 
         return false unless idx_a && idx_b
 
@@ -114,8 +115,9 @@ module Organizations
       # @return [Integer] -1 if a > b, 0 if equal, 1 if a < b
       def compare(role_a, role_b)
         # A role that is no longer configured ranks below every configured role.
-        idx_a = hierarchy.index(role_a.to_sym) || hierarchy.length
-        idx_b = hierarchy.index(role_b.to_sym) || hierarchy.length
+        order = hierarchy # one snapshot for both lookups
+        idx_a = order.index(role_a.to_sym) || order.length
+        idx_b = order.index(role_b.to_sym) || order.length
 
         return 0 if idx_a == idx_b
 
@@ -170,10 +172,11 @@ module Organizations
       def higher_role(role)
         return nil if role.nil?
 
-        idx = hierarchy.index(role.to_sym)
+        order = hierarchy # one snapshot for the lookup and the result
+        idx = order.index(role.to_sym)
         return nil unless idx && idx > 0
 
-        hierarchy[idx - 1]
+        order[idx - 1]
       end
 
       # Get the next role down in hierarchy
@@ -182,10 +185,11 @@ module Organizations
       def lower_role(role)
         return nil if role.nil?
 
-        idx = hierarchy.index(role.to_sym)
-        return nil unless idx && idx < hierarchy.length - 1
+        order = hierarchy # one snapshot for the lookup and the result
+        idx = order.index(role.to_sym)
+        return nil unless idx && idx < order.length - 1
 
-        hierarchy[idx + 1]
+        order[idx + 1]
       end
 
       # The role hierarchy (highest first) of a roles definition: the four
@@ -196,6 +200,7 @@ module Organizations
 
         builder = RoleBuilder.new
         builder.instance_eval(&definition)
+        builder.validate_privileges!
         builder.hierarchy
       end
 
@@ -219,6 +224,7 @@ module Organizations
         if definition
           builder = RoleBuilder.new
           builder.instance_eval(&definition)
+          builder.validate_privileges!
           hierarchy = builder.hierarchy
           permissions = builder.to_permissions
         else
@@ -286,6 +292,23 @@ module Organizations
         end.freeze
       end
 
+      # An admin can assign a custom role, so a custom role may not grant a
+      # permission that the owner role has and the admin role lacks (for
+      # example manage_billing or transfer_ownership). Otherwise an admin
+      # could give another account a power that the admin does not have.
+      def validate_privileges!
+        permissions = to_permissions
+        owner_only = (permissions[:owner] || DEFAULT_PERMISSIONS[:owner]) -
+                     (permissions[:admin] || DEFAULT_PERMISSIONS[:admin])
+        custom_roles.each do |name|
+          granted = @roles[name][:permissions] & owner_only
+          next if granted.empty?
+
+          raise ConfigurationError, "Custom role #{name} cannot grant #{granted.join(', ')}: " \
+                                    "admins can assign it, and only the owner has that permission"
+        end
+      end
+
       private
 
       def custom_roles = @roles.keys - Roles::HIERARCHY
@@ -300,8 +323,9 @@ module Organizations
       end
 
       # A block that only adds custom roles keeps the built-in roles' defaults.
+      # An empty block still defines no permissions, as before custom roles.
       def omitted_permissions(role_name) = custom_only? ? DEFAULT_PERMISSIONS[role_name] : nil
-      def custom_only? = !@roles.keys.intersect?(Roles::HIERARCHY)
+      def custom_only? = custom_roles.any? && !@roles.keys.intersect?(Roles::HIERARCHY)
 
       # A custom role needs a plain name, and a parent that already exists (a
       # built-in role below admin or a custom role defined above it). Nothing

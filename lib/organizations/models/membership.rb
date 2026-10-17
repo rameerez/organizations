@@ -84,8 +84,9 @@ module Organizations
     # Order by role hierarchy (owners first)
     # (the configured hierarchy, custom roles included; unknown roles last)
     scope :by_role_hierarchy, -> {
-      ranks = Roles.hierarchy.each_with_index.map { |role, index| "WHEN #{connection.quote(role.to_s)} THEN #{index}" }
-      order(Arel.sql("CASE role #{ranks.join(' ')} ELSE #{Roles.hierarchy.length} END"))
+      roles = Roles.hierarchy # one snapshot for the ranks and the fallback
+      ranks = roles.each_with_index.map { |role, index| "WHEN #{connection.quote(role.to_s)} THEN #{index}" }
+      order(Arel.sql("CASE role #{ranks.join(' ')} ELSE #{roles.length} END"))
     }
 
     # === Verified Joining (v0.5.0) ===
