@@ -225,6 +225,38 @@ module Organizations
       end
     end
 
+    test "a built-in role cannot inherit a custom role that ranks above it" do
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.roles do
+            role :client, inherits: :member
+            role(:viewer, inherits: :client) { can :view_organization }
+          end
+        end
+      end
+      Organizations.reset_configuration!
+
+      Organizations.configure do |config|
+        config.roles do
+          role(:client, inherits: :viewer) { can :answer_questions }
+          role(:member, inherits: :client) { can :create_resources }
+        end
+      end
+
+      assert Roles.has_permission?(:member, :answer_questions)
+    end
+
+    test "a pending invitation for a retired role cannot be accepted" do
+      Organizations.configure { |config| config.roles { role :client, inherits: :viewer } }
+      org, owner = create_org_with_owner!
+      email = "retired-#{SecureRandom.hex(3)}@example.com"
+      invitation = org.send_invite_to!(email, invited_by: owner, role: :client)
+      Organizations.reset_configuration!
+
+      assert_raises(ActiveRecord::RecordInvalid) { invitation.reload.accept!(create_user!(email: email)) }
+      refute_predicate invitation.reload, :accepted?
+    end
+
     test "an empty roles block still defines no permissions" do
       Organizations.configure { |config| config.roles { nil } } # a block that defines no role
 

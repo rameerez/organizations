@@ -830,7 +830,7 @@ require_organization_role!(:client)        # clients and everyone above them
 - A block that only adds custom roles keeps the built-in roles' default permissions; a block that redefines a built-in role defines the built-in roles it lists, as before.
 - A custom role ranks below admin: it inherits from `member`, `viewer` or another custom role, never from `admin` or `owner`, so it never outranks the people who can assign it. A custom role also cannot grant a permission that the owner role has and the admin role lacks (`manage_billing`, `transfer_ownership`, `delete_organization` by default), because admins can assign it. A role name is lowercase letters, digits and underscores; a parent must be a built-in role or a custom role defined above it. Both are checked when the configuration loads.
 - Memberships, invitations, `default_invitation_role`, `add_member!`, promotions and demotions, `by_role_hierarchy` and every permission helper accept custom roles. The generated views list them in the role pickers.
-- Removing a custom role from the configuration later leaves its memberships readable and updatable (the role is checked only when it is set or changed) and ranks them below every configured role; move them to a configured role with `org.change_role_of!(user, to: :member)`.
+- Removing a custom role from the configuration later leaves its memberships readable and updatable (the role is checked only when it is set or changed) and ranks them below every configured role; move them to a configured role with `org.change_role_of!(user, to: :member)`. A pending invitation for a retired role cannot be accepted; revoke it and invite again with a configured role.
 
 ### Add custom permissions
 

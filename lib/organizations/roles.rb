@@ -297,6 +297,7 @@ module Organizations
       # example manage_billing or transfer_ownership). Otherwise an admin
       # could give another account a power that the admin does not have.
       def validate_privileges!
+        validate_built_in_parents!
         permissions = to_permissions
         owner_only = (permissions[:owner] || DEFAULT_PERMISSIONS[:owner]) -
                      (permissions[:admin] || DEFAULT_PERMISSIONS[:admin])
@@ -310,6 +311,19 @@ module Organizations
       end
 
       private
+
+      # A built-in role may inherit a custom role only when that custom role
+      # ranks below it; otherwise the inheritance would be dropped silently.
+      def validate_built_in_parents!
+        order = hierarchy
+        (@roles.keys & Roles::HIERARCHY).each do |name|
+          parent = @roles[name][:inherits]
+          next unless parent && custom_roles.include?(parent)
+          next if order.index(parent) > order.index(name)
+
+          raise ConfigurationError, "Role #{name} cannot inherit from #{parent}: #{parent} ranks above #{name}"
+        end
+      end
 
       def custom_roles = @roles.keys - Roles::HIERARCHY
 
