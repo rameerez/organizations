@@ -2,7 +2,7 @@
 
 ### Added
 
-- **Custom role names.** `config.roles do role :client, inherits: :viewer do ... end end` registers a role outside the four built-in ones, with its own permissions plus its parent's. It sits directly above its parent in `Roles.hierarchy` (no parent: at the bottom), and works in `add_member!`, memberships, invitations, `default_invitation_role`, promotions, demotions, `at_least?` and the permission helpers. Nothing may inherit `owner`; names and parents are checked at configuration time. `Roles.hierarchy_for(definition)` gives the hierarchy of a definition. The generated views list custom roles in the role pickers.
+- **Custom role names.** `config.roles do role :client, inherits: :viewer do ... end end` registers a role outside the four built-in ones, with its own permissions plus its parent's. It sits directly above its parent in `Roles.hierarchy` (no parent: at the bottom), and works in `add_member!`, memberships, invitations, `default_invitation_role`, promotions, demotions, `at_least?` and the permission helpers. A custom role ranks below admin (it inherits from `member`, `viewer` or a custom role); a block that only adds custom roles keeps the built-in defaults; a retired role no longer blocks unrelated membership updates; `by_role_hierarchy` follows the configured hierarchy; the hierarchy and permissions are published as one snapshot per definition. Names and parents are checked at configuration time. `Roles.hierarchy_for(definition)` gives the hierarchy of a definition. The generated views list custom roles in the role pickers.
 
 ## [0.5.0] - 2026-07-16
 

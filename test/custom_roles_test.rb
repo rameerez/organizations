@@ -107,6 +107,7 @@ module Organizations
     test "an invalid custom role is refused at configuration time" do
       [
         proc { role :client, inherits: :owner },
+        proc { role :senior_admin, inherits: :admin },
         proc { role :client, inherits: :nobody },
         proc { role :"Bad Name" },
         proc do
@@ -122,6 +123,77 @@ module Organizations
     test "without custom roles the hierarchy is the built-in one" do
       assert_equal Roles::HIERARCHY, Roles.hierarchy
       refute Roles.valid_role?(:client)
+    end
+  end
+
+  # The safety rules of custom roles (an adversarial review of the feature).
+  class CustomRolesSafetyTest < Organizations::Test
+    teardown { Organizations.reset_configuration! }
+
+    def define_client_role!
+      Organizations.configure { |config| config.roles { role :client, inherits: :viewer } }
+    end
+
+    test "a block that only adds custom roles keeps the built-in roles' defaults" do
+      Organizations.configure do |config|
+        config.roles do
+          role :client, inherits: :viewer do
+            can :answer_questions
+          end
+        end
+      end
+
+      Roles::HIERARCHY.each { |role| assert_equal Roles::DEFAULT_PERMISSIONS[role], Roles.permissions_for(role) }
+      assert Roles.has_permission?(:owner, :transfer_ownership)
+    end
+
+    test "a rejected configuration leaves no trace of its roles, even with warm caches" do
+      Organizations.configure { |config| config.roles { role :client, inherits: :viewer } }
+
+      assert Roles.valid_role?(:client)
+
+      assert_raises(ConfigurationError) do
+        Organizations.configure do |config|
+          config.roles { role :auditor, inherits: :viewer }
+          Roles.hierarchy # warm the cache inside the attempt
+          config.default_invitation_role = :nobody
+        end
+      end
+
+      assert Roles.valid_role?(:client)
+      refute Roles.valid_role?(:auditor)
+    end
+
+    test "a snapshot of an older definition is never served for a newer one" do
+      Organizations.configure { |config| config.roles { role :client, inherits: :viewer } }
+      stale = Roles.send(:snapshot)
+      Organizations.configure { |config| config.roles { role :auditor, inherits: :viewer } }
+      Roles.instance_variable_set(:@snapshot, stale) # a reader that raced the reset publishes late
+
+      assert Roles.valid_role?(:auditor)
+      refute Roles.valid_role?(:client)
+    end
+
+    test "a role retired from the configuration does not block other updates, and ranks last" do
+      define_client_role!
+      org, _owner = create_org_with_owner!
+      membership = org.add_member!(create_user!, role: :client)
+      Organizations.reset_configuration!
+
+      membership.reload.update!(updated_at: Time.current)
+
+      assert_equal 1, Roles.compare(:viewer, :client) * -1
+      refute_predicate org.memberships.new(user: create_user!, role: "client"), :valid?
+    end
+
+    test "memberships order by the configured hierarchy, custom roles included" do
+      define_client_role!
+      org, _owner = create_org_with_owner!
+      org.add_member!(create_user!, role: :viewer)
+      org.add_member!(create_user!, role: :client)
+      org.add_member!(create_user!, role: :member)
+
+      assert_equal %w[owner member client viewer], org.memberships.by_role_hierarchy.pluck(:role)
     end
   end
 end

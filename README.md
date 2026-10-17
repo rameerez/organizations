@@ -827,8 +827,10 @@ require_organization_role!(:client)        # clients and everyone above them
 
 - A custom role gets its own permissions plus its parent's (the parent's defaults when the block does not redefine a built-in parent).
 - A custom role without `inherits:` sits at the bottom of the hierarchy. Two custom roles with the same parent stack in the order you define them, the first one highest.
-- Nothing inherits `owner`: the owner stays the single top of every organization. A role name is lowercase letters, digits and underscores; a parent must be a built-in role or a custom role defined above it. Both are checked when the configuration loads.
-- Memberships, invitations, `default_invitation_role`, `add_member!`, promotions and demotions and every permission helper accept custom roles. The generated views list them in the role pickers.
+- A block that only adds custom roles keeps the built-in roles' default permissions; a block that redefines a built-in role defines the built-in roles it lists, as before.
+- A custom role ranks below admin: it inherits from `member`, `viewer` or another custom role, never from `admin` or `owner`, so it never outranks the people who can assign it. A role name is lowercase letters, digits and underscores; a parent must be a built-in role or a custom role defined above it. Both are checked when the configuration loads.
+- Memberships, invitations, `default_invitation_role`, `add_member!`, promotions and demotions, `by_role_hierarchy` and every permission helper accept custom roles. The generated views list them in the role pickers.
+- Removing a custom role from the configuration later leaves its memberships readable and updatable (the role is checked only when it is set or changed) and ranks them below every configured role; move them to a configured role with `change_role_to!`.
 
 ### Add custom permissions
 

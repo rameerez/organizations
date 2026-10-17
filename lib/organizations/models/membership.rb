@@ -53,7 +53,11 @@ module Organizations
 
     # === Validations ===
 
-    validates :role, presence: true, inclusion: { in: ->(_) { Roles.valid_roles.map(&:to_s) } }
+    validates :role, presence: true
+    # Checked when the role is set or changed, so a role retired from the
+    # configuration does not block unrelated updates of existing memberships.
+    validates :role, inclusion: { in: ->(_) { Roles.valid_roles.map(&:to_s) } },
+                     if: -> { new_record? || will_save_change_to_role? }
     # Proc message: resolved at VALIDATION time so it follows I18n.locale —
     # a literal string here would be frozen in whatever locale loaded first.
     validates :user_id, uniqueness: { scope: :organization_id,
@@ -78,16 +82,10 @@ module Organizations
     scope :viewers, -> { where(role: "viewer") }
 
     # Order by role hierarchy (owners first)
+    # (the configured hierarchy, custom roles included; unknown roles last)
     scope :by_role_hierarchy, -> {
-      order(Arel.sql(<<~SQL.squish))
-        CASE role
-          WHEN 'owner' THEN 0
-          WHEN 'admin' THEN 1
-          WHEN 'member' THEN 2
-          WHEN 'viewer' THEN 3
-          ELSE 4
-        END
-      SQL
+      ranks = Roles.hierarchy.each_with_index.map { |role, index| "WHEN #{connection.quote(role.to_s)} THEN #{index}" }
+      order(Arel.sql("CASE role #{ranks.join(' ')} ELSE #{Roles.hierarchy.length} END"))
     }
 
     # === Verified Joining (v0.5.0) ===
