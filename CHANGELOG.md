@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-18
+
 **Upgrade note.** Before this release, a custom role with `invite_members` or `edit_member_roles` could invite to, or promote to, a role above its own. An admin invitation crafted that way on 0.6.0 still grants admin when it is accepted after the upgrade. If your app has custom roles with those permissions, audit pending invitations and recent role changes made by members of those roles.
 
 ### Fixed
