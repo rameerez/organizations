@@ -180,6 +180,9 @@ module Organizations
           user: current_user
         )
       end
+
+      # Note: Organization#remove_member! raises NotAuthorized when the member's
+      # role ranks above the requester's own; #destroy turns that into an alert.
     end
 
     # JSON serialization helpers

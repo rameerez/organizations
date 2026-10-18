@@ -322,6 +322,122 @@ module Organizations
       assert_equal "admin", membership_of(@viewer).role
     end
 
+    # === Removals ===
+
+    test "a lead cannot remove an admin" do
+      error = assert_raises(Organizations::NotAuthorized) do
+        @org.remove_member!(@admin, removed_by: @lead)
+      end
+
+      assert_equal :remove_members, error.permission
+      assert_equal @org, error.organization
+      assert_equal @lead, error.user
+      assert_equal "You can't remove a member with the Admin role because it ranks above yours", error.message
+      assert @org.has_member?(@admin)
+    end
+
+    test "a refused removal fires no member_removed callback" do
+      fired = []
+      Organizations.configure { |config| config.on_member_removed { |ctx| fired << ctx } }
+
+      assert_raises(Organizations::NotAuthorized) { @org.remove_member!(@admin, removed_by: @lead) }
+
+      assert_empty fired
+    end
+
+    test "a lead can remove members at or below its own role" do
+      other_lead = add!(:lead)
+
+      @org.remove_member!(@viewer, removed_by: @lead)
+      @org.remove_member!(other_lead, removed_by: @lead)
+
+      refute @org.has_member?(@viewer)
+      refute @org.has_member?(other_lead)
+    end
+
+    test "a lead still gets the owner refusal when removing the owner" do
+      assert_raises(Organizations::Organization::CannotRemoveOwner) do
+        @org.remove_member!(@owner, removed_by: @lead)
+      end
+    end
+
+    test "an admin can remove another admin, and the owner can remove an admin" do
+      other_admin = add!(:admin)
+
+      @org.remove_member!(other_admin, removed_by: @admin)
+      @org.remove_member!(@admin, removed_by: @owner)
+
+      refute @org.has_member?(other_admin)
+      refute @org.has_member?(@admin)
+    end
+
+    test "a removal without removed_by, or by a non-member, is not capped, as before" do
+      other_admin = add!(:admin)
+
+      @org.remove_member!(@admin)
+      @org.remove_member!(other_admin, removed_by: create_user!)
+
+      refute @org.has_member?(@admin)
+      refute @org.has_member?(other_admin)
+    end
+
+    # === Invitation management ===
+
+    test "a lead cannot revoke an admin invitation" do
+      invitation = @org.send_invite_to!("admin-invite@example.com", invited_by: @admin, role: :admin)
+
+      error = assert_raises(Organizations::NotAuthorized) { invitation.revoke!(revoked_by: @lead) }
+
+      assert_equal :invite_members, error.permission
+      assert_equal @lead, error.user
+      assert_equal "You can't revoke or resend an invitation for the Admin role because it ranks above yours",
+                   error.message
+      assert Organizations::Invitation.exists?(invitation.id)
+    end
+
+    test "a lead cannot resend an admin invitation" do
+      invitation = @org.send_invite_to!("admin-invite@example.com", invited_by: @admin, role: :admin)
+      token = invitation.token
+
+      assert_raises(Organizations::NotAuthorized) { invitation.resend!(resent_by: @lead) }
+
+      assert_equal token, invitation.reload.token
+    end
+
+    test "a lead can revoke and resend invitations at or below its own role" do
+      lead_invite = @org.send_invite_to!("lead-invite@example.com", invited_by: @admin, role: :lead)
+      viewer_invite = @org.send_invite_to!("viewer-invite@example.com", invited_by: @admin, role: :viewer)
+      token = lead_invite.token
+
+      lead_invite.resend!(resent_by: @lead)
+      viewer_invite.revoke!(revoked_by: @lead)
+
+      refute_equal token, lead_invite.reload.token
+      refute Organizations::Invitation.exists?(viewer_invite.id)
+    end
+
+    test "an admin and the owner can revoke and resend admin invitations" do
+      first = @org.send_invite_to!("first@example.com", invited_by: @owner, role: :admin)
+      second = @org.send_invite_to!("second@example.com", invited_by: @owner, role: :admin)
+
+      first.resend!(resent_by: @admin)
+      first.revoke!(revoked_by: @admin)
+      second.resend!(resent_by: @owner)
+      second.revoke!(revoked_by: @owner)
+
+      assert_equal 0, @org.invitations.count
+    end
+
+    test "revoke! and resend! without an actor, or by a non-member, are not capped, as before" do
+      invitation = @org.send_invite_to!("admin-invite@example.com", invited_by: @admin, role: :admin)
+
+      invitation.resend!
+      invitation.resend!(resent_by: create_user!)
+      invitation.revoke!
+
+      refute Organizations::Invitation.exists?(invitation.id)
+    end
+
     # === Messages ===
 
     test "the refusals are localized" do
@@ -337,6 +453,17 @@ module Organizations
                      invite.message
         assert_equal "No puedes asignar ni retirar el rol Administrador porque está por encima del tuyo",
                      change.message
+
+        removal = assert_raises(Organizations::NotAuthorized) do
+          @org.remove_member!(@admin, removed_by: @lead)
+        end
+        assert_equal "No puedes eliminar a un miembro con el rol Administrador porque está por encima del tuyo",
+                     removal.message
+
+        invitation = @org.send_invite_to!("admin-invite@example.com", invited_by: @admin, role: :admin)
+        management = assert_raises(Organizations::NotAuthorized) { invitation.revoke!(revoked_by: @lead) }
+        assert_equal "No puedes revocar ni reenviar una invitación para el rol Administrador " \
+                     "porque está por encima del tuyo", management.message
       end
     end
 

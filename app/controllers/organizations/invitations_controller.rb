@@ -64,11 +64,16 @@ module Organizations
     # DELETE /invitations/:id
     # Revoke/delete an invitation
     def destroy
-      @invitation.destroy!
+      @invitation.revoke!(revoked_by: current_user)
 
       respond_to do |format|
         format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation revoked" }
         format.json { head :no_content }
+      end
+    rescue ::Organizations::NotAuthorized => e # an invitation for a role above the requester's own
+      respond_to do |format|
+        format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }
+        format.json { render json: { error: e.message }, status: :unprocessable_entity }
       end
     end
 
@@ -76,13 +81,13 @@ module Organizations
     # Resend an invitation email
     def resend
       begin
-        @invitation.resend!
+        @invitation.resend!(resent_by: current_user)
 
         respond_to do |format|
           format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation resent to #{@invitation.email}" }
           format.json { render json: invitation_json(@invitation) }
         end
-      rescue ::Organizations::InvitationAlreadyAccepted => e
+      rescue ::Organizations::InvitationAlreadyAccepted, ::Organizations::NotAuthorized => e
         respond_to do |format|
           format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }
           format.json { render json: { error: e.message }, status: :unprocessable_entity }

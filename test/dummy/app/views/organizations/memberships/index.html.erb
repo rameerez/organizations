@@ -59,11 +59,13 @@
                 <span class="text-sm text-gray-400 italic">Current user</span>
               <% elsif membership.role == 'owner' %>
                 <span class="text-sm text-gray-400 italic">Organization owner</span>
+              <% elsif !current_membership&.can_assign_role?(membership.role) %>
+                <span class="text-sm text-gray-400 italic">No actions</span>
               <% else %>
                 <div class="flex items-center justify-end gap-2">
                   <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
                     <%= form.select :role,
-                      Organizations::Roles.hierarchy.reject { |r| r == :owner }.map { |role| [role.to_s.capitalize, role] },
+                      Organizations::Roles.hierarchy.select { |r| r != :owner && current_membership.can_assign_role?(r) }.map { |role| [role.to_s.capitalize, role] },
                       { selected: membership.role },
                       class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
                     <%= form.submit "Update",

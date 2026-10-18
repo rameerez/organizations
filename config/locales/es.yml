@@ -62,8 +62,10 @@ es:
       invite_not_a_member: "Solo los miembros de la organización pueden enviar invitaciones"
       invite_not_authorized: "No tienes permiso para invitar miembros"
       invite_role_outranks_actor: "No puedes invitar a nadie como %{role} porque ese rol está por encima del tuyo"
+      invitation_management_outranks_actor: "No puedes revocar ni reenviar una invitación para el rol %{role} porque está por encima del tuyo"
 
       cannot_remove_owner: "No se puede eliminar al propietario de la organización. Transfiere la propiedad primero."
+      member_removal_outranks_actor: "No puedes eliminar a un miembro con el rol %{role} porque está por encima del tuyo"
       cannot_add_as_owner: "No se puede añadir un miembro como propietario. Usa la transferencia de propiedad."
       cannot_promote_to_owner: "No se puede ascender a propietario. Usa la transferencia de propiedad."
       cannot_demote_owner_directly: "No se puede degradar al propietario directamente. Usa la transferencia de propiedad."

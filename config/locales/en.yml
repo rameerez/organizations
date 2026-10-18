@@ -80,9 +80,11 @@ en:
       invite_not_a_member: "Only organization members can send invitations"
       invite_not_authorized: "You don't have permission to invite members"
       invite_role_outranks_actor: "You can't invite someone as %{role} because that role ranks above yours"
+      invitation_management_outranks_actor: "You can't revoke or resend an invitation for the %{role} role because it ranks above yours"
 
       # — Ownership / role invariants (reachable from admin UIs) —
       cannot_remove_owner: "Cannot remove the organization owner. Transfer ownership first."
+      member_removal_outranks_actor: "You can't remove a member with the %{role} role because it ranks above yours"
       cannot_add_as_owner: "Cannot add member as owner. Use transfer_ownership_to! instead."
       cannot_promote_to_owner: "Cannot promote to owner. Use transfer_ownership_to! instead."
       cannot_demote_owner_directly: "Cannot demote owner directly. Use transfer_ownership_to! instead."

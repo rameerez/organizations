@@ -548,6 +548,8 @@ invitation.expired?             # => true (past expires_at)
 invitation.accept!              # Accept (auto-infers Current.user)
 invitation.accept!(user)        # Accept with explicit user
 invitation.resend!              # Send invitation email again
+invitation.resend!(resent_by: current_user)   # Same, checking the role against the sender's
+invitation.revoke!(revoked_by: current_user)  # Delete it, so the link stops working
 ```
 
 ## Controller helpers
@@ -752,7 +754,7 @@ owner > admin > member > viewer
 
 Each role inherits all permissions from roles below it.
 
-Members can only give out or take away roles that rank at or below their own: the role of an invitation they send, and both the old and the new role of a role change made with `changed_by:` (the engine controllers always pass it), so a custom role with `invite_members` and `edit_member_roles` still cannot invite, promote or demote an admin. A refused change raises `Organizations::NotAuthorized`, and `membership.can_assign_role?(role)` tells you which roles to offer in a role picker.
+A role acts only on roles at or below its own in `Roles.hierarchy`. That covers invitations (the invited role), role changes (both the old and the new role), removals (the removed member's role) and invitation management (revoking or resending an invitation for a role), so a custom role with `invite_members`, `edit_member_roles` and `remove_members` still cannot invite, promote, demote or remove an admin, or touch an admin's invitation. The check applies to the member passed as `invited_by:`, `changed_by:`, `removed_by:`, `revoked_by:` or `resent_by:` (the engine controllers always pass it); a refusal raises `Organizations::NotAuthorized`, the owner keeps its own rules, and `membership.can_assign_role?(role)` tells you which roles to offer in a role picker, as the generated views do.
 
 ### Default permissions
 

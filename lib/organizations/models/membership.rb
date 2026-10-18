@@ -193,18 +193,42 @@ module Organizations
     # @param changed_by [User, nil] Who is making the change
     # @raise [Organizations::NotAuthorized] if either role ranks above changed_by's own
     def authorize_role_change!(new_role, changed_by:)
-      actor = changed_by && organization.memberships.find_by(user_id: changed_by.id)
-      return if actor.nil?
+      self.class.authorize_rank!(organization, changed_by, [role_sym, new_role],
+                                 permission: :edit_member_roles,
+                                 message_key: :"errors.role_change_outranks_actor")
+    end
 
-      outranking = [role_sym, new_role.to_sym].find { |candidate| !actor.can_assign_role?(candidate) }
+    # Raise unless removed_by may remove this member: a member may only remove
+    # members whose role ranks at or below its own. Organization#remove_member!
+    # calls this; the owner keeps its own refusal (CannotRemoveOwner).
+    # @param removed_by [User, nil] Who is removing this member
+    # @raise [Organizations::NotAuthorized] if this member's role ranks above removed_by's own
+    def authorize_removal!(removed_by:)
+      self.class.authorize_rank!(organization, removed_by, [role_sym],
+                                 permission: :remove_members,
+                                 message_key: :"errors.member_removal_outranks_actor")
+    end
+
+    # @api private
+    # The one rank check behind every action on a role: inviting to it,
+    # changing a member to or from it, removing a member who holds it, and
+    # revoking or resending an invitation for it. An actor may only act on
+    # roles that rank at or below its own (see Roles.can_assign?). An actor
+    # that is nil or holds no membership in the organization is not checked:
+    # the gem records it for the callbacks and the host authorizes it.
+    # @raise [Organizations::NotAuthorized] naming the first role that ranks above the actor's own
+    def self.authorize_rank!(organization, actor, roles, permission:, message_key:)
+      actor_membership = actor && organization.memberships.find_by(user_id: actor.id)
+      return unless actor_membership
+
+      outranking = roles.map(&:to_sym).find { |role| !actor_membership.can_assign_role?(role) }
       return unless outranking
 
       raise Organizations::NotAuthorized.new(
-        Organizations.t(:"errors.role_change_outranks_actor",
-                        role: Organizations.t(:"roles.#{outranking}", default: outranking.to_s.humanize)),
-        permission: :edit_member_roles,
+        Organizations.t(message_key, role: Organizations.t(:"roles.#{outranking}", default: outranking.to_s.humanize)),
+        permission: permission,
         organization: organization,
-        user: changed_by
+        user: actor
       )
     end
 
