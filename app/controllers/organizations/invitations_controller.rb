@@ -47,7 +47,9 @@ module Organizations
           format.html { redirect_to return_to, notice: "Invitation sent to #{email}" }
           format.json { render json: invitation_json(@invitation), status: :created }
         end
-      rescue ::Organizations::InvitationError, ActiveRecord::RecordInvalid, ArgumentError => e
+      # NotAuthorized covers an invitation to a role that ranks above the inviter's own.
+      rescue ::Organizations::InvitationError, ::Organizations::NotAuthorized,
+             ::Organizations::Organization::CannotInviteAsOwner, ActiveRecord::RecordInvalid, ArgumentError => e
         respond_to do |format|
           format.html do
             @invitation = current_organization.invitations.build(invitation_params)

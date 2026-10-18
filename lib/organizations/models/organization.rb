@@ -290,6 +290,8 @@ module Organizations
     # @return [Membership] The updated membership
     # @raise [CannotHaveMultipleOwners] if promoting to owner when one exists
     # @raise [CannotRemoveLastOwner] if demoting the only owner
+    # @raise [Organizations::NotAuthorized] if changed_by is a member whose role
+    #   ranks below the member's current role or the new role
     def change_role_of!(user, to:, changed_by: nil)
       new_role = to.to_sym
       validate_role!(new_role)
@@ -317,6 +319,9 @@ module Organizations
           # Demoting owner - not allowed directly
           raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner_directly")
         end
+
+        # Only roles at or below changed_by's own may be given or taken away
+        membership.authorize_role_change!(new_role, changed_by: changed_by)
 
         membership.update!(role: new_role.to_s)
       end
@@ -394,13 +399,14 @@ module Organizations
     # @param role [Symbol] Role for the invitation (default: from config)
     # @return [Invitation] The created or existing invitation
     # @raise [CannotInviteAsOwner] if role is :owner
+    # @raise [Organizations::NotAuthorized] if the role ranks above the inviter's own
     def send_invite_to!(email, invited_by: nil, role: nil)
       inviter = invited_by || current_user_from_context
       unless inviter
         raise ArgumentError, "invited_by is required (or set Current.user)"
       end
 
-      authorize_inviter!(inviter)
+      inviter_membership = authorize_inviter!(inviter)
 
       role ||= Organizations.configuration.default_invitation_role
       role_sym = role.to_sym
@@ -409,6 +415,9 @@ module Organizations
       if role_sym == :owner
         raise CannotInviteAsOwner, Organizations.t(:"errors.invite_as_owner")
       end
+
+      # Nobody can invite to a role that ranks above their own
+      authorize_invited_role!(inviter, inviter_membership, role_sym)
 
       normalized_email = email.downcase.strip
 
@@ -657,6 +666,7 @@ module Organizations
     # Defense in depth for organization-centric API usage.
     # The user-level API already checks this, but direct calls to `org.send_invite_to!`
     # must enforce membership and invite permission as well.
+    # Returns the inviter's membership.
     def authorize_inviter!(inviter)
       inviter_membership = memberships.find_by(user_id: inviter.id)
 
@@ -668,10 +678,26 @@ module Organizations
         )
       end
 
-      return if Roles.has_permission?(inviter_membership.role.to_sym, :invite_members)
+      return inviter_membership if Roles.has_permission?(inviter_membership.role.to_sym, :invite_members)
 
       raise Organizations::NotAuthorized.new(
         Organizations.t(:"errors.invite_not_authorized"),
+        permission: :invite_members,
+        organization: self,
+        user: inviter
+      )
+    end
+
+    # An inviter may only invite to roles that rank at or below their own (see
+    # Roles.can_assign?), so a custom role that can invite members still
+    # cannot invite an admin. A role that is not configured at all passes
+    # here and fails the invitation's own role validation instead.
+    def authorize_invited_role!(inviter, inviter_membership, role)
+      return if inviter_membership.can_assign_role?(role)
+
+      raise Organizations::NotAuthorized.new(
+        Organizations.t(:"errors.invite_role_outranks_actor",
+                        role: Organizations.t(:"roles.#{role}", default: role.to_s.humanize)),
         permission: :invite_members,
         organization: self,
         user: inviter

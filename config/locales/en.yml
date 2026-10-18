@@ -79,6 +79,7 @@ en:
       invite_as_owner: "Cannot invite as owner. Invite as admin, then use transfer_ownership_to! after they join."
       invite_not_a_member: "Only organization members can send invitations"
       invite_not_authorized: "You don't have permission to invite members"
+      invite_role_outranks_actor: "You can't invite someone as %{role} because that role ranks above yours"
 
       # — Ownership / role invariants (reachable from admin UIs) —
       cannot_remove_owner: "Cannot remove the organization owner. Transfer ownership first."
@@ -88,6 +89,7 @@ en:
       cannot_demote_owner: "Cannot demote owner. Transfer ownership first."
       promote_not_higher: "Cannot promote to %{new_role} - it's not a higher role than %{role}"
       demote_not_lower: "Cannot demote to %{new_role} - it's not a lower role than %{role}"
+      role_change_outranks_actor: "You can't give or take away the %{role} role because it ranks above yours"
       transfer_no_owner: "Cannot transfer ownership because organization has no owner membership"
       transfer_to_non_member: "Cannot transfer ownership to a non-member"
       transfer_to_non_admin: "Cannot transfer ownership to non-admin. Promote them to admin first."

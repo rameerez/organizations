@@ -1,0 +1,355 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+module Organizations
+  # An account may only give out, or take away, roles that rank at or below
+  # its own. Custom roles made this reachable: a role that inherits member and
+  # adds invite_members and edit_member_roles passes the configuration rules,
+  # and without this cap it could invite an admin, promote a viewer to admin,
+  # or demote an admin, through every role-changing entry point.
+  class RoleAssignmentCapTest < Organizations::Test
+    def setup
+      super
+      Organizations.configure do |config|
+        config.roles do
+          role :lead, inherits: :member do
+            can :invite_members
+            can :edit_member_roles
+          end
+        end
+      end
+
+      @org, @owner = create_org_with_owner!
+      @admin = add!(:admin)
+      @lead = add!(:lead)
+      @viewer = add!(:viewer)
+    end
+
+    def teardown
+      I18n.locale = I18n.default_locale
+      Organizations.reset_configuration!
+      super
+    end
+
+    # === The rule itself ===
+
+    test "the lead role sits between admin and member" do
+      assert_equal %i[owner admin lead member viewer], Roles.hierarchy
+    end
+
+    test "Roles.can_assign? allows roles at or below the actor's own and nothing above" do
+      assert Roles.can_assign?(:lead, :lead)
+      assert Roles.can_assign?(:lead, :member)
+      assert Roles.can_assign?(:lead, :viewer)
+      refute Roles.can_assign?(:lead, :admin)
+      refute Roles.can_assign?(:lead, :owner)
+
+      assert Roles.can_assign?(:admin, :admin)
+      assert Roles.can_assign?(:admin, :lead)
+      refute Roles.can_assign?(:admin, :owner)
+
+      Roles.hierarchy.each { |role| assert Roles.can_assign?(:owner, role) }
+    end
+
+    test "Roles.can_assign? accepts strings" do
+      assert Roles.can_assign?("admin", "member")
+      refute Roles.can_assign?("lead", "admin")
+    end
+
+    test "Roles.can_assign? ranks a role that is not configured below every configured role" do
+      assert Roles.can_assign?(:viewer, :retired_role)
+    end
+
+    test "Roles.can_assign? lets an actor whose role is not configured assign nothing" do
+      refute Roles.can_assign?(:retired_role, :viewer)
+      refute Roles.can_assign?(:retired_role, :retired_role)
+    end
+
+    test "Roles.can_assign? is false for nil" do
+      refute Roles.can_assign?(nil, :viewer)
+      refute Roles.can_assign?(:owner, nil)
+    end
+
+    test "Membership#can_assign_role? applies the rule to the member's role" do
+      assert membership_of(@admin).can_assign_role?(:admin)
+      assert membership_of(@lead).can_assign_role?(:viewer)
+      refute membership_of(@lead).can_assign_role?(:admin)
+      refute membership_of(@viewer).can_assign_role?(:member)
+    end
+
+    # === A custom role with invite and edit-roles permissions ===
+
+    test "a lead cannot invite to admin through the user API" do
+      error = assert_raises(Organizations::NotAuthorized) do
+        @lead.send_organization_invite_to!("new@example.com", organization: @org, role: :admin)
+      end
+
+      assert_equal :invite_members, error.permission
+      assert_equal @org, error.organization
+      assert_equal @lead, error.user
+      assert_equal "You can't invite someone as Admin because that role ranks above yours", error.message
+      assert_equal 0, @org.invitations.count
+    end
+
+    test "a lead cannot invite to admin through the organization API, with a string role" do
+      assert_raises(Organizations::NotAuthorized) do
+        @org.send_invite_to!("new@example.com", invited_by: @lead, role: "admin")
+      end
+
+      assert_equal 0, @org.invitations.count
+    end
+
+    test "a lead cannot get an admin invitation back from a pending one for the same email" do
+      @org.send_invite_to!("new@example.com", invited_by: @admin, role: :admin)
+
+      assert_raises(Organizations::NotAuthorized) do
+        @org.send_invite_to!("new@example.com", invited_by: @lead, role: :admin)
+      end
+    end
+
+    test "a lead cannot refresh an expired invitation into an admin one" do
+      expired = @org.send_invite_to!("new@example.com", invited_by: @admin, role: :member)
+      expired.update_columns(expires_at: 1.day.ago)
+
+      assert_raises(Organizations::NotAuthorized) do
+        @org.send_invite_to!("new@example.com", invited_by: @lead, role: :admin)
+      end
+
+      assert_equal "member", expired.reload.role
+    end
+
+    test "a lead still gets the owner refusal when inviting as owner" do
+      assert_raises(Organizations::Organization::CannotInviteAsOwner) do
+        @org.send_invite_to!("new@example.com", invited_by: @lead, role: :owner)
+      end
+    end
+
+    test "a lead can invite to its own role and the roles below it" do
+      %i[lead member viewer].each do |role|
+        invitation = @lead.send_organization_invite_to!("#{role}@example.com", organization: @org, role: role)
+
+        assert_equal role.to_s, invitation.role
+      end
+    end
+
+    test "a lead cannot promote a viewer to admin through change_role_of!" do
+      error = assert_raises(Organizations::NotAuthorized) do
+        @org.change_role_of!(@viewer, to: :admin, changed_by: @lead)
+      end
+
+      assert_equal :edit_member_roles, error.permission
+      assert_equal @org, error.organization
+      assert_equal @lead, error.user
+      assert_equal "You can't give or take away the Admin role because it ranks above yours", error.message
+      assert_equal "viewer", membership_of(@viewer).role
+    end
+
+    test "a lead cannot promote a viewer to admin through Membership#promote_to!" do
+      assert_raises(Organizations::NotAuthorized) do
+        membership_of(@viewer).promote_to!(:admin, changed_by: @lead)
+      end
+
+      assert_equal "viewer", membership_of(@viewer).role
+    end
+
+    test "a lead cannot demote an admin through change_role_of!" do
+      assert_raises(Organizations::NotAuthorized) do
+        @org.change_role_of!(@admin, to: :member, changed_by: @lead)
+      end
+
+      assert_equal "admin", membership_of(@admin).role
+    end
+
+    test "a lead cannot demote an admin through Membership#demote_to!" do
+      assert_raises(Organizations::NotAuthorized) do
+        membership_of(@admin).demote_to!(:viewer, changed_by: @lead)
+      end
+
+      assert_equal "admin", membership_of(@admin).role
+    end
+
+    test "a lead cannot promote itself to admin" do
+      assert_raises(Organizations::NotAuthorized) do
+        @org.change_role_of!(@lead, to: :admin, changed_by: @lead)
+      end
+
+      assert_equal "lead", membership_of(@lead).role
+    end
+
+    test "a lead still gets the owner refusals for owner changes" do
+      assert_raises(Organizations::Organization::CannotHaveMultipleOwners) do
+        @org.change_role_of!(@viewer, to: :owner, changed_by: @lead)
+      end
+      assert_raises(Organizations::Organization::CannotDemoteOwner) do
+        @org.change_role_of!(@owner, to: :member, changed_by: @lead)
+      end
+    end
+
+    test "a refused role change fires no role_changed callback" do
+      fired = []
+      Organizations.configure { |config| config.on_role_changed { |ctx| fired << ctx } }
+
+      assert_raises(Organizations::NotAuthorized) do
+        @org.change_role_of!(@viewer, to: :admin, changed_by: @lead)
+      end
+      assert_raises(Organizations::NotAuthorized) do
+        membership_of(@admin).demote_to!(:member, changed_by: @lead)
+      end
+
+      assert_empty fired
+    end
+
+    test "a lead can move members among its own role and the roles below it" do
+      @org.change_role_of!(@viewer, to: :lead, changed_by: @lead)
+
+      assert_equal "lead", membership_of(@viewer).role
+
+      @org.change_role_of!(@viewer, to: :member, changed_by: @lead)
+
+      assert_equal "member", membership_of(@viewer).role
+
+      membership_of(@viewer).demote_to!(:viewer, changed_by: @lead)
+
+      assert_equal "viewer", membership_of(@viewer).role
+
+      membership_of(@viewer).promote_to!(:member, changed_by: @lead)
+
+      assert_equal "member", membership_of(@viewer).role
+    end
+
+    # === Admin and owner keep what they could do ===
+
+    test "an admin can invite to admin, lead, member and viewer" do
+      %i[admin lead member viewer].each do |role|
+        invitation = @admin.send_organization_invite_to!("#{role}@example.com", organization: @org, role: role)
+
+        assert_equal role.to_s, invitation.role
+      end
+    end
+
+    test "an admin can promote to admin and to the roles below it" do
+      @org.change_role_of!(@viewer, to: :lead, changed_by: @admin)
+
+      assert_equal "lead", membership_of(@viewer).role
+
+      @org.change_role_of!(@viewer, to: :admin, changed_by: @admin)
+
+      assert_equal "admin", membership_of(@viewer).role
+
+      membership_of(@lead).promote_to!(:admin, changed_by: @admin)
+
+      assert_equal "admin", membership_of(@lead).role
+    end
+
+    test "an admin can demote another admin" do
+      other_admin = add!(:admin)
+
+      @org.change_role_of!(other_admin, to: :lead, changed_by: @admin)
+
+      assert_equal "lead", membership_of(other_admin).role
+
+      membership_of(other_admin).demote_to!(:viewer, changed_by: @admin)
+
+      assert_equal "viewer", membership_of(other_admin).role
+
+      membership_of(other_admin).promote_to!(:admin, changed_by: @admin)
+      @org.change_role_of!(other_admin, to: :member, changed_by: @admin)
+
+      assert_equal "member", membership_of(other_admin).role
+    end
+
+    test "an owner can invite to every role but owner" do
+      %i[admin lead member viewer].each do |role|
+        invitation = @owner.send_organization_invite_to!("#{role}@example.com", organization: @org, role: role)
+
+        assert_equal role.to_s, invitation.role
+      end
+      assert_raises(Organizations::Organization::CannotInviteAsOwner) do
+        @owner.send_organization_invite_to!("owner@example.com", organization: @org, role: :owner)
+      end
+    end
+
+    test "an owner can promote and demote admins, and owner changes still need a transfer" do
+      @org.change_role_of!(@viewer, to: :admin, changed_by: @owner)
+
+      assert_equal "admin", membership_of(@viewer).role
+
+      @org.change_role_of!(@admin, to: :viewer, changed_by: @owner)
+
+      assert_equal "viewer", membership_of(@admin).role
+
+      assert_raises(Organizations::Organization::CannotHaveMultipleOwners) do
+        @org.change_role_of!(@viewer, to: :owner, changed_by: @owner)
+      end
+      assert_raises(Organizations::Membership::CannotPromoteToOwner) do
+        membership_of(@viewer).promote_to!(:owner, changed_by: @owner)
+      end
+    end
+
+    # === Who counts as the actor ===
+
+    test "a role change without changed_by is not capped, as before" do
+      @org.change_role_of!(@viewer, to: :admin)
+
+      assert_equal "admin", membership_of(@viewer).role
+
+      membership_of(@viewer).demote_to!(:member)
+
+      assert_equal "member", membership_of(@viewer).role
+    end
+
+    test "a changed_by who is not a member of the organization is only recorded, as before" do
+      outsider = create_user!
+
+      @org.change_role_of!(@viewer, to: :admin, changed_by: outsider)
+
+      assert_equal "admin", membership_of(@viewer).role
+
+      membership_of(@viewer).demote_to!(:member, changed_by: outsider)
+
+      assert_equal "member", membership_of(@viewer).role
+    end
+
+    test "the check reads the target's current role, not a stale copy" do
+      stale = membership_of(@viewer)
+      @org.change_role_of!(@viewer, to: :admin, changed_by: @owner)
+
+      assert_raises(Organizations::NotAuthorized) do
+        stale.promote_to!(:lead, changed_by: @lead)
+      end
+
+      assert_equal "admin", membership_of(@viewer).role
+    end
+
+    # === Messages ===
+
+    test "the refusals are localized" do
+      I18n.with_locale(:es) do
+        invite = assert_raises(Organizations::NotAuthorized) do
+          @org.send_invite_to!("new@example.com", invited_by: @lead, role: :admin)
+        end
+        change = assert_raises(Organizations::NotAuthorized) do
+          @org.change_role_of!(@admin, to: :member, changed_by: @lead)
+        end
+
+        assert_equal "No puedes invitar a nadie como Administrador porque ese rol está por encima del tuyo",
+                     invite.message
+        assert_equal "No puedes asignar ni retirar el rol Administrador porque está por encima del tuyo",
+                     change.message
+      end
+    end
+
+    private
+
+    def add!(role)
+      user = create_user!
+      Organizations::Membership.create!(user: user, organization: @org, role: role.to_s)
+      user
+    end
+
+    def membership_of(user)
+      @org.memberships.find_by!(user_id: user.id)
+    end
+  end
+end

@@ -165,7 +165,48 @@ module Organizations
       Roles.compare(role_sym, other.role_sym)
     end
 
+    # Check if this member may give another member the specified role, or
+    # take it away from them: only roles that rank at or below this member's
+    # own role qualify. Useful to filter the role picker in an admin UI.
+    # @param role [Symbol, String] The role to give or take away
+    # @return [Boolean]
+    #
+    # @example
+    #   admin_membership.can_assign_role?(:admin)  # => true
+    #   member_membership.can_assign_role?(:admin) # => false
+    #
+    def can_assign_role?(role)
+      Roles.can_assign?(role_sym, role)
+    end
+
     # === Role Change Methods ===
+
+    # Raise unless changed_by may move this member to new_role. A member who
+    # changes another member's role must rank at or above both the role being
+    # taken away and the role being given (see Roles.can_assign?), so a custom
+    # role that can edit member roles still cannot create or demote an admin.
+    # A changed_by who holds no membership in this organization, such as a
+    # console session or platform staff, is only recorded for the callbacks,
+    # as before; authorizing that account is the host's job. promote_to!,
+    # demote_to! and Organization#change_role_of! all call this.
+    # @param new_role [Symbol, String] The role being given
+    # @param changed_by [User, nil] Who is making the change
+    # @raise [Organizations::NotAuthorized] if either role ranks above changed_by's own
+    def authorize_role_change!(new_role, changed_by:)
+      actor = changed_by && organization.memberships.find_by(user_id: changed_by.id)
+      return if actor.nil?
+
+      outranking = [role_sym, new_role.to_sym].find { |candidate| !actor.can_assign_role?(candidate) }
+      return unless outranking
+
+      raise Organizations::NotAuthorized.new(
+        Organizations.t(:"errors.role_change_outranks_actor",
+                        role: Organizations.t(:"roles.#{outranking}", default: outranking.to_s.humanize)),
+        permission: :edit_member_roles,
+        organization: organization,
+        user: changed_by
+      )
+    end
 
     # Promote to a higher role
     # @param new_role [Symbol, String] The new role
@@ -173,6 +214,7 @@ module Organizations
     # @return [self]
     # @raise [InvalidRoleChange] if new role is not higher
     # @raise [CannotPromoteToOwner] if trying to promote to owner (use transfer_ownership_to!)
+    # @raise [Organizations::NotAuthorized] if changed_by is a member whose role ranks below the new role
     def promote_to!(new_role, changed_by: nil)
       new_role_sym = new_role.to_sym
       validate_role!(new_role_sym)
@@ -195,6 +237,7 @@ module Organizations
     # @return [self]
     # @raise [CannotDemoteOwner] if trying to demote owner
     # @raise [InvalidRoleChange] if new role is not lower
+    # @raise [Organizations::NotAuthorized] if changed_by is a member whose role ranks below the current role
     def demote_to!(new_role, changed_by: nil)
       new_role_sym = new_role.to_sym
       validate_role!(new_role_sym)
@@ -237,6 +280,9 @@ module Organizations
       ActiveRecord::Base.transaction do
         # Lock row to prevent concurrent changes
         lock!
+        # Checked on the locked, freshly read role, so a concurrent change
+        # cannot slip an admin past the check.
+        authorize_role_change!(new_role, changed_by: changed_by)
         update!(role: new_role.to_s)
       end
 

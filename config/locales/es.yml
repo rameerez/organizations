@@ -61,6 +61,7 @@ es:
       invite_as_owner: "No se puede invitar como propietario. Invita como administrador y transfiere la propiedad después."
       invite_not_a_member: "Solo los miembros de la organización pueden enviar invitaciones"
       invite_not_authorized: "No tienes permiso para invitar miembros"
+      invite_role_outranks_actor: "No puedes invitar a nadie como %{role} porque ese rol está por encima del tuyo"
 
       cannot_remove_owner: "No se puede eliminar al propietario de la organización. Transfiere la propiedad primero."
       cannot_add_as_owner: "No se puede añadir un miembro como propietario. Usa la transferencia de propiedad."
@@ -69,6 +70,7 @@ es:
       cannot_demote_owner: "No se puede degradar al propietario. Transfiere la propiedad primero."
       promote_not_higher: "No se puede ascender a %{new_role}: no es un rol superior a %{role}"
       demote_not_lower: "No se puede degradar a %{new_role}: no es un rol inferior a %{role}"
+      role_change_outranks_actor: "No puedes asignar ni retirar el rol %{role} porque está por encima del tuyo"
       transfer_no_owner: "No se puede transferir la propiedad porque la organización no tiene propietario"
       transfer_to_non_member: "No se puede transferir la propiedad a alguien que no es miembro"
       transfer_to_non_admin: "No se puede transferir la propiedad a alguien que no es administrador. Asciéndele primero."

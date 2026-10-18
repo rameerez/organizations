@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Fixed
+
+- **Security: a member could hand out a role above their own.** Invitations and role changes only refused the `owner` role. With 0.6.0 custom roles, a role such as `role :lead, inherits: :member do can :invite_members; can :edit_member_roles end` passes the configuration rules, and a template reviewer showed that a crafted request from such a member could create an `admin` invitation, promote a viewer to `admin`, or demote an admin. Inviting, promoting and demoting are now limited to roles that rank at or below the acting member's own role in `Roles.hierarchy`. The models enforce it, so every entry point is covered: `Organization#send_invite_to!` (and `user.send_organization_invite_to!` through it), `Organization#change_role_of!`, `Membership#promote_to!` and `Membership#demote_to!`. A role change checks both the old and the new role against the member passed as `changed_by:`; a `changed_by` that is nil or not a member of the organization is only recorded for callbacks, as before. A refused change raises `Organizations::NotAuthorized` with a localized message (en and es). The owner keeps every power it had, and owner changes still go through `transfer_ownership_to!`.
+- `InvitationsController#create` answered an `owner` invitation with an error page, because `CannotInviteAsOwner` was not rescued. It now re-renders the form with the alert and a 422, like a refused role.
+
+### Added
+
+- `Roles.can_assign?(actor_role, role)` and `Membership#can_assign_role?(role)` tell whether a role ranks at or below the actor's own, for example to filter a role picker. `Membership#authorize_role_change!(new_role, changed_by:)` raises `NotAuthorized` when it does not.
+
 ## [0.6.0] - 2026-10-18
 
 **Custom role names.** Register a role outside owner > admin > member > viewer (a `client`, an `auditor`, a `guest`) in the existing `config.roles` block. No migration is needed. Installs without custom roles change nothing.

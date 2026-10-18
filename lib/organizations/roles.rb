@@ -124,6 +124,32 @@ module Organizations
         idx_a < idx_b ? -1 : 1
       end
 
+      # Check if an account holding actor_role may give a member role, or
+      # take role away from them. An actor may only hand out or take away
+      # roles that rank at or below its own, so a custom role that can edit
+      # member roles still cannot create or demote an admin. A role that is
+      # no longer configured ranks below every configured role, and an actor
+      # whose own role is no longer configured may assign nothing. The owner
+      # role keeps its own rules: it moves only through transfer_ownership_to!.
+      # @param actor_role [Symbol, String] The role of the account making the change
+      # @param role [Symbol, String] The role being given or taken away
+      # @return [Boolean]
+      #
+      # @example
+      #   Roles.can_assign?(:admin, :admin)  # => true (same rank)
+      #   Roles.can_assign?(:admin, :member) # => true
+      #   Roles.can_assign?(:member, :admin) # => false (admin ranks above member)
+      #
+      def can_assign?(actor_role, role)
+        return false if actor_role.nil? || role.nil?
+
+        order = hierarchy # one snapshot for both lookups
+        actor_rank = order.index(actor_role.to_sym)
+        return false unless actor_rank
+
+        actor_rank <= (order.index(role.to_sym) || order.length)
+      end
+
       # Get all permissions for a role (pre-computed, O(1) lookup)
       # @param role [Symbol, String] The role
       # @return [Array<Symbol>] All permissions for the role

@@ -159,6 +159,7 @@ Metrics/ClassLength:
     - 'test/models/organization_test.rb'
     - 'test/regression/bugfix_regression_test.rb'
     - 'test/regression/security_regression_test.rb'
+    - 'test/role_assignment_cap_test.rb'
     - 'test/roles_test.rb'
     - 'test/view_helpers_test.rb'
 

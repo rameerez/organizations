@@ -155,7 +155,9 @@ module Organizations
       end
 
       # Note: Owner promotion/demotion rules are enforced by Organization#change_role_of!
-      # which will raise CannotHaveMultipleOwners or CannotDemoteOwner as appropriate
+      # which will raise CannotHaveMultipleOwners or CannotDemoteOwner as appropriate.
+      # It also raises NotAuthorized when the member's current role or the new role
+      # ranks above the requester's own; #update turns that into an alert.
     end
 
     def validate_removal!

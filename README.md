@@ -525,6 +525,7 @@ membership.permissions                           # => [:view_members, :invite_me
 
 # Role hierarchy checks
 membership.is_at_least?(:member)    # => true (if member, admin, or owner)
+membership.can_assign_role?(:admin) # => true (if admin or owner: roles at or below their own)
 
 # Role changes
 membership.promote_to!(:admin)      # Change role to admin
@@ -750,6 +751,8 @@ owner > admin > member > viewer
 ```
 
 Each role inherits all permissions from roles below it.
+
+Members can only give out or take away roles that rank at or below their own: the role of an invitation they send, and both the old and the new role of a role change made with `changed_by:` (the engine controllers always pass it), so a custom role with `invite_members` and `edit_member_roles` still cannot invite, promote or demote an admin. A refused change raises `Organizations::NotAuthorized`, and `membership.can_assign_role?(role)` tells you which roles to offer in a role picker.
 
 ### Default permissions
 
