@@ -240,6 +240,8 @@ module Organizations
     end
 
     # Check if current user can remove a member
+    # Follows the same rule as Organization#remove_member!: the member's role
+    # must be one the user may act on (see Roles.assignment_refusal).
     # @param user [User] The user performing the action
     # @param membership [Organizations::Membership] The membership to remove
     # @return [Boolean]
@@ -247,10 +249,12 @@ module Organizations
       return false unless user_has_permission_in_org?(user, membership.organization, :remove_members)
       return false if membership.owner? # Can't remove owner
 
-      true
+      user_can_act_on_role?(user, membership)
     end
 
     # Check if current user can change a member's role
+    # Follows the same rule as Organization#change_role_of!: the member's
+    # current role must be one the user may act on (see Roles.assignment_refusal).
     # @param user [User] The user performing the action
     # @param membership [Organizations::Membership] The membership to update
     # @return [Boolean]
@@ -262,7 +266,7 @@ module Organizations
       if membership.owner?
         user_has_permission_in_org?(user, membership.organization, :transfer_ownership)
       else
-        true
+        user_can_act_on_role?(user, membership)
       end
     end
 
@@ -377,6 +381,11 @@ module Organizations
 
       role = user.role_in(organization)
       role && Roles.has_permission?(role, permission)
+    end
+
+    def user_can_act_on_role?(user, membership)
+      role = user.role_in(membership.organization)
+      role.present? && Roles.can_assign?(role, membership.role)
     end
 
     # Returns display name for invitation sender (handles nil inviter)

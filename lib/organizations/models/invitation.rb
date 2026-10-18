@@ -188,14 +188,20 @@ module Organizations
 
     # Resend the invitation email
     # Generates new token and resets expiry
+    # @param resent_by [User, nil] Who is resending it. When that account is a
+    #   member, the invitation's role must rank at or below its own role.
     # @return [self]
-    def resend!
+    # @raise [InvitationAlreadyAccepted] if already accepted
+    # @raise [Organizations::NotAuthorized] if the role ranks above resent_by's own
+    def resend!(resent_by: nil)
       ActiveRecord::Base.transaction do
         lock!
 
         if accepted?
           raise InvitationAlreadyAccepted, Organizations.t(:"errors.invitation_cannot_resend_accepted")
         end
+
+        authorize_management!(resent_by)
 
         update!(
           token: generate_unique_token,
@@ -205,6 +211,19 @@ module Organizations
 
       send_invitation_email
       self
+    end
+
+    # Revoke (delete) the invitation, so its link stops working
+    # @param revoked_by [User, nil] Who is revoking it. When that account is a
+    #   member, the invitation's role must rank at or below its own role.
+    # @return [self]
+    # @raise [Organizations::NotAuthorized] if the role ranks above revoked_by's own
+    def revoke!(revoked_by: nil)
+      ActiveRecord::Base.transaction do
+        lock!
+        authorize_management!(revoked_by)
+        destroy!
+      end
     end
 
     # Get the acceptance URL
@@ -313,6 +332,15 @@ module Organizations
         verified_email_normalized: normalized,
         verified_at: Time.current
       }
+    end
+
+    # A member may only revoke or resend invitations for roles that rank at or
+    # below its own, so a custom role that can invite members still cannot
+    # manage an admin's invitation (see Membership.authorize_rank!).
+    def authorize_management!(actor)
+      Membership.authorize_rank!(organization, actor, [role],
+                                 permission: :invite_members,
+                                 message_key: :"errors.invitation_management_outranks_actor")
     end
 
     def normalize_email

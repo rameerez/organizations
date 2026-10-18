@@ -43,8 +43,10 @@ module Organizations
     def current_organization
       return @_current_organization if defined?(@_current_organization)
 
+      # Nothing is memoized until a user is resolved, so a read made before
+      # sign-in does not pin nil for the rest of the request.
       user = organizations_current_user
-      return @_current_organization = nil unless user
+      return nil unless user
 
       session_key = Organizations.configuration.session_key
       org_id = session[session_key]
@@ -79,7 +81,8 @@ module Organizations
       return @_current_membership if defined?(@_current_membership)
 
       user = organizations_current_user
-      return @_current_membership = nil unless user && current_organization
+      return nil unless user # not memoized, as in current_organization
+      return @_current_membership = nil unless current_organization
 
       @_current_membership = user.memberships.find_by(organization_id: current_organization.id)
     end
@@ -449,7 +452,7 @@ module Organizations
       if org
         session[session_key] = org.id
         @_current_organization = org
-        @_current_membership = nil # Clear cached membership
+        forget_current_membership!
 
         # Update user's context
         user = organizations_current_user
@@ -568,10 +571,19 @@ module Organizations
       session_key = Organizations.configuration.session_key
       session.delete(session_key)
       @_current_organization = nil
-      @_current_membership = nil
+      forget_current_membership!
 
       user = organizations_current_user
       user&.clear_organization_cache!
+    end
+
+    # Drop the memoized membership so the next current_membership call reads
+    # it again for the organization that is current by then. Assigning nil
+    # would not do: current_membership memoizes nil too, so it would keep
+    # answering nil for the rest of the request, even after a switch or a
+    # fallback to another organization.
+    def forget_current_membership!
+      remove_instance_variable(:@_current_membership) if defined?(@_current_membership)
     end
 
     def fallback_organization_for(user)
@@ -620,6 +632,26 @@ module Organizations
       )
 
       respond_to_unauthorized(error)
+    end
+
+    # Answer a NotAuthorized raised by the models, such as a role the
+    # requester may not act on, the way a failed permission guard is
+    # answered: through config.unauthorized_handler when one is set (so hosts
+    # that audit refusals there see these too, with the reason in
+    # context.metadata[:message]), otherwise with the error's message as an
+    # alert (HTML) or a 403 (JSON).
+    def handle_not_authorized(error)
+      handler = Organizations.configuration.unauthorized_handler
+      return respond_to_unauthorized(error) unless handler
+
+      context = CallbackContext.new(
+        event: :unauthorized,
+        user: organizations_current_user,
+        organization: current_organization,
+        permission: error.permission,
+        metadata: { message: error.message }
+      )
+      instance_exec(context, &handler)
     end
 
     def build_unauthorized_message(permission, required_role)

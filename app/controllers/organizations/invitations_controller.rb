@@ -35,51 +35,56 @@ module Organizations
       email = invitation_params[:email]
       role = invitation_params[:role] || ::Organizations.configuration.default_invitation_role
 
-      begin
-        @invitation = current_user.send_organization_invite_to!(
-          email,
-          organization: current_organization,
-          role: role
-        )
+      @invitation = current_user.send_organization_invite_to!(
+        email,
+        organization: current_organization,
+        role: role
+      )
 
-        respond_to do |format|
-          return_to = params[:return_to].presence || organization_invitations_path
-          format.html { redirect_to return_to, notice: "Invitation sent to #{email}" }
-          format.json { render json: invitation_json(@invitation), status: :created }
+      respond_to do |format|
+        return_to = params[:return_to].presence || organization_invitations_path
+        format.html { redirect_to return_to, notice: "Invitation sent to #{email}" }
+        format.json { render json: invitation_json(@invitation), status: :created }
+      end
+    rescue ::Organizations::NotAuthorized => e # e.g. a role the inviter may not act on
+      handle_not_authorized(e)
+    rescue ::Organizations::InvitationError, ::Organizations::Organization::CannotInviteAsOwner,
+           ActiveRecord::RecordInvalid, ArgumentError => e
+      respond_to do |format|
+        format.html do
+          @invitation = current_organization.invitations.build(invitation_params)
+          flash.now[:alert] = e.message
+          render :new, status: :unprocessable_entity
         end
-      rescue ::Organizations::InvitationError, ActiveRecord::RecordInvalid, ArgumentError => e
-        respond_to do |format|
-          format.html do
-            @invitation = current_organization.invitations.build(invitation_params)
-            flash.now[:alert] = e.message
-            render :new, status: :unprocessable_entity
-          end
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
-        end
+        format.json { render json: { error: e.message }, status: :unprocessable_entity }
       end
     end
 
     # DELETE /invitations/:id
     # Revoke/delete an invitation
     def destroy
-      @invitation.destroy!
+      @invitation.revoke!(revoked_by: current_user)
 
       respond_to do |format|
         format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation revoked" }
         format.json { head :no_content }
       end
+    rescue ::Organizations::NotAuthorized => e # an invitation for a role the requester may not act on
+      handle_not_authorized(e)
     end
 
     # POST /invitations/:id/resend
     # Resend an invitation email
     def resend
       begin
-        @invitation.resend!
+        @invitation.resend!(resent_by: current_user)
 
         respond_to do |format|
           format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation resent to #{@invitation.email}" }
           format.json { render json: invitation_json(@invitation) }
         end
+      rescue ::Organizations::NotAuthorized => e # an invitation for a role the requester may not act on
+        handle_not_authorized(e)
       rescue ::Organizations::InvitationAlreadyAccepted => e
         respond_to do |format|
           format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }

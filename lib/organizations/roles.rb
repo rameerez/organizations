@@ -124,6 +124,52 @@ module Organizations
         idx_a < idx_b ? -1 : 1
       end
 
+      # Check if an account holding actor_role may act on role: give it to a
+      # member, take it away, remove a member who holds it, or invite to it.
+      # See assignment_refusal for the rule.
+      # @param actor_role [Symbol, String] The role of the account making the change
+      # @param role [Symbol, String] The role being acted on
+      # @return [Boolean]
+      #
+      # @example
+      #   Roles.can_assign?(:admin, :admin)  # => true (same rank)
+      #   Roles.can_assign?(:admin, :member) # => true
+      #   Roles.can_assign?(:member, :admin) # => false (admin ranks above member)
+      #
+      def can_assign?(actor_role, role) = assignment_refusal(actor_role, role).nil?
+
+      # Why an account holding actor_role may not act on role, or nil when it
+      # may. A role acts only on roles at or below its own rank, so a custom
+      # role that can edit member roles still cannot create or demote an
+      # admin. Rank alone is not enough below admin: two custom roles with the
+      # same parent are ranked by definition order, so a role below admin may
+      # also act only on roles whose permissions it holds itself. Admins and
+      # the owner keep the rank rule alone, as before. A role that is no
+      # longer configured ranks below every configured role and has no
+      # permissions; an actor whose own role is no longer configured may act
+      # on nothing. The owner role keeps its own rules on top of this: it
+      # moves only through transfer_ownership_to!.
+      # @param actor_role [Symbol, String] The role of the account making the change
+      # @param role [Symbol, String] The role being acted on
+      # @return [nil, :outranks, :lacks_permissions]
+      #
+      # @example
+      #   Roles.assignment_refusal(:member, :admin)  # => :outranks
+      #   Roles.assignment_refusal(:lead, :finance)  # => :lacks_permissions (a sibling with other powers)
+      #   Roles.assignment_refusal(:lead, :member)   # => nil
+      #
+      def assignment_refusal(actor_role, role)
+        return :outranks if actor_role.nil? || role.nil?
+
+        current = snapshot # one snapshot for the ranks and the permissions
+        actor_role = actor_role.to_sym
+        role = role.to_sym
+        return :outranks unless ranks_at_or_above?(current.hierarchy, actor_role, role)
+        return nil if ranks_at_or_above?(current.hierarchy, actor_role, :admin)
+
+        holds_permissions_of?(current.permission_sets, actor_role, role) ? nil : :lacks_permissions
+      end
+
       # Get all permissions for a role (pre-computed, O(1) lookup)
       # @param role [Symbol, String] The role
       # @return [Array<Symbol>] All permissions for the role
@@ -205,6 +251,15 @@ module Organizations
       end
 
       private
+
+      # A role missing from order ranks below every configured role; an actor
+      # missing from it ranks at or above nothing.
+      def ranks_at_or_above?(order, actor_role, role)
+        actor_rank = order.index(actor_role)
+        !actor_rank.nil? && actor_rank <= (order.index(role) || order.length)
+      end
+
+      def holds_permissions_of?(sets, actor_role, role) = (sets[role] || Set.new).subset?(sets[actor_role] || Set.new)
 
       # The hierarchy and permissions of one roles definition, computed
       # together and published as one immutable value. It belongs to the

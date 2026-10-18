@@ -260,6 +260,8 @@ module Organizations
     # @param user [User] The user to remove
     # @param removed_by [User, nil] Who is removing them (for callbacks)
     # @raise [CannotRemoveOwner] if trying to remove the owner
+    # @raise [Organizations::NotAuthorized] if removed_by is a member whose role
+    #   ranks below the removed member's role
     def remove_member!(user, removed_by: nil)
       membership = memberships.find_by(user_id: user.id)
       return unless membership
@@ -271,6 +273,20 @@ module Organizations
       ActiveRecord::Base.transaction do
         # Lock organization to prevent race conditions
         lock!
+
+        # Re-read the role under a row lock, without reloading the record (a
+        # reload would drop the live counter cache and fail on a row that is
+        # already gone). A member promoted, or made owner, since the lookup
+        # above is judged by the role they hold now.
+        locked_role = Membership.where(id: membership.id).lock.pick(:role)
+        if locked_role == "owner"
+          raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner")
+        end
+
+        # Only roles removed_by may act on (see Roles.assignment_refusal)
+        Membership.authorize_rank!(self, removed_by, [locked_role || membership.role],
+                                   permission: :remove_members,
+                                   message_key: :"errors.member_removal_outranks_actor")
         membership.destroy!
       end
 
@@ -290,6 +306,8 @@ module Organizations
     # @return [Membership] The updated membership
     # @raise [CannotHaveMultipleOwners] if promoting to owner when one exists
     # @raise [CannotRemoveLastOwner] if demoting the only owner
+    # @raise [Organizations::NotAuthorized] if changed_by is a member whose role
+    #   ranks below the member's current role or the new role
     def change_role_of!(user, to:, changed_by: nil)
       new_role = to.to_sym
       validate_role!(new_role)
@@ -317,6 +335,9 @@ module Organizations
           # Demoting owner - not allowed directly
           raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner_directly")
         end
+
+        # Only roles at or below changed_by's own may be given or taken away
+        membership.authorize_role_change!(new_role, changed_by: changed_by)
 
         membership.update!(role: new_role.to_s)
       end
@@ -394,6 +415,7 @@ module Organizations
     # @param role [Symbol] Role for the invitation (default: from config)
     # @return [Invitation] The created or existing invitation
     # @raise [CannotInviteAsOwner] if role is :owner
+    # @raise [Organizations::NotAuthorized] if the role ranks above the inviter's own
     def send_invite_to!(email, invited_by: nil, role: nil)
       inviter = invited_by || current_user_from_context
       unless inviter
@@ -409,6 +431,9 @@ module Organizations
       if role_sym == :owner
         raise CannotInviteAsOwner, Organizations.t(:"errors.invite_as_owner")
       end
+
+      # Nobody can invite to a role that ranks above their own
+      authorize_invited_role!(inviter, role_sym)
 
       normalized_email = email.downcase.strip
 
@@ -676,6 +701,16 @@ module Organizations
         organization: self,
         user: inviter
       )
+    end
+
+    # An inviter may only invite to roles that rank at or below their own (see
+    # Roles.can_assign?), so a custom role that can invite members still
+    # cannot invite an admin. A role that is not configured at all passes
+    # here and fails the invitation's own role validation instead.
+    def authorize_invited_role!(inviter, role)
+      Membership.authorize_rank!(self, inviter, [role],
+                                 permission: :invite_members,
+                                 message_key: :"errors.invite_role_outranks_actor")
     end
 
     def validate_role!(role)

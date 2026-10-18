@@ -84,7 +84,7 @@
               <% end %>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
-              <% if invitation.pending? %>
+              <% if invitation.pending? && current_membership&.can_assign_role?(invitation.role) %>
                 <div class="flex items-center justify-end gap-2">
                   <%= button_to resend_organization_invitation_path(invitation),
                     method: :post,
