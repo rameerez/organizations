@@ -363,7 +363,7 @@ config.on_verification_delivery_failed do |ctx|
 end
 ```
 
-Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only). The generator adds only the migrations your app does not have yet, so run it after every upgrade of the gem.
+Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only). The generator adds only the migrations your app does not have yet (it asks the database when it can, and reads `db/migrate` otherwise), so run it after every upgrade of the gem. For a squashed migration history, name the steps: `rails g organizations:upgrade --steps add_personal_organizations`.
 
 ## Why this gem exists
 
@@ -1166,7 +1166,7 @@ Organizations::Organization.not_personal # every other organization
 The rules:
 
 - The link is `organizations.personal_owner_id`, with a unique index. A user has at most one personal organization.
-- The personal owner is also the owner membership. The gem writes both together. `org.transfer_ownership_to!` raises `CannotTransferPersonalOrganization` for a personal organization: call `org.convert_to_shared!` first.
+- The personal owner is also the owner membership. The gem writes both together, and `create_with_owner!` and `create_organization!` refuse a `personal_owner` who is not the new owner. `org.transfer_ownership_to!` raises `CannotTransferPersonalOrganization` for a personal organization: call `org.convert_to_shared!` first.
 - A personal organization can have other members. To keep it owner-only, veto joins in the membership gate, which covers every join path:
 
   ```ruby
@@ -1187,7 +1187,7 @@ The rules:
   Organizations::Organization.backfill_personal_owners!(mapping)  # writes nothing when any pair conflicts
   ```
 
-  Conflict reasons: `:organization_not_found`, `:not_the_owner`, `:organization_personal_for_another_user`, `:user_has_another_personal_organization`, `:organization_mapped_twice`.
+  Conflict reasons: `:organization_not_found`, `:not_the_owner`, `:organization_personal_for_another_user`, `:user_has_another_personal_organization`, `:organization_mapped_twice`, `:user_mapped_twice`. The write runs in its own savepoint: a conflict found at write time (a concurrent provisioning) rolls back every assignment and comes back in the report.
 
 A personal organization tells you who probably pays. Billing and entitlements stay with your app.
 
@@ -1224,8 +1224,8 @@ config.account_deletion_policy = :destroy_personal_organization   # default: :pr
 What the gem guarantees:
 
 - It checks the complete owned set before it deletes anything. One blocker blocks the whole deletion.
-- The organization deletion and the user deletion are one transaction. A host `before_destroy` veto on the organization, or any later failure, rolls back everything, and the veto message is on `user.errors`.
-- The guard locks the user row and then the owned organization rows, so a concurrent join, ownership transfer or organization creation for that user waits for the deletion (or sees it).
+- The organization deletion and the user deletion are one transaction, with its own savepoint, also inside a transaction of yours. A host `before_destroy` veto on the organization, or any later failure, rolls back everything, and the veto message is on `user.errors`.
+- The guard locks the user row and then the owned organization rows. A concurrent join or organization creation for that user, a join or transfer in an owned organization, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it.
 - The user's other memberships are deleted (`dependent: :destroy`), as before. Invitations they sent, join requests they decided, join codes they created and allowlist entries they claimed keep the record and lose the user reference.
 
 ## User Onboarding Patterns

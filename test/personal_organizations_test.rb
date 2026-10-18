@@ -75,6 +75,57 @@ class PersonalOrganizationsTest < Organizations::Test
     assert_equal 1, user.reload.owned_organizations.count
   end
 
+  test "create_personal_organization! refreshes a cached nil lookup" do
+    user = create_user!
+
+    assert_nil user.personal_organization
+
+    org = user.create_personal_organization!
+
+    assert_equal org, user.personal_organization
+  end
+
+  test "create_personal_organization! converges when the organization limit trips on the concurrent winner" do
+    User.organization_settings = DEFAULT_USER_SETTINGS.merge(max_organizations: 1).freeze
+    user = create_user!
+    winner = nil
+    original = Organizations::Organization.method(:find_by)
+    calls = 0
+    stub = lambda do |*args, **kwargs|
+      calls += 1
+      if calls == 1
+        # The other process commits between the lookup and the limit check.
+        winner = Organizations::Organization.create_with_owner!(owner: user, name: "Winner", personal_owner: user)
+        nil
+      else
+        original.call(*args, **kwargs)
+      end
+    end
+
+    result = Organizations::Organization.stub(:find_by, stub) { user.create_personal_organization! }
+
+    assert_equal winner, result
+  end
+
+  test "create_with_owner! refuses a personal owner who is not the owner" do
+    alice = create_user!
+    bob = create_user!
+
+    assert_raises(ArgumentError) do
+      Organizations::Organization.create_with_owner!(owner: alice, personal_owner: bob, name: "Workspace")
+    end
+    assert_nil bob.reload.personal_organization
+  end
+
+  test "create_organization! refuses a personal owner who is not the creator" do
+    alice = create_user!
+    bob = create_user!
+
+    assert_raises(ArgumentError) { alice.create_organization!(name: "W", personal_owner_id: bob.id) }
+    assert_raises(ArgumentError) { alice.create_organization!(name: "W", personal_owner: bob) }
+    assert_nil bob.reload.personal_organization
+  end
+
   test "create_personal_organization! fires organization_created" do
     events = []
     Organizations.configure { |c| c.on_organization_created { |ctx| events << ctx.organization } }
@@ -197,6 +248,23 @@ class PersonalOrganizationsTest < Organizations::Test
     assert_nil user.reload.personal_organization
   end
 
+  test "linking a personal owner locks the organization row first" do
+    org, owner = create_org_with_owner!
+    locked = []
+    relation_class = ActiveRecord::Relation
+    original = relation_class.instance_method(:lock)
+    relation_class.define_method(:lock) do |*args|
+      locked << model.name
+      original.bind_call(self, *args)
+    end
+
+    org.update!(personal_owner: owner)
+
+    assert_includes locked, "Organizations::Organization"
+  ensure
+    relation_class.define_method(:lock, original)
+  end
+
   test "the personal owner must hold the owner membership" do
     org, _owner = create_org_with_owner!
     stranger = create_user!
@@ -288,6 +356,41 @@ class PersonalOrganizationsTest < Organizations::Test
     report = Organizations::Organization.backfill_personal_owners!({ owner => org, other => org })
 
     assert_includes report.conflicts.map { |c| c[:reason] }, :organization_mapped_twice
+  end
+
+  test "backfill rejects one user mapped twice, as a record and as an id" do
+    org, owner = create_org_with_owner!
+    org2, = create_org_with_owner!(name: "Two", owner: owner)
+
+    report = Organizations::Organization.backfill_personal_owners!({ owner => org, owner.id => org2 }, dry_run: true)
+
+    assert_equal(%i[user_mapped_twice user_mapped_twice], report.conflicts.map { |c| c[:reason] })
+    assert_empty report.assignments
+  end
+
+  test "backfill inside a host transaction rolls back its own writes when a write races" do
+    org, owner = create_org_with_owner!
+    org2, owner2 = create_org_with_owner!(name: "Two")
+    racing = Organizations::Organization.create!(name: "Racer")
+
+    original = Organizations::Organization.instance_method(:update!)
+    Organizations::Organization.define_method(:update!) do |*args, **kwargs|
+      if id == org2.id
+        # A concurrent provisioning linked owner2 meanwhile.
+        racing.update_column(:personal_owner_id, owner2.id)
+      end
+      original.bind_call(self, *args, **kwargs)
+    end
+
+    report = nil
+    ActiveRecord::Base.transaction do
+      report = Organizations::Organization.backfill_personal_owners!({ owner => org, owner2 => org2 })
+    end
+
+    refute_predicate report, :applied?
+    refute_predicate org.reload, :personal?
+  ensure
+    Organizations::Organization.define_method(:update!, original)
   end
 
   test "backfill leaves already-linked pairs unchanged" do

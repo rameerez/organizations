@@ -125,6 +125,69 @@ class AccountDeletionTest < Organizations::Test
     User.remove_method(:fail_late_for_test)
   end
 
+  test "a late veto inside a host transaction rolls back the personal organization too" do
+    use_policy :destroy_personal_organization
+    user = create_user!
+    org = user.create_personal_organization!
+    User.before_destroy(:fail_late_for_test)
+    User.define_method(:fail_late_for_test) { throw(:abort) }
+
+    ActiveRecord::Base.transaction do
+      refute user.destroy
+    end
+
+    assert User.exists?(user.id)
+    assert Organizations::Organization.exists?(org.id)
+    assert_equal user, org.reload.owner
+  ensure
+    User.skip_callback(:destroy, :before, :fail_late_for_test)
+    User.remove_method(:fail_late_for_test)
+  end
+
+  test "destroy! inside a host transaction raises and keeps everything" do
+    use_policy :destroy_personal_organization
+    user = create_user!
+    org = user.create_personal_organization!
+    org.add_member!(create_user!)
+
+    ActiveRecord::Base.transaction do
+      assert_raises(ActiveRecord::RecordNotDestroyed) { user.destroy! }
+    end
+
+    assert User.exists?(user.id)
+    assert Organizations::Organization.exists?(org.id)
+  end
+
+  test "ownership transfer locks the new owner's row so it cannot race a deletion" do
+    org, = create_org_with_owner!
+    admin = create_user!
+    org.add_member!(admin, role: :admin)
+    locked = []
+    relation_class = ActiveRecord::Relation
+    original = relation_class.instance_method(:lock)
+    relation_class.define_method(:lock) do |*args|
+      locked << model.table_name if model == User
+      original.bind_call(self, *args)
+    end
+
+    org.transfer_ownership_to!(admin)
+
+    assert_includes locked, "users"
+  ensure
+    relation_class.define_method(:lock, original)
+  end
+
+  test "ownership transfer to a user deleted meanwhile is refused" do
+    org, = create_org_with_owner!
+    admin = create_user!
+    org.add_member!(admin, role: :admin)
+    gone = User.new(id: admin.id)
+    Organizations::Membership.where(user_id: admin.id).delete_all
+    User.where(id: admin.id).delete_all
+
+    assert_raises(Organizations::Organization::CannotTransferToNonMember) { org.transfer_ownership_to!(gone) }
+  end
+
   test "an orphaned personal link counts as ownership for the guard" do
     user = create_user!
     org = user.create_personal_organization!

@@ -23,12 +23,14 @@ module Organizations
       organization_personal_for_another_user
       user_has_another_personal_organization
       organization_mapped_twice
+      user_mapped_twice
     ].freeze
 
     def initialize(mapping)
       user_id_type = Organizations.user_class.type_for_attribute(Organizations.user_class.primary_key)
       organization_id_type = Organization.type_for_attribute(Organization.primary_key)
-      @pairs = mapping.to_h.map do |user, organization|
+      # Pairs, not a Hash: a record and its id are two keys for one user.
+      @pairs = mapping.map do |user, organization|
         [user_id_type.cast(id_of(user)), organization_id_type.cast(id_of(organization))]
       end
     end
@@ -38,8 +40,20 @@ module Organizations
     def run(dry_run: false)
       return analyze if dry_run
 
+      apply
+    rescue ActiveRecord::RecordNotUnique
+      # A concurrent provisioning linked one of these users meanwhile. The
+      # savepoint rolled back every write; report the state as it is now.
+      analyze
+    end
+
+    private
+
+    def apply
       report = nil
-      Organization.transaction do
+      # SAVEPOINT: a rollback must undo only these writes, also inside a host
+      # transaction, and leave it usable on PostgreSQL.
+      Organization.transaction(requires_new: true) do
         # Lock the organizations so the checks hold until the write.
         Organization.where(id: @pairs.map(&:last)).order(:id).lock.to_a
         report = analyze
@@ -52,8 +66,6 @@ module Organizations
       end
       report
     end
-
-    private
 
     def analyze
       load_lookups
@@ -80,11 +92,13 @@ module Organizations
       @linked = Organization.personal.where(personal_owner_id: @pairs.map(&:first))
         .pluck(:personal_owner_id, :id).to_h
       @mapped_twice = organization_ids.tally.select { |_, count| count > 1 }.keys
+      @users_mapped_twice = @pairs.map(&:first).tally.select { |_, count| count > 1 }.keys
     end
 
     def conflict_for(user_id, organization_id)
       organization = @organizations[organization_id]
       return :organization_not_found unless organization
+      return :user_mapped_twice if @users_mapped_twice.include?(user_id)
       return :organization_mapped_twice if @mapped_twice.include?(organization_id)
       return :not_the_owner unless @owners[organization_id] == user_id
       if organization.personal_owner_id.present? && organization.personal_owner_id != user_id

@@ -131,6 +131,8 @@ module Organizations
     def self.create_with_owner!(owner:, **attributes)
       raise ArgumentError, "owner is required" unless owner
 
+      ensure_personal_owner_is_owner!(attributes, owner)
+
       organization = nil
       ActiveRecord::Base.transaction do
         organization = create!(**attributes)
@@ -140,6 +142,20 @@ module Organizations
       Callbacks.dispatch(:organization_created, organization: organization, user: owner)
 
       organization
+    end
+
+    # @api private
+    # A new organization may be personal only for the user who becomes its
+    # owner in the same transaction (user.create_organization!,
+    # create_with_owner!). Raw Organization.create! writes stay privileged.
+    # @raise [ArgumentError]
+    def self.ensure_personal_owner_is_owner!(attributes, owner)
+      attributes = attributes.to_h.symbolize_keys
+      personal_owner_id =
+        attributes.key?(:personal_owner) ? attributes[:personal_owner]&.id : attributes[:personal_owner_id]
+      return if personal_owner_id.nil? || personal_owner_id.to_s == owner.id.to_s
+
+      raise ArgumentError, "personal_owner must be the owner of the new organization"
     end
 
     # Link reviewed users to the organizations that are their personal
@@ -417,6 +433,15 @@ module Organizations
         # convert_to_shared! first to move it to someone else.
         if personal?
           raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization")
+        end
+
+        # Lock the new owner's user row, the lock the account-deletion guard
+        # takes first. A concurrent deletion of that user then either
+        # finishes first (the membership is gone and the transfer is refused)
+        # or waits until the transfer commits (and sees the new ownership).
+        user_class = new_owner.class
+        unless user_class.unscoped.where(user_class.primary_key => new_owner.id).lock.pick(user_class.primary_key)
+          raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
         end
 
         # Always perform a fresh read in this write path, even if memberships
@@ -726,6 +751,9 @@ module Organizations
     # The personal owner is the owner of the organization. A second,
     # independent ownership record would be an authorization hole.
     def personal_owner_holds_ownership
+      # Lock this organization's row first: transfer_ownership_to! takes the
+      # same lock, so the owner read here cannot go stale before the write.
+      self.class.unscoped.where(id: id).lock.pick(:id)
       owner_id = memberships.where(role: "owner").pick(:user_id)
       return if owner_id.present? && owner_id == personal_owner_id
 

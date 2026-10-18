@@ -442,6 +442,7 @@ module Organizations
           #
           def create_organization!(name_or_attributes)
             attributes = name_or_attributes.is_a?(Hash) ? name_or_attributes : { name: name_or_attributes }
+            Organizations::Organization.ensure_personal_owner_is_owner!(attributes, self)
 
             # Check max organizations limit
             settings = self.class.organization_settings
@@ -607,6 +608,21 @@ module Organizations
             organization_join_requests.pending.find_by(organization_id: organization.id)
           end
 
+          # Destroy inside its own SAVEPOINT. The account-deletion guard can
+          # delete a personal organization before a later callback aborts the
+          # destroy. Inside a host transaction, Rails would only release (not
+          # roll back) a joined transaction on abort, and the organization
+          # would stay deleted while the user survives. The savepoint makes
+          # the abort roll back everything this destroy did.
+          def destroy
+            result = nil
+            self.class.transaction(requires_new: true) do
+              result = super
+              raise ActiveRecord::Rollback unless result
+            end
+            result
+          end
+
           # === Personal organization (v0.7.0) ===
 
           # Create this user's personal organization, or return it when it
@@ -622,19 +638,24 @@ module Organizations
           def create_personal_organization!(name_or_attributes = nil)
             ensure_personal_organizations_column!
             existing = Organizations::Organization.find_by(personal_owner_id: id)
-            return existing if existing
+            return remember_personal_organization(existing) if existing
 
             attributes = name_or_attributes.is_a?(Hash) ? name_or_attributes.symbolize_keys : { name: name_or_attributes }
             attributes[:name] ||= Organizations.configuration.resolve_default_organization_name(self)
 
-            # SAVEPOINT: the RecordNotUnique rescue below must stay reachable
-            # inside a host transaction on PostgreSQL.
-            ActiveRecord::Base.transaction(requires_new: true) do
+            # SAVEPOINT: the rescues below must stay reachable inside a host
+            # transaction on PostgreSQL.
+            organization = ActiveRecord::Base.transaction(requires_new: true) do
               create_organization!(attributes.merge(personal_owner_id: id))
             end
-          rescue ActiveRecord::RecordNotUnique
-            # A concurrent call created it first.
-            Organizations::Organization.find_by!(personal_owner_id: id)
+            remember_personal_organization(organization)
+          rescue ActiveRecord::RecordNotUnique, Organizations::OrganizationLimitReached
+            # A concurrent call created it first: the unique index fired, or
+            # the winner's organization now counts against the limit.
+            winner = Organizations::Organization.find_by(personal_owner_id: id)
+            raise unless winner
+
+            remember_personal_organization(winner)
           end
 
           # What deleting this user would do to their organizations. Changes
@@ -721,6 +742,11 @@ module Organizations
             reasons = e.record.errors.full_messages.presence || [e.message]
             reasons.each { |reason| errors.add(:base, reason) }
             throw(:abort)
+          end
+
+          def remember_personal_organization(organization)
+            association(:personal_organization).target = organization
+            organization
           end
 
           def ensure_personal_organizations_column!
