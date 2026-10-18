@@ -302,7 +302,7 @@ domain.verification_record_value           # => "organizations-verification=Qm9â
 # The organization's admin publishes that TXT record, then:
 domain.verify!                             # => domain
 # On failure it raises Organizations::DomainVerificationFailed, and
-# error.reason is :not_started, :expired, :record_not_found or :lookup_failed.
+# error.reason is :not_started, :expired, :changed, :record_not_found or :lookup_failed.
 ```
 
 Or record an approval by a platform operator who checked the claim another way. A member of the claiming organization cannot approve its own claim (`NotAuthorized`); deciding who is platform staff is your app's job:
@@ -372,7 +372,7 @@ org.join_with_account_email!(current_user)   # the "Join" button for a suggestio
 current_user.join_organizations_by_domain!   # what auto-join runs; idempotent, returns memberships
 ```
 
-Auto-join runs in an `after_commit` on the user when `confirmed_at` changes, and never breaks a sign-up: a veto or an already-claimed email skips that organization and logs it. Changing the email of an account that stays confirmed does not trigger it, because nothing proved the new address. With Devise `:reconfirmable`, confirming the new address updates `confirmed_at` and triggers it.
+Auto-join runs in an `after_commit` on the user when `confirmed_at` changes, and never breaks a sign-up: a veto or an already-claimed email skips that organization and logs it. Changing the email of an account that stays confirmed does not trigger it, because nothing proved the new address. The trigger reads the changes of the last save in the transaction, so set `confirmed_at` in that save (Devise does). With Devise `:reconfirmable`, confirming the new address updates `confirmed_at` and triggers it.
 
 ### Cohorts without the gem knowing (`membership_metadata`)
 

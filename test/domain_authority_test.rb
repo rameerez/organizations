@@ -107,6 +107,27 @@ class DomainAuthorityTest < Organizations::Test
     assert_equal :lookup_failed, error.reason
   end
 
+  test "a broken host resolver is logged and reported as :lookup_failed" do
+    @domain.start_verification!
+    Organizations.configure { |c| c.domain_txt_resolver = ->(_name) { nil.strip } }
+
+    _out, err = capture_io do
+      error = assert_raises(Organizations::DomainVerificationFailed) { @domain.verify! }
+
+      assert_equal :lookup_failed, error.reason
+    end
+
+    assert_match "NoMethodError", err
+  end
+
+  test "operator metadata keeps host keys and drops a stale note" do
+    @domain.update!(metadata: { "host_key" => "kept", "verification_note" => "old" })
+
+    @domain.verify_by_operator!(operator: create_user!)
+
+    assert_equal({ "host_key" => "kept" }, @domain.reload.metadata)
+  end
+
   test "the default resolver uses Resolv with the configured timeout" do
     resolver = Organizations::Domain.default_txt_resolver
 
@@ -175,7 +196,9 @@ class DomainAuthorityTest < Organizations::Test
     end
     Organizations.configure { |c| c.domain_txt_resolver = resolver }
 
-    assert_raises(Organizations::DomainVerificationFailed) { @domain.verify! }
+    error = assert_raises(Organizations::DomainVerificationFailed) { @domain.verify! }
+
+    assert_equal :changed, error.reason
     assert_predicate @domain.reload, :revoked?
   end
 

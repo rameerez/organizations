@@ -72,9 +72,10 @@ module Organizations
   end
 
   # Domain authority: why a DNS verification failed. reason is one of
-  # :not_started, :expired, :record_not_found, :lookup_failed.
+  # :not_started, :expired, :changed (the claim changed during the check),
+  # :record_not_found, :lookup_failed.
   class DomainVerificationFailed < Error
-    REASONS = %i[not_started expired record_not_found lookup_failed].freeze
+    REASONS = %i[not_started expired changed record_not_found lookup_failed].freeze
 
     attr_reader :reason
 

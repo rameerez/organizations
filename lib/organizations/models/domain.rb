@@ -121,7 +121,10 @@ module Organizations
         require "resolv"
         Resolv::DNS.open do |dns|
           dns.timeouts = Organizations.configuration.domain_verification_timeout
-          dns.getresources(name, Resolv::DNS::Resource::IN::TXT).map { |record| record.strings.join }
+          # A trailing dot makes the name absolute: no resolver search list,
+          # so a wildcard record under a search domain cannot answer.
+          absolute = name.end_with?(".") ? name : "#{name}."
+          dns.getresources(absolute, Resolv::DNS::Resource::IN::TXT).map { |record| record.strings.join }
         end
       end
     end
@@ -223,7 +226,8 @@ module Organizations
         # The claim changed during the lookup (new token, other domain or
         # organization, a revocation) or the challenge expired: the lookup
         # proves nothing about the claim as it is now.
-        raise DomainVerificationFailed, :expired if challenge_snapshot != snapshot || verification_expired?
+        raise DomainVerificationFailed, :changed if challenge_snapshot != snapshot
+        raise DomainVerificationFailed, :expired if verification_expired?
 
         update!(verified_at: Time.current, verification_method: "dns_txt",
                 verified_by_id: nil, verification_revoked_at: nil)
@@ -242,13 +246,19 @@ module Organizations
     def verify_by_operator!(operator:, note: nil)
       raise ArgumentError, "operator is required" unless operator
 
-      if organization.memberships.exists?(user_id: operator.id)
-        raise Organizations::NotAuthorized.new(Organizations.t(:"errors.domain_operator_is_member"),
-                                               organization: organization, user: operator)
-      end
+      ActiveRecord::Base.transaction do
+        # The organization row lock serializes this check with joins that
+        # take it (the seat-limit gate pattern) and with ownership changes.
+        organization.lock!
+        lock!
+        if organization.memberships.exists?(user_id: operator.id)
+          raise Organizations::NotAuthorized.new(Organizations.t(:"errors.domain_operator_is_member"),
+                                                 organization: organization, user: operator)
+        end
 
-      update!(verified_at: Time.current, verification_method: "operator", verified_by_id: operator.id,
-              verification_revoked_at: nil, metadata: (metadata || {}).merge("verification_note" => note).compact)
+        update!(verified_at: Time.current, verification_method: "operator", verified_by_id: operator.id,
+                verification_revoked_at: nil, metadata: metadata_with("verification_note" => note))
+      end
       self
     end
 
@@ -260,8 +270,7 @@ module Organizations
     def revoke_verification!(reason: nil)
       return self if revoked?
 
-      update!(verification_revoked_at: Time.current,
-              metadata: (metadata || {}).merge("verification_revoked_reason" => reason).compact)
+      update!(verification_revoked_at: Time.current, metadata: metadata_with("verification_revoked_reason" => reason))
       self
     end
 
@@ -290,8 +299,16 @@ module Organizations
       self.class.authority_columns?
     end
 
+    # metadata with these keys set, or removed when the value is nil. Other
+    # keys (the host's) stay exactly as they are.
+    def metadata_with(values)
+      values.each_with_object((metadata || {}).dup) do |(key, value), result|
+        value.nil? ? result.delete(key) : result[key] = value
+      end
+    end
+
     def challenge_snapshot
-      [verification_token, verification_started_at, domain, organization_id, verification_revoked_at]
+      [verification_token, domain, organization_id, verification_revoked_at]
     end
 
     def proof_snapshot
@@ -302,8 +319,10 @@ module Organizations
       resolver = Organizations.configuration.domain_txt_resolver || self.class.default_txt_resolver
       values = Array(resolver.call(verification_record_name)).map { |value| value.to_s.strip }
       values.any? { |value| ActiveSupport::SecurityUtils.secure_compare(value, expected) }
-    rescue StandardError
-      # Resolv::ResolvError/ResolvTimeout, socket errors, or a host resolver's own error
+    rescue StandardError => e
+      # Resolv::ResolvError/ResolvTimeout, socket errors, or a host resolver's
+      # own error. Logged, so a broken resolver does not look like an outage.
+      Callbacks.log_warn("[Organizations] TXT lookup for #{verification_record_name} failed: #{e.class}: #{e.message}")
       raise DomainVerificationFailed, :lookup_failed
     end
 

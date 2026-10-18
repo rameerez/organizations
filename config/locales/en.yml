@@ -101,6 +101,7 @@ en:
       domain_verification:
         not_started: "Start the domain verification first."
         expired: "The domain verification expired. Start it again."
+        changed: "The domain claim changed during the check. Start the verification again."
         record_not_found: "The DNS TXT record was not found. DNS changes can take a while to spread."
         lookup_failed: "The DNS lookup failed. Try again later."
 
