@@ -449,7 +449,7 @@ module Organizations
       if org
         session[session_key] = org.id
         @_current_organization = org
-        @_current_membership = nil # Clear cached membership
+        forget_current_membership!
 
         # Update user's context
         user = organizations_current_user
@@ -568,10 +568,19 @@ module Organizations
       session_key = Organizations.configuration.session_key
       session.delete(session_key)
       @_current_organization = nil
-      @_current_membership = nil
+      forget_current_membership!
 
       user = organizations_current_user
       user&.clear_organization_cache!
+    end
+
+    # Drop the memoized membership so the next current_membership call reads
+    # it again for the organization that is current by then. Assigning nil
+    # would not do: current_membership memoizes nil too, so it would keep
+    # answering nil for the rest of the request, even after a switch or a
+    # fallback to another organization.
+    def forget_current_membership!
+      remove_instance_variable(:@_current_membership) if defined?(@_current_membership)
     end
 
     def fallback_organization_for(user)

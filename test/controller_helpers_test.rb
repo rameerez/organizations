@@ -380,6 +380,60 @@ module Organizations
       assert_equal org.id, owner._current_organization_id
     end
 
+    # Regression (0.6.0): current_organization= assigned nil to the memoized
+    # membership, and current_membership treats a memoized nil as the answer,
+    # so it kept returning nil for the rest of a request that switched.
+    test "current_membership is read again after current_organization= in the same request" do
+      org1, owner = create_org_with_owner!(name: "Org 1")
+      org2 = Organizations::Organization.create!(name: "Org 2")
+      Organizations::Membership.create!(user: owner, organization: org2, role: "admin")
+      @controller.test_current_user = owner
+      @controller.session[:current_organization_id] = org1.id
+      assert_equal org1.id, @controller.current_membership.organization_id
+
+      @controller.current_organization = org2
+
+      membership = @controller.current_membership
+      assert_not_nil membership
+      assert_equal org2.id, membership.organization_id
+      assert_equal "admin", membership.role
+    end
+
+    test "current_membership is found after current_organization= when nothing was memoized yet" do
+      org, owner = create_org_with_owner!
+      @controller.test_current_user = owner
+
+      @controller.current_organization = org
+
+      assert_equal org.id, @controller.current_membership&.organization_id
+    end
+
+    test "current_membership is read again after switch_to_organization! in the same request" do
+      org1, owner = create_org_with_owner!(name: "Org 1")
+      org2 = Organizations::Organization.create!(name: "Org 2")
+      Organizations::Membership.create!(user: owner, organization: org2, role: "viewer")
+      @controller.test_current_user = owner
+      @controller.session[:current_organization_id] = org1.id
+      assert_equal org1.id, @controller.current_membership.organization_id
+
+      @controller.switch_to_organization!(org2)
+
+      assert_equal org2.id, @controller.current_membership&.organization_id
+    end
+
+    test "current_membership follows the fallback organization when the session one is gone" do
+      org1, owner = create_org_with_owner!(name: "Org 1")
+      org2 = Organizations::Organization.create!(name: "Org 2")
+      Organizations::Membership.create!(user: owner, organization: org2, role: "member")
+      @controller.test_current_user = owner
+      @controller.session[:current_organization_id] = 999_999
+
+      fallback = @controller.current_organization
+
+      assert_includes [org1, org2], fallback
+      assert_equal fallback.id, @controller.current_membership&.organization_id
+    end
+
     test "current_organization= with nil clears session" do
       org, owner = create_org_with_owner!
       @controller.test_current_user = owner
