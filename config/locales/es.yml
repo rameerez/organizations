@@ -77,6 +77,7 @@ es:
       transfer_no_owner: "No se puede transferir la propiedad porque la organización no tiene propietario"
       transfer_to_non_member: "No se puede transferir la propiedad a alguien que no es miembro"
       transfer_to_non_admin: "No se puede transferir la propiedad a alguien que no es administrador. Asciéndele primero."
+      transfer_personal_organization: "Una organización personal pertenece a su propietario. Conviértela primero en una organización compartida."
 
       cannot_leave_as_last_owner: "No puedes salir de la organización siendo su único propietario. Transfiere la propiedad primero."
       cannot_leave_last_organization: "No puedes salir de tu única organización"
@@ -100,6 +101,7 @@ es:
     attributes:
       membership_taken: "ya es miembro de esta organización"
       owner_taken: "ya existe un propietario para esta organización"
+      personal_owner_not_owner: "debe ser el propietario de la organización"
       pending_request_taken: "ya tiene una solicitud pendiente para esta organización"
       invitation_taken: "ya ha sido invitado a esta organización"
       allowlist_taken: "ya está en la lista de esta organización"

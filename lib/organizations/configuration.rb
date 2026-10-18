@@ -87,6 +87,26 @@ module Organizations
     # Can be a String or a Proc/Lambda: ->(user) { "#{user.name}'s Workspace" }
     attr_accessor :default_organization_name
 
+    # Record the auto-created organization as the user's personal
+    # organization (user.personal_organization, organization.personal?).
+    # Default false: auto-created organizations stay ordinary organizations,
+    # as before. Needs the personal_owner_id column (rails g organizations:upgrade).
+    attr_accessor :record_personal_organizations
+
+    # What happens when a user who owns organizations is deleted:
+    #   :prevent (default)              - any owned organization blocks the deletion
+    #   :destroy_personal_organization  - the user's personal organization is
+    #     deleted with the account when the user is its only member; any other
+    #     owned organization still blocks the deletion
+    # Preview the result with user.account_deletion_plan.
+    attr_reader :account_deletion_policy
+
+    def account_deletion_policy=(value)
+      @account_deletion_policy = value.is_a?(String) ? value.to_sym : value
+    end
+
+    ACCOUNT_DELETION_POLICIES = %i[prevent destroy_personal_organization].freeze
+
     # === Invitations ===
     # How long invitations are valid
     attr_accessor :invitation_expiry
@@ -269,6 +289,8 @@ module Organizations
       # Auto-creation defaults
       @always_create_personal_organization_for_each_user = false
       @default_organization_name = "Personal"
+      @record_personal_organizations = false
+      @account_deletion_policy = :prevent
 
       # Invitation defaults
       @invitation_expiry = 7.days
@@ -528,6 +550,7 @@ module Organizations
     # @raise [ConfigurationError] if configuration is invalid
     def validate!
       validate_authentication_methods!
+      validate_personal_organization_settings!
       validate_invitation_settings!
       validate_verification_settings!
       validate_limits!
@@ -551,6 +574,16 @@ module Organizations
       unless @authenticate_user_method.is_a?(Symbol)
         raise ConfigurationError, "authenticate_user_method must be a Symbol"
       end
+    end
+
+    def validate_personal_organization_settings!
+      unless [true, false].include?(@record_personal_organizations)
+        raise ConfigurationError, "record_personal_organizations must be true or false"
+      end
+
+      return if ACCOUNT_DELETION_POLICIES.include?(@account_deletion_policy)
+
+      raise ConfigurationError, "account_deletion_policy must be one of: #{ACCOUNT_DELETION_POLICIES.join(', ')}"
     end
 
     def validate_invitation_settings!

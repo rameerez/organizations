@@ -83,6 +83,15 @@ module Organizations
                      source: :organization,
                      class_name: "Organizations::Organization"
 
+            # The user's personal organization (organizations.personal_owner_id).
+            # A lookup only: it never creates anything. See
+            # create_personal_organization!. Deleting the user is governed by
+            # config.account_deletion_policy, not by a dependent: option.
+            has_one :personal_organization,
+                    class_name: "Organizations::Organization",
+                    foreign_key: :personal_owner_id,
+                    inverse_of: :personal_owner
+
             # Invitations sent by this user
             has_many :sent_organization_invitations,
                      class_name: "Organizations::Invitation",
@@ -156,6 +165,8 @@ module Organizations
           def setup_owner_deletion_guard
             # `memberships` uses `dependent: :destroy`; this guard must run first
             # so owner memberships still exist when we verify ownership.
+            # The method name is kept from earlier versions, so a host's
+            # skip_callback for it keeps working.
             before_destroy :prevent_deletion_while_owning_organizations, prepend: true
           end
         end
@@ -596,6 +607,44 @@ module Organizations
             organization_join_requests.pending.find_by(organization_id: organization.id)
           end
 
+          # === Personal organization (v0.7.0) ===
+
+          # Create this user's personal organization, or return it when it
+          # already exists. The organization, the owner membership and the
+          # personal link are written together. Safe to call again: it is the
+          # retry path when sign-up provisioning failed, and concurrent calls
+          # converge on one organization (unique index on personal_owner_id).
+          #
+          # @param name_or_attributes [String, Hash, nil] defaults to
+          #   config.default_organization_name
+          # @return [Organizations::Organization]
+          # @raise [OrganizationLimitReached] when the user's limit is reached
+          def create_personal_organization!(name_or_attributes = nil)
+            ensure_personal_organizations_column!
+            existing = Organizations::Organization.find_by(personal_owner_id: id)
+            return existing if existing
+
+            attributes = name_or_attributes.is_a?(Hash) ? name_or_attributes.symbolize_keys : { name: name_or_attributes }
+            attributes[:name] ||= Organizations.configuration.resolve_default_organization_name(self)
+
+            # SAVEPOINT: the RecordNotUnique rescue below must stay reachable
+            # inside a host transaction on PostgreSQL.
+            ActiveRecord::Base.transaction(requires_new: true) do
+              create_organization!(attributes.merge(personal_owner_id: id))
+            end
+          rescue ActiveRecord::RecordNotUnique
+            # A concurrent call created it first.
+            Organizations::Organization.find_by!(personal_owner_id: id)
+          end
+
+          # What deleting this user would do to their organizations. Changes
+          # nothing. See Organizations::AccountDeletionPlan.
+          # @param policy [Symbol] defaults to config.account_deletion_policy
+          # @return [Organizations::AccountDeletionPlan]
+          def account_deletion_plan(policy: Organizations.configuration.account_deletion_policy)
+            Organizations::AccountDeletionPlan.for(self, policy: policy)
+          end
+
           # Extension seam for personal organization creation.
           # Override this method in your User model to implement custom logic.
           #
@@ -632,17 +681,54 @@ module Organizations
             return unless should_create_personal_organization?
 
             org_name = Organizations.configuration.resolve_default_organization_name(self)
-            create_organization!(org_name)
+            if Organizations.configuration.record_personal_organizations
+              create_personal_organization!(org_name)
+            else
+              create_organization!(org_name)
+            end
           rescue StandardError => e
             # Log but don't fail user creation
             Callbacks.log_error("[Organizations] Failed to create personal organization: #{e.message}")
           end
 
+          # The account-deletion guard (config.account_deletion_policy). Runs
+          # inside the destroy transaction, before the dependent memberships
+          # are destroyed. It locks this user's row first, so a concurrent
+          # join or organization creation for this user waits, then locks the
+          # owned organizations, so a concurrent join or transfer in them
+          # waits too. It checks the complete owned set before it deletes
+          # anything; a blocker, or any failure, aborts the whole destroy and
+          # rolls back every organization deleted so far.
           def prevent_deletion_while_owning_organizations
-            return unless memberships.where(role: "owner").exists?
+            lock_own_row_for_deletion
+            plan = Organizations::AccountDeletionPlan.for(self, lock: true)
+            unless plan.allowed?
+              errors.add(:base, Organizations.t(:"errors.cannot_delete_user_owns_organizations"))
+              throw(:abort)
+            end
 
-            errors.add(:base, Organizations.t(:"errors.cannot_delete_user_owns_organizations"))
+            plan.organizations_to_destroy.each { |organization| destroy_personal_organization_for_deletion(organization) }
+            memberships.reset if plan.organizations_to_destroy.any?
+          end
+
+          def lock_own_row_for_deletion
+            self.class.unscoped.where(self.class.primary_key => id).lock.pick(self.class.primary_key)
+          end
+
+          def destroy_personal_organization_for_deletion(organization)
+            ActiveRecord::Base.transaction(requires_new: true) { organization.destroy! }
+          rescue ActiveRecord::RecordNotDestroyed => e
+            reasons = e.record.errors.full_messages.presence || [e.message]
+            reasons.each { |reason| errors.add(:base, reason) }
             throw(:abort)
+          end
+
+          def ensure_personal_organizations_column!
+            return if Organizations::Organization.column_names.include?("personal_owner_id")
+
+            raise Organizations::ConfigurationError,
+                  "Personal organizations need the personal_owner_id column. " \
+                  "Run `rails g organizations:upgrade && rails db:migrate`."
           end
         end
       end

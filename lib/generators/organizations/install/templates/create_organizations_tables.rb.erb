@@ -13,6 +13,11 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
       t.string :name, null: false
       t.integer :memberships_count, default: 0, null: false
       t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
+      # The user whose personal organization this is (nil for every other
+      # organization). Unique: one personal organization per user. The row
+      # clears itself if the user row is deleted outside the gem.
+      t.references :personal_owner, null: true, type: foreign_key_type, index: { unique: true },
+                                    foreign_key: { to_table: :users, on_delete: :nullify }
 
       t.timestamps
     end

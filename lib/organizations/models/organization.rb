@@ -31,6 +31,7 @@ module Organizations
     class CannotInviteAsOwner < Organizations::Error; end
     class NoOwnerPresent < Organizations::Error; end
     class MemberAlreadyExists < Organizations::Error; end
+    class CannotTransferPersonalOrganization < Organizations::Error; end
 
     # === Associations ===
 
@@ -73,9 +74,19 @@ module Organizations
              inverse_of: :organization,
              dependent: :destroy
 
+    # === Personal organizations (v0.7.0) ===
+
+    # The user whose personal workspace this is (nil for every other
+    # organization). Set by user.create_personal_organization!, never guessed.
+    # The column is added by `rails g organizations:upgrade`.
+    belongs_to :personal_owner,
+               class_name: Organizations.user_class_name,
+               optional: true
+
     # === Validations ===
 
     validates :name, presence: true
+    validate :personal_owner_holds_ownership, on: :update, if: :personal_owner_changed_to_someone?
 
     # === Scopes ===
 
@@ -86,6 +97,12 @@ module Organizations
     scope :with_member, ->(user) {
       joins(:memberships).where(organizations_memberships: { user_id: user.id })
     }
+
+    # Personal organizations (each one linked to the user it belongs to)
+    scope :personal, -> { where.not(personal_owner_id: nil) }
+
+    # Every organization that is not a personal organization
+    scope :not_personal, -> { where(personal_owner_id: nil) }
 
     # === Creation ===
 
@@ -123,6 +140,37 @@ module Organizations
       Callbacks.dispatch(:organization_created, organization: organization, user: owner)
 
       organization
+    end
+
+    # Link reviewed users to the organizations that are their personal
+    # organizations, for installs that created personal workspaces before
+    # 0.7.0. Nothing is guessed: pass the mapping you reviewed. A pair
+    # conflicts when the organization is missing, the user is not its owner,
+    # the organization is linked to another user, the user already has another
+    # personal organization, or one organization is mapped twice. When any
+    # pair conflicts, nothing is written.
+    #
+    # @param mapping [Hash{User, id => Organization, id}]
+    # @param dry_run [Boolean] report only, write nothing
+    # @return [Organizations::PersonalOwnerBackfill::Report]
+    def self.backfill_personal_owners!(mapping, dry_run: false)
+      PersonalOwnerBackfill.new(mapping).run(dry_run: dry_run)
+    end
+
+    # === Personal organizations ===
+
+    # Whether this is a user's personal organization
+    # @return [Boolean]
+    def personal?
+      has_attribute?(:personal_owner_id) && personal_owner_id.present?
+    end
+
+    # Stop treating this organization as the owner's personal organization.
+    # Do this before you transfer its ownership. Members, roles and data stay.
+    # @return [self]
+    def convert_to_shared!
+      update!(personal_owner_id: nil)
+      self
     end
 
     # === Member Query Methods ===
@@ -364,6 +412,12 @@ module Organizations
       ActiveRecord::Base.transaction do
         # Lock organization first to prevent concurrent operations
         lock!
+
+        # A personal organization belongs to its owner. Call
+        # convert_to_shared! first to move it to someone else.
+        if personal?
+          raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization")
+        end
 
         # Always perform a fresh read in this write path, even if memberships
         # are preloaded on this instance, to avoid stale-owner selection.
@@ -664,6 +718,19 @@ module Organizations
     end
 
     private
+
+    def personal_owner_changed_to_someone?
+      has_attribute?(:personal_owner_id) && will_save_change_to_personal_owner_id? && personal_owner_id.present?
+    end
+
+    # The personal owner is the owner of the organization. A second,
+    # independent ownership record would be an authorization hole.
+    def personal_owner_holds_ownership
+      owner_id = memberships.where(role: "owner").pick(:user_id)
+      return if owner_id.present? && owner_id == personal_owner_id
+
+      errors.add(:personal_owner, Organizations.t(:"attributes.personal_owner_not_owner"))
+    end
 
     def ensure_join_request_belongs_here!(join_request)
       return if join_request.organization_id == id
