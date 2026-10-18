@@ -114,7 +114,7 @@ config.user_class = "Account"   # set BEFORE the models are first referenced (in
 Done. Your app now has full organizations / teams support.
 
 > [!IMPORTANT]
-> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. Run `rails g organizations:views` to copy the Tailwind reference views into `app/views/organizations/` and retheme them — they're yours. The copies use the `heroicon` helper (add `gem "heroicons"`, or swap the icon calls for your own set), and the organization page's owner-only Danger Zone renders only if you provide `app/views/shared/_danger_zone.html.erb` (copy the full-featured one from the dummy). For a complete working example (including the verified-joining screens the generator deliberately doesn't cover), check out the demo app in [`test/dummy`](test/dummy/).
+> **Bring Your Own UI (BYOU):** This gem provides all the building blocks — models, controllers, routes, helpers, and mailers — but intentionally **does not ship with views**. Views are too context-dependent (Tailwind vs Bootstrap, dark mode, your app's design system) to be one-size-fits-all. Run `rails g organizations:views` to copy the Tailwind reference views into `app/views/organizations/` and retheme them — they're yours. The copies use the `heroicon` helper (add `gem "heroicons"`, or swap the icon calls for your own set), and the organization page's owner-only Danger Zone renders only if you provide `app/views/shared/_danger_zone.html.erb` (copy the full-featured one from the dummy). For the verified-joining screens, run `rails g organizations:join` (see "Generate the join and access screens"). For a complete working example, check out the demo app in [`test/dummy`](test/dummy/).
 
 > [!NOTE]
 > This gem uses the term "organization", but the concept is the same as "team", "workspace", or "account". It's essentially just an umbrella under which users / members are organized. This gem works for all those use cases, in the same way. Just use whichever term fits your product best in your UI.
@@ -418,14 +418,39 @@ org.accepts_code_joining?    # code form (at least one actually-redeemable code)
 org.accepts_join_requests?   # anything at all
 ```
 
-**Reference UI to copy:** the demo app ships a complete verified-joining implementation — the four-state join screen ([`test/dummy/app/controllers/joins_controller.rb`](test/dummy/app/controllers/joins_controller.rb) + [view](test/dummy/app/views/joins/show.html.erb)) and the org-admin Access surface (domains/codes/allowlist + request queue, [`access_controller.rb`](test/dummy/app/controllers/access_controller.rb)). Copy them into your app and retheme; their headers carry the production checklist.
+### Generate the join and access screens
+
+```bash
+rails g organizations:join                 # join screen + access screen + routes
+rails g organizations:join --skip-access   # the join screen only
+rails g organizations:join --skip-routes   # add the routes yourself
+```
+
+The generator copies host-owned controllers and views (Tailwind, like `organizations:views`) and adds one routes block. The engine itself adds no join route, so nothing changes in your app until you run it.
+
+| Screen | URL | What it does |
+|---|---|---|
+| `OrganizationJoinsController` | `GET/POST/DELETE /orgs/:organization_id/join` (`organization_join_path`) | The four `JoinState` states at one URL: a code, a work email and its 6-digit code, or a plain request; withdraw a pending request |
+| `OrganizationAccessController` | `/orgs/:organization_id/access` (`organization_access_path`) | Pending requests (approve, reject), email domains (DNS verification, sign-up policy), join codes (create, revoke), the allowlist (import, remove) |
+
+The generated code already follows the safety rules. Keep them when you edit it:
+
+- **A signed-in user is required** (`config.authenticate_user_method`). The join screen takes the organization from the URL and never changes the session's current organization.
+- **Only POST and DELETE change data**, under Rails' CSRF protection. A `?code=…` link fills in the form; it never joins and never spends a use, also after a sign-in redirect.
+- **Inputs are cut to a fixed length**, and allowlist imports to 1,000 addresses.
+- **Unknown, revoked, expired and foreign codes share one message** (`JoinFlow` does that).
+- **The access screen is URL-scoped** with `OrganizationScoped`: it needs `invite_members`, domain changes also need `manage_settings`, and every lookup is scoped to the URL's organization. Unknown organizations, strangers and members without the permission all get the same 404.
+- **Rate limits** (Rails 7.2+) on joining, on the screen, and on DNS checks.
+- **A disclosure partial** (`organization_joins/_disclosure.html.erb`) tells joiners who will see their name and email before they submit. Edit its text to match your privacy policy.
+
+The templates are the gem's demo app ([`test/dummy`](test/dummy/)), byte for byte, and its HTTP test suite covers them.
 
 ### Rate limiting your join endpoints
 
-The gem deliberately ships no join routes/controllers, so it cannot rate-limit them for you — and **code redemption and code verification are enumeration surfaces**. With Rails' built-in [`rate_limit`](https://api.rubyonrails.org/classes/ActionController/RateLimiting.html):
+The engine adds no join routes, so the rate limits live in your controllers — and **code redemption and code verification are enumeration surfaces**. `rails g organizations:join` adds these limits; for your own controllers, use Rails' built-in [`rate_limit`](https://api.rubyonrails.org/classes/ActionController/RateLimiting.html):
 
 ```ruby
-class JoinsController < ApplicationController
+class OrganizationJoinsController < ApplicationController
   # Joining/redeeming: per-user, generous but bounded
   rate_limit to: 10, within: 1.hour, by: -> { current_user.id }, only: :create
   # Public landings (if any are unauthenticated): per-IP against slug/code enumeration
@@ -613,6 +638,7 @@ org.join_codes.active           # SQL twin of code.active?
 # The join kit (controller/view layer — see "Verified joining")
 Organizations::JoinFlow.attempt(user:, organization:, code:, email:, verification_code:, message:)
 Organizations::JoinState.for(user:, organization:, result:)
+# rails g organizations:join  → OrganizationJoinsController + OrganizationAccessController + routes
 
 # Domain authority (see "Domain authority")
 domain.start_verification! / domain.verify! / domain.verify_by_operator!(operator:, note:)
@@ -1903,7 +1929,44 @@ class Portal::BaseController < ApplicationController
 end
 ```
 
-You get `current_scoped_organization` / `current_scoped_membership` (also as view helpers), and a configurable not-found posture: the default raises `ActionController::RoutingError`, so **unknown orgs, strangers, and under-role members are indistinguishable** — no existence oracle, the right stance for customer-facing portals. Set `self.organization_not_found_behavior = :forbidden` for internal tools where a 403 is fine. Both addressing modes coexist in one app — the concern never touches the session context.
+Gate actions by permission instead of rank with `require_organization_permission :invite_members` (custom roles included; it takes `only:`/`except:` like any `before_action`). You get `current_scoped_organization` / `current_scoped_membership` (also as view helpers), and a configurable not-found posture: the default raises `ActionController::RoutingError`, so **unknown orgs, strangers, and under-role members are indistinguishable** — no existence oracle, the right stance for customer-facing portals. Set `self.organization_not_found_behavior = :forbidden` for internal tools where a 403 is fine. Both addressing modes coexist in one app — the concern never touches the session context.
+
+### URL handles (slugs)
+
+`OrganizationScoped` finds organizations by id unless you give it a finder. To address them by a handle such as `/org/acme/admin`, add the column yourself; the gem ships no slug schema:
+
+```ruby
+# db/migrate/xxx_add_handle_to_organizations.rb
+class AddHandleToOrganizations < ActiveRecord::Migration[8.1]
+  def change
+    add_column :organizations_organizations, :handle, :string
+    add_index :organizations_organizations, :handle, unique: true   # the database decides uniqueness
+  end
+end
+```
+
+```ruby
+# app/models/concerns/organization_handle.rb (register it with the :organizations_organization load hook)
+module OrganizationHandle
+  extend ActiveSupport::Concern
+  RESERVED = %w[admin api new settings join access].freeze   # paths your app uses
+
+  included do
+    before_validation { self.handle = handle.to_s.strip.downcase.presence }
+    validates :handle, format: { with: /\A[a-z0-9][a-z0-9-]{1,38}[a-z0-9]\z/ }, exclusion: { in: RESERVED }, allow_nil: true
+  end
+end
+```
+
+```ruby
+self.organization_param  = :handle
+self.organization_finder = ->(handle) { Organizations::Organization.find_by(handle: handle.to_s.downcase) }
+```
+
+- **Backfill populated installs before you require the column.** Generate a handle from the name, and on a collision add a suffix (`acme`, `acme-2`). The unique index catches the last race: rescue `ActiveRecord::RecordNotUnique` and try the next suffix.
+- **Do not override `to_param` globally.** The engine's routes find organizations by id, and every generated URL would break. Pass the handle explicitly in your own routes: `portal_path(handle: org.handle)`.
+- **Renames break old links.** Keep the old handle in a lookup table and redirect, or freeze handles after creation.
+- An existing slug gem (FriendlyId and others) works too: point `organization_finder` at its finder.
 
 ## Internationalization (i18n)
 

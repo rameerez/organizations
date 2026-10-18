@@ -10,6 +10,9 @@
 - `config.blocked_email_domains` with the opt-in preset `Organizations::PUBLIC_EMAIL_DOMAINS`: a blocked domain cannot be enrolled and no longer admits. Invitations and allowlists are not affected.
 - **Sign-up domain policies.** `domain.join_policy` is `"none"` (default), `"suggest"` or `"auto_join"`, and acts only while the domain is verified and the account email is confirmed. `user.suggested_organizations` lists the organizations to offer. `user.join_organizations_by_domain!` joins the auto-join ones through the membership gate; it runs on its own after sign-up and after the email confirmation. `org.add_domain!` takes `join_policy:`.
 - Configuration: `domain_verification_record_prefix`, `domain_verification_ttl`, `domain_verification_timeout`, `domain_txt_resolver`.
+- **`rails g organizations:join`** (issue #21). It copies a host-owned join screen (`OrganizationJoinsController`: code, work email, 6-digit code, request, withdraw) and an access screen (`OrganizationAccessController`: request queue, domains with DNS verification and the sign-up policy, join codes, allowlist import and removal), and adds their routes under `/orgs/:organization_id`. `--skip-access` and `--skip-routes` narrow it. The generated code requires a signed-in user, changes data only with POST and DELETE, cuts inputs to fixed lengths, never joins on a GET (a `?code=` link only fills in the form), keeps the generic invalid-code message, rate-limits (Rails 7.2+), scopes every admin lookup to the URL's organization, and shows a disclosure before any submit. The engine adds no route, so existing apps change nothing.
+- `OrganizationScoped.require_organization_permission(permission, **options)` gates actions by a permission of the viewer's role, with the same 404 posture as `require_organization_role`.
+- README: a recipe for URL handles (slugs) with `OrganizationScoped` (issue #21).
 - `rails g organizations:upgrade` now adds only the migrations an install lacks: the 0.5.0 verified-joining migration and the 0.7.0 personal-organizations migration. It asks the database when it can and reads `db/migrate` otherwise. `--steps NAME…` generates exactly the named steps, for squashed histories. Before, it always generated the 0.5.0 migration, which broke installs made on 0.5.0 or later.
 
 ### Changed
@@ -21,6 +24,8 @@
 
 - A domain-backed admission checks its domain (or allowlist entry) again: `verify_email_code!` refuses with `VerificationEmailNotEligible` when the matched domain was removed, revoked or blocked, or the roster entry was removed, while the code was in flight. The request stays pending, and an admin can still approve it by hand. `JoinFlow` reports this as `:email_not_eligible`. Before, the code still granted membership.
 - A revoked domain never admits, whatever `require_verified_domains` says. The admission locks the matched domain or roster row, so a concurrent revocation or removal either finishes first or waits.
+
+- The dummy app's reference join and access controllers are now `OrganizationJoinsController` and `OrganizationAccessController`, with `organization_*` route names. They are the generator's templates.
 
 ### Upgrading
 

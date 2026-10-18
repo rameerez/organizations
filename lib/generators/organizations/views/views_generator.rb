@@ -17,10 +17,8 @@ module Organizations
     # so the dummy remains the living, boot-able preview of what you get).
     #
     # NOTE: verified joining (join screens, request queues, access
-    # management) is deliberately NOT part of this set — those surfaces are
-    # host ROUTES + CONTROLLERS too, not just views. Copy the reference
-    # implementation from the gem's test/dummy app instead (see README
-    # "Verified joining — reference UI").
+    # management) is not part of this set: those surfaces are host routes
+    # and controllers too. `rails g organizations:join` copies them.
     class ViewsGenerator < Rails::Generators::Base
       source_root File.expand_path("templates", __dir__)
 
@@ -38,8 +36,8 @@ module Organizations
         say "The organization page's owner-only Danger Zone (transfer/delete) renders only if you"
         say "provide app/views/shared/_danger_zone.html.erb — copy the full-featured one (Stimulus"
         say "confirm modal included) from the gem's test/dummy app."
-        say "Verified-joining surfaces (join screen, request queue, access management) are host"
-        say "controllers + views: copy the reference implementation from the gem's test/dummy app."
+        say "For the join screen and the access screen (domains, codes, allowlist, requests),"
+        say "run `rails g organizations:join`."
         say ""
       end
     end
