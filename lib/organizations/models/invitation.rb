@@ -271,15 +271,17 @@ module Organizations
 
     # Each grant is checked again, against the inviter as it is now and the
     # membership that receives it (an existing member may hold a higher
-    # role than the invitation): a grant the inviter may no longer give is
-    # dropped.
+    # role than the invitation): a grant the inviter may no longer give, or
+    # whose capabilities config.grant_capabilities no longer allows, is
+    # dropped and logged. (Deleting the inviter deletes the grants of the
+    # invitations they sent, so a nil inviter here is a trusted actor.)
     def move_grants_to!(membership)
       return unless Organizations::GrantHolder.grants_table?
 
       grants.each do |grant|
         membership.authorize_grants!([[grant.resource, grant.capabilities]], invited_by)
         membership.send(:upsert_grant!, grant.grantable_type, grant.grantable_id, grant.capabilities, invited_by)
-      rescue Organizations::NotAuthorized, ArgumentError => e
+      rescue Organizations::NotAuthorized, ArgumentError, ActiveRecord::RecordInvalid => e
         Callbacks.log_warn("[Organizations] Invitation grant on #{grant.grantable_type}##{grant.grantable_id} dropped: #{e.message}")
       end
       grants.delete_all(:delete_all)

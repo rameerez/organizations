@@ -442,6 +442,37 @@ class ResourceGrantsTest < Organizations::Test
     assert_equal 0, @org.owner_membership.grants.count, "an admin cannot grant to the owner, not even by invitation"
   end
 
+  test "deleting the inviter drops the grants of the invitations they sent" do
+    admin = create_user!
+    @org.add_member!(admin, role: :admin)
+    invitation = @org.send_invite_to!("orphan@example.com", invited_by: admin, grants: { @alpha => %w[read] })
+
+    admin.destroy!
+    membership = invitation.reload.accept!(create_user!(email: "orphan@example.com"))
+
+    assert_empty membership.grants
+  end
+
+  test "a capability removed from grant_capabilities after the invitation is dropped, not fatal" do
+    Organizations.configure { |c| c.grant_capabilities = %i[read edit] }
+    invitation = @org.send_invite_to!("narrow@example.com", invited_by: @owner, grants: { @alpha => %w[read edit] })
+    Organizations.configure { |c| c.grant_capabilities = %i[read] }
+
+    membership = nil
+    capture_io { membership = invitation.accept!(create_user!(email: "narrow@example.com")) }
+
+    assert_predicate membership, :persisted?
+    refute membership.granted?(@alpha)
+  end
+
+  test "can? reads preloaded grants without a query" do
+    @membership.grant!(@alpha, capabilities: %w[read])
+    membership = Organizations::Membership.includes(:grants).find(@membership.id)
+    queries = count_queries { 3.times { membership.can?(:read, @alpha) } }
+
+    assert_equal 0, queries
+  end
+
   test "grants cannot be added to an accepted invitation" do
     invitation = @org.send_invite_to!("done@example.com", invited_by: @owner)
     invitation.accept!(create_user!(email: "done@example.com"))
@@ -467,6 +498,13 @@ class ResourceGrantsTest < Organizations::Test
   end
 
   private
+
+  def count_queries(&)
+    count = 0
+    counter = ->(*, payload) { count += 1 unless payload[:name] == "SCHEMA" || payload[:cached] }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record", &)
+    count
+  end
 
   # The table as in an app that never ran rails g organizations:grants.
   def without_grants_table

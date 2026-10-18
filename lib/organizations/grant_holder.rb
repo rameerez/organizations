@@ -60,8 +60,13 @@ module Organizations
 
     # @param resource [ActiveRecord::Base, Organizations::Resource, #id]
     # @return [Organizations::Grant, nil]
+    # Reads preloaded grants (`includes(:grants)`, `grants.load`) without a
+    # query, so a list of records can be checked cheaply.
     def grant_for(resource)
-      grants.for_resource(resource).first
+      return grants.for_resource(resource).first unless grants.loaded?
+
+      type, id = Organizations::Grant.resource_key(resource)
+      grants.find { |grant| grant.grantable_type == type && grant.grantable_id == id }
     end
 
     # @param resource [ActiveRecord::Base, Organizations::Resource, #id]

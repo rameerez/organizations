@@ -43,7 +43,8 @@ module Organizations
     has_many :users,
              through: :memberships
 
-    # Every grant of every membership (scoped resource grants)
+    # Every grant of every membership (scoped resource grants). Grants held
+    # by pending invitations are not included: see invitation.grants.
     has_many :grants, through: :memberships
 
     has_many :invitations,

@@ -993,6 +993,8 @@ The rules:
 - **Capability names.** Any name by default. To catch typos, list them: `config.grant_capabilities = %i[read edit comment]`.
 - **Removing a member removes their grants.** Deleting a `Grantable` record removes its grants. Changing a role keeps the grants: a member promoted to admin sees everything, and sees only the granted records again after a demotion.
 - **Concurrent grants converge** on one row per membership and record (unique index).
+- **Deleting an account** keeps the grants it gave to members (they were valid then) and deletes the grants it attached to pending invitations. A grant whose capabilities `config.grant_capabilities` no longer allows is dropped at acceptance, not fatal.
+- **Performance.** `can?` runs one query per record unless the grants are loaded: `memberships.includes(:grants)` or `membership.grants.load` before you check a list. `granted_ids` and `visible_to` load the membership's grants of that type and filter them in Ruby (the capability lists are JSON), then query with `WHERE id IN (...)`. That suits hundreds of grants per member; for far more, keep your own index of granted ids.
 
 Configuration:
 

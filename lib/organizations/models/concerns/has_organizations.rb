@@ -174,6 +174,10 @@ module Organizations
             # The method name is kept from earlier versions, so a host's
             # skip_callback for it keeps working.
             before_destroy :prevent_deletion_while_owning_organizations, prepend: true
+            # Before sent_organization_invitations is nullified: grants that
+            # this user attached to pending invitations die with the account,
+            # so an orphaned invitation never hands out unchecked access.
+            before_destroy :drop_grants_of_sent_invitations, prepend: true
           end
         end
 
@@ -779,6 +783,12 @@ module Organizations
 
             plan.organizations_to_destroy.each { |organization| destroy_personal_organization_for_deletion(organization) }
             memberships.reset if plan.organizations_to_destroy.any?
+          end
+
+          def drop_grants_of_sent_invitations
+            return unless Organizations::GrantHolder.grants_table?
+
+            Organizations::Grant.where(invitation_id: sent_organization_invitations.select(:id)).delete_all
           end
 
           def lock_own_row_for_deletion
