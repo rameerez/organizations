@@ -33,6 +33,7 @@ module Organizations
         say "  5. Run 'rails g organizations:views' to copy the reference views"
         say "     (the engine renders HOST views — without them you'll hit"
         say "     missing-template errors on the org/membership/invitation pages)."
+        say "  6. Optional: run 'rails g organizations:join' for the join and access screens."
       end
 
       private

@@ -74,6 +74,15 @@ module Organizations
       def require_organization_role(role, **options)
         before_action(**options) { require_scoped_organization_role!(role) }
       end
+
+      # Gate actions behind a permission of the viewer's role in the URL's
+      # organization (custom roles included). Same not-found posture as
+      # require_organization_role.
+      #   require_organization_permission :invite_members
+      #   require_organization_permission :manage_settings, only: %i[verify_domain]
+      def require_organization_permission(permission, **options)
+        before_action(**options) { require_scoped_organization_permission!(permission) }
+      end
     end
 
     # The organization resolved from the URL for this request.
@@ -116,6 +125,13 @@ module Organizations
     def require_scoped_organization_role!(role)
       membership = current_scoped_membership
       return if membership&.is_at_least?(role)
+
+      scoped_organization_not_found!
+    end
+
+    def require_scoped_organization_permission!(permission)
+      membership = current_scoped_membership
+      return if membership&.has_permission_to?(permission)
 
       scoped_organization_not_found!
     end

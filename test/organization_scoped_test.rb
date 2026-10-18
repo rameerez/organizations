@@ -57,6 +57,10 @@ class OrganizationScopedTest < ActiveSupport::TestCase
     self.organization_not_found_behavior = :forbidden
   end
 
+  class PermissionPortalController < MockScopedController
+    require_organization_permission :invite_members
+  end
+
   def setup
     Organizations.reset_configuration!
     @owner = User.create!(email: "owner-#{SecureRandom.hex(4)}@example.com")
@@ -122,6 +126,44 @@ class OrganizationScopedTest < ActiveSupport::TestCase
   test "default finder resolves by id" do
     controller = MockScopedController.new(organization_id: @org.id)
     controller.test_current_user = @owner
+    controller.run_callbacks!
+
+    assert_equal @org, controller.current_scoped_organization
+  end
+
+  test "permission gate admits roles that hold the permission" do
+    admin = User.create!(email: "perm-admin-#{SecureRandom.hex(4)}@example.com")
+    @org.add_member!(admin, role: :admin)
+
+    controller = PermissionPortalController.new(organization_id: @org.id)
+    controller.test_current_user = admin
+    controller.run_callbacks!
+
+    assert_equal @org, controller.current_scoped_organization
+  end
+
+  test "permission gate 404s members without the permission, strangers and signed-out viewers alike" do
+    [@member, @stranger, nil].each do |user|
+      controller = PermissionPortalController.new(organization_id: @org.id)
+      controller.test_current_user = user
+
+      assert_raises(ActionController::RoutingError) { controller.run_callbacks! }
+    end
+  end
+
+  test "permission gate follows custom role permissions" do
+    Organizations.configure do |config|
+      config.roles do
+        role :recruiter, inherits: :member do
+          can :invite_members
+        end
+      end
+    end
+    recruiter = User.create!(email: "recruiter-#{SecureRandom.hex(4)}@example.com")
+    @org.add_member!(recruiter, role: :recruiter)
+
+    controller = PermissionPortalController.new(organization_id: @org.id)
+    controller.test_current_user = recruiter
     controller.run_callbacks!
 
     assert_equal @org, controller.current_scoped_organization

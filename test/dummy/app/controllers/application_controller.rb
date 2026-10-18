@@ -48,6 +48,12 @@ class ApplicationController < ActionController::Base
 
   private
 
+  # The demo always has a signed-in user (one per visitor). A real app gets
+  # this from its authentication (Devise defines it).
+  def authenticate_user!
+    current_user
+  end
+
   def create_default_demo_user
     # Generate a realistic-looking name and email using Faker
     # Seed with session ID for consistency within the same session
