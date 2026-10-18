@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_10_18_210934) do
+ActiveRecord::Schema[8.0].define(version: 2026_10_18_215946) do
   create_table "organizations_allowlist_entries", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.string "email", null: false
@@ -45,6 +45,24 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_18_210934) do
     t.index ["organization_id", "domain"], name: "index_organizations_domains_on_organization_id_and_domain", unique: true
     t.index ["organization_id"], name: "index_organizations_domains_on_organization_id"
     t.index ["verified_by_id"], name: "index_organizations_domains_on_verified_by_id"
+  end
+
+  create_table "organizations_grants", force: :cascade do |t|
+    t.bigint "membership_id"
+    t.bigint "invitation_id"
+    t.string "grantable_type", null: false
+    t.bigint "grantable_id", null: false
+    t.json "capabilities", default: [], null: false
+    t.bigint "granted_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["grantable_type", "grantable_id"], name: "index_org_grants_on_grantable"
+    t.index ["granted_by_id"], name: "index_organizations_grants_on_granted_by_id"
+    t.index ["invitation_id", "grantable_type", "grantable_id"], name: "index_org_grants_on_invitation_and_grantable", unique: true
+    t.index ["invitation_id"], name: "index_organizations_grants_on_invitation_id"
+    t.index ["membership_id", "grantable_type", "grantable_id"], name: "index_org_grants_on_membership_and_grantable", unique: true
+    t.index ["membership_id"], name: "index_organizations_grants_on_membership_id"
+    t.check_constraint "(membership_id IS NULL) <> (invitation_id IS NULL)", name: "org_grants_one_holder"
   end
 
   create_table "organizations_invitations", force: :cascade do |t|
@@ -157,6 +175,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_18_210934) do
   add_foreign_key "organizations_allowlist_entries", "users", column: "claimed_by_id"
   add_foreign_key "organizations_domains", "organizations_organizations", column: "organization_id"
   add_foreign_key "organizations_domains", "users", column: "verified_by_id", on_delete: :nullify
+  add_foreign_key "organizations_grants", "organizations_invitations", column: "invitation_id", on_delete: :cascade
+  add_foreign_key "organizations_grants", "organizations_memberships", column: "membership_id", on_delete: :cascade
+  add_foreign_key "organizations_grants", "users", column: "granted_by_id", on_delete: :nullify
   add_foreign_key "organizations_invitations", "organizations_organizations", column: "organization_id"
   add_foreign_key "organizations_invitations", "users", column: "invited_by_id"
   add_foreign_key "organizations_join_codes", "organizations_organizations", column: "organization_id"

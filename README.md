@@ -513,8 +513,8 @@ Laravel has Jetstream with a `--teams` flag. Django has `django-organizations`. 
 
 `organizations` gives you the complete `User → Membership → Organization` pattern with scoped invitations, hierarchical roles, and the ability to switch between organizations – all in a single, well-tested gem that works with your existing Devise setup. What previously took 1.5 months now takes 3 days.
 
-> ![NOTE]
-> This gem handles organization membership and org-level permissions (who can invite members, who can manage billing). For per-record authorization ("can user X edit document Y"), use [Pundit](https://github.com/varvet/pundit) or [CanCanCan](https://github.com/CanCanCommunity/cancancan) alongside this gem.
+> [!NOTE]
+> This gem handles organization membership and org-level permissions (who can invite members, who can manage billing), plus optional per-record grants for members who should see only some records (see "Scoped resource grants"). For general per-record policies ("users can edit their own posts"), use [Pundit](https://github.com/varvet/pundit) or [CanCanCan](https://github.com/CanCanCommunity/cancancan) alongside this gem.
 
 ## The complete API
 
@@ -614,6 +614,8 @@ org.transfer_ownership_to!(other_user)
 # Invitations (inviter must be a member with :invite_members permission)
 org.send_invite_to!(email)                  # Auto-infers invited_by from Current.user
 org.send_invite_to!(email, invited_by: user) # Explicit inviter
+org.send_invite_to!(email, invited_by: user, grants: { record => %i[read] })  # With scoped grants
+org.grants                                  # Every grant of every membership
 
 # Scopes
 org.memberships.owners          # Memberships with owner role
@@ -675,6 +677,16 @@ membership.can_assign_role?(:admin) # => true (if admin or owner: roles at or be
 # Role changes
 membership.promote_to!(:admin, changed_by: current_user)  # Change role to admin
 membership.demote_to!(:member, changed_by: current_user)  # Change role to member
+
+# Scoped resource grants (see "Scoped resource grants")
+membership.grants                                         # Its grants
+membership.grant!(record, capabilities: %i[read], granted_by: current_user)
+membership.revoke_grant!(record, revoked_by: current_user)
+membership.can?(:read, record) / membership.capabilities_for(record)
+membership.granted?(record) / membership.grant_for(record)
+membership.limited_by_grants?                             # Role below config.full_resource_access_role
+membership.visible(relation, capability: nil) / membership.granted_ids(Model, capability: nil)
+Organizations::Membership.with_grant_on(record)           # Memberships granted this record
 ```
 
 ### Invitation methods
@@ -688,6 +700,10 @@ invitation.from                 # Alias for invited_by
 invitation.pending?             # => true (not yet accepted)
 invitation.accepted?            # => true (has accepted_at)
 invitation.expired?             # => true (past expires_at)
+
+# Grants the membership gets on acceptance
+invitation.grants
+invitation.grant!(record, capabilities: %i[read])
 
 # Actions
 invitation.accept!              # Accept (auto-infers Current.user)
@@ -886,7 +902,107 @@ authorize! :destroy, @project  # "Can they delete THIS specific project?"
 | **Based on** | Role in Membership | Policy classes / Ability rules |
 | **Example** | "Admins can invite members" | "Users can edit their own posts" |
 
-**Most B2B apps need both.** Use `organizations` for org membership and capabilities. Use Pundit/CanCanCan for fine-grained resource authorization. They're complementary, not competing.
+**Most B2B apps need both.** Use `organizations` for org membership and capabilities. Use Pundit/CanCanCan for fine-grained resource authorization. They're complementary, not competing. Between the two sits one common case the gem covers: **some members see only some records** (an accountant who handles three of a firm's clients, a contractor on one project). See "Scoped resource grants".
+
+### Scoped resource grants
+
+A grant gives one membership access to one record of your app, with a list of capabilities. Members whose role ranks below `config.full_resource_access_role` (`:admin` by default) see only the records granted to them. Admins and the owner see everything through their role. **The role stays the ceiling:** a member can use a granted capability only when the role also has it as a permission. A grant narrows; it never widens.
+
+It is optional. Add the table, then mark the models you grant:
+
+```bash
+rails g organizations:grants   # check the type of grantable_id, then:
+rails db:migrate
+```
+
+Capabilities are checked against the role's permissions, so give your roles the capabilities they may use on granted records (custom roles work too):
+
+```ruby
+config.roles do
+  role :viewer do
+    can :view_organization
+    can :read
+  end
+  role :client, inherits: :viewer do   # a narrow custom role
+    can :comment
+  end
+  role :member, inherits: :viewer do
+    can :comment
+    can :edit
+  end
+  # admin and owner as usual (they inherit member)
+end
+```
+
+```ruby
+class Project < ApplicationRecord
+  include Organizations::Grantable   # project.organization_grants, Project.visible_to(membership)
+end
+```
+
+```ruby
+membership = org.memberships.find_by!(user: contractor)
+
+membership.grant!(project, capabilities: %i[read edit], granted_by: current_user)
+membership.grant!(project, capabilities: %i[read])      # again: replaces the capabilities
+membership.grant!(project, capabilities: [])            # no capabilities: removes the grant
+membership.revoke_grant!(project, revoked_by: current_user)
+
+membership.can?(:edit, project)        # grant lists it AND the role has the :edit permission
+membership.capabilities_for(project)   # => #<Set: {:read}>
+membership.granted?(project)
+membership.grant_for(project)          # => #<Organizations::Grant capabilities: ["read"]>
+membership.limited_by_grants?          # => true for a member, false for an admin
+
+Project.visible_to(membership)                     # what they may see
+Project.visible_to(membership, capability: :edit)  # …and edit
+membership.visible(Project.active)                 # the same, for any relation
+membership.granted_ids(Project, capability: :edit) # just the ids
+
+org.memberships.with_grant_on(project)  # who was granted this project
+org.grants                              # every grant in the organization
+Organizations::Grant.for_resource(project)
+```
+
+Records that are not ActiveRecord models (rows read through another library, ids from an API) work by type and id:
+
+```ruby
+entity = Organizations::Resource.new("Ledger::Entity", entity_id)
+membership.grant!(entity, capabilities: %w[read draft])
+membership.granted_ids("Ledger::Entity")   # => [entity_id, ...]
+```
+
+Any object with an `id` also works; its class name is the type.
+
+**Invitations carry grants.** The grants move to the membership when the invitation is accepted (also when the invitee was already a member):
+
+```ruby
+org.send_invite_to!("client@example.com", invited_by: current_user, role: :client,
+                    grants: { project => %i[read comment], other_project => %i[read] })
+current_user.send_organization_invite_to!(email, role: :client, grants: { project => %i[read] })
+invitation.grant!(project, capabilities: %i[read])   # add one later
+```
+
+The rules:
+
+- **Who may grant.** `granted_by:` (or `revoked_by:`, or the inviter) must be a member: it needs `config.grant_management_permission` (`:edit_member_roles` by default), it may act only on members whose role ranks at or below its own, and, when grants limit it too, it may give only access it has on that record. An account that is not a member is refused. A nil actor (a console, a job, your own authorization) is not checked.
+- **The role is the ceiling everywhere.** `can?`, `capabilities_for`, `granted_ids` and `visible_to` all count only capabilities that the grant lists and the role has. A grant that lists none of the role's capabilities gives nothing.
+- **Organizations stay apart.** For a model with `organization_id`, `visible_to` returns only the membership's organization's records (admins included), `can?` is false for another organization's record (also through `Organizations::Resource`, which reads its `organization_id`), and `grant!` raises `ArgumentError`. A record moved to another organization loses its access.
+- **Invitation grants are checked twice:** when they are attached, and again at acceptance against the inviter as it is then and the membership that receives them (an existing member may hold a higher role). A grant that fails the second check is dropped and logged. Grants cannot be added to an accepted invitation, and a reissued expired invitation carries only the new grants.
+- **Ids must fit the column.** `grantable_id` has your primary key type by default. An id it would change (`"42-a"` in an integer column) raises `ArgumentError`. For resources with other key types, make the column `:string` (or `:uuid`) in the generated migration before you migrate.
+- **Capability names.** Any name by default. To catch typos, list them: `config.grant_capabilities = %i[read edit comment]`.
+- **Removing a member removes their grants.** Deleting a `Grantable` record removes its grants. Changing a role keeps the grants: a member promoted to admin sees everything, and sees only the granted records again after a demotion.
+- **Concurrent grants converge** on one row per membership and record (unique index).
+- **Deleting an account** keeps the grants it gave to members (they were valid then) and deletes the grants it attached to pending invitations. A grant whose capabilities `config.grant_capabilities` no longer allows is dropped at acceptance, not fatal.
+- **Performance.** `can?` runs one query per record unless the grants are loaded: `memberships.includes(:grants)` or `membership.grants.load` before you check a list. `granted_ids` and `visible_to` load the membership's grants of that type and filter them in Ruby (the capability lists are JSON), then query with `WHERE id IN (...)`. That suits hundreds of grants per member; for far more, keep your own index of granted ids.
+
+Configuration:
+
+```ruby
+config.full_resource_access_role = :admin           # roles at or above see every record; nil = grants limit every role
+config.grant_capabilities = nil                     # or a list of allowed names
+config.grant_management_permission = :edit_member_roles
+```
 
 ### Built-in roles
 
@@ -1553,6 +1669,11 @@ Organizations.configure do |config|
   # Custom mailer for invitations
   config.invitation_mailer = "Organizations::InvitationMailer"
 
+  # === Scoped resource grants (see "Scoped resource grants") ===
+  config.full_resource_access_role = :admin           # nil = grants limit every role
+  config.grant_capabilities = nil                     # or %i[read edit ...]
+  config.grant_management_permission = :edit_member_roles
+
   # === Vocabulary (see "Vocabulary") ===
   config.vocabulary = nil                             # or :classroom, or ->(organization) { ... }
 
@@ -1899,7 +2020,7 @@ ActiveSupport.on_load(:organizations_membership) do
 end
 ```
 
-**Why load hooks and not `class_eval` in an initializer:** the gem's model classes are reload-safe under Zeitwerk (they reload in development), and an initializer runs ONCE — a bare `class_eval` patch evaporates on the first code reload, and a hand-rolled `to_prepare` block is one shared basket where a single bad constant silently kills every extension after it. Load hooks re-fire per model on every reload ([ActiveSupport::LazyLoadHooks](https://api.rubyonrails.org/classes/ActiveSupport/LazyLoadHooks.html)). One hook per model: `:organizations_organization`, `:organizations_membership`, `:organizations_invitation`, `:organizations_domain`, `:organizations_join_code`, `:organizations_allowlist_entry`, `:organizations_join_request`, plus `:organizations_application_controller` and `:organizations_public_controller` for the engine controllers.
+**Why load hooks and not `class_eval` in an initializer:** the gem's model classes are reload-safe under Zeitwerk (they reload in development), and an initializer runs ONCE — a bare `class_eval` patch evaporates on the first code reload, and a hand-rolled `to_prepare` block is one shared basket where a single bad constant silently kills every extension after it. Load hooks re-fire per model on every reload ([ActiveSupport::LazyLoadHooks](https://api.rubyonrails.org/classes/ActiveSupport/LazyLoadHooks.html)). One hook per model: `:organizations_organization`, `:organizations_membership`, `:organizations_invitation`, `:organizations_domain`, `:organizations_join_code`, `:organizations_allowlist_entry`, `:organizations_join_request`, `:organizations_grant`, plus `:organizations_application_controller` and `:organizations_public_controller` for the engine controllers.
 
 For the common public-controller case — host layouts on the invitation-acceptance pages need your app's helper modules (the public controller inherits `ActionController::Base`, not your `ApplicationController`) — use the declarative option instead:
 
@@ -2121,6 +2242,23 @@ organizations_invitations
   - created_at / updated_at
 
   partial unique index: [organization_id, lower(email)] where accepted_at is null
+```
+
+### organizations_grants (optional, `rails g organizations:grants`)
+
+```sql
+organizations_grants
+  - id
+  - membership_id (foreign key, nullable; ON DELETE CASCADE)
+  - invitation_id (foreign key, nullable; ON DELETE CASCADE) — exactly one of the two (check constraint)
+  - grantable_type (string) / grantable_id (the app's key type by default)
+  - capabilities (jsonb array, at least one)
+  - granted_by_id (foreign key to users, nullable; ON DELETE SET NULL)
+  - created_at / updated_at
+
+  unique index: [membership_id, grantable_type, grantable_id]
+  unique index: [invitation_id, grantable_type, grantable_id]
+  index: [grantable_type, grantable_id]
 ```
 
 ### organizations_domains

@@ -43,6 +43,10 @@ module Organizations
     has_many :users,
              through: :memberships
 
+    # Every grant of every membership (scoped resource grants). Grants held
+    # by pending invitations are not included: see invitation.grants.
+    has_many :grants, through: :memberships
+
     has_many :invitations,
              class_name: "Organizations::Invitation",
              inverse_of: :organization,
@@ -479,9 +483,14 @@ module Organizations
     # @param invited_by [User, nil] Who is sending the invitation (uses Current.user if not provided)
     # @param role [Symbol] Role for the invitation (default: from config)
     # @return [Invitation] The created or existing invitation
+    # @param grants [Hash{resource => Array}, nil] resources the new member
+    #   gets on acceptance, with their capabilities (scoped resource grants).
+    #   The inviter needs config.grant_management_permission and, when grants
+    #   limit it, may give only access it has. On an existing pending
+    #   invitation they are added to it.
     # @raise [CannotInviteAsOwner] if role is :owner
     # @raise [Organizations::NotAuthorized] if the role ranks above the inviter's own
-    def send_invite_to!(email, invited_by: nil, role: nil)
+    def send_invite_to!(email, invited_by: nil, role: nil, grants: nil)
       inviter = invited_by || current_user_from_context
       unless inviter
         raise ArgumentError, "invited_by is required (or set Current.user)"
@@ -501,10 +510,11 @@ module Organizations
       authorize_invited_role!(inviter, role_sym)
 
       normalized_email = email.downcase.strip
+      grants = grants.to_a
 
       # Check for existing pending invitation (idempotent)
       existing = invitations.pending.for_email(normalized_email).first
-      return existing if existing
+      return add_invitation_grants(existing, grants, inviter) if existing
 
       # Check if already a member (case-insensitive)
       if users.where("LOWER(email) = ?", normalized_email).exists?
@@ -518,6 +528,9 @@ module Organizations
         role: role.to_s,
         expires_at: calculate_expiry
       )
+
+      # Checked before anything is written or sent
+      invitation_context.authorize_grants!(grants, inviter)
 
       Callbacks.dispatch(
         :member_invited,
@@ -535,24 +548,18 @@ module Organizations
       ActiveRecord::Base.transaction(requires_new: true) do
         # Check for expired invitation and refresh it instead of creating duplicate
         expired_invitation = invitations.expired.for_email(normalized_email).first
-        if expired_invitation
-          expired_invitation.lock!
-          expired_invitation.update!(
-            invited_by: inviter,
-            role: role.to_s,
-            token: generate_unique_token,
-            expires_at: calculate_expiry
-          )
-          invitation = expired_invitation
-        else
-          invitation = invitations.create!(
-            email: normalized_email,
-            invited_by: inviter,
-            role: role.to_s,
-            token: generate_unique_token,
-            expires_at: calculate_expiry
-          )
-        end
+        invitation = if expired_invitation
+                       reissue_invitation!(expired_invitation, inviter, role)
+                     else
+                       invitations.create!(
+                         email: normalized_email,
+                         invited_by: inviter,
+                         role: role.to_s,
+                         token: generate_unique_token,
+                         expires_at: calculate_expiry
+                       )
+                     end
+        apply_invitation_grants(invitation, grants, inviter)
       end
 
       # Send invitation email
@@ -560,8 +567,9 @@ module Organizations
 
       invitation
     rescue ActiveRecord::RecordNotUnique
-      # Race condition: invitation was created by another process
-      invitations.pending.for_email(normalized_email).first!
+      # Race condition: invitation was created by another process. Its
+      # grants are added the same way as for any existing invitation.
+      add_invitation_grants(invitations.pending.for_email(normalized_email).first!, grants.to_a, inviter)
     end
 
     # === Verified Joining Methods (v0.5.0) ===
@@ -768,6 +776,30 @@ module Organizations
       return if owner_id.present? && owner_id == personal_owner_id
 
       errors.add(:personal_owner, Organizations.t(:"attributes.personal_owner_not_owner", organization: self))
+    end
+
+    # Refresh an expired invitation instead of creating a duplicate. It
+    # carries only the grants of the new call: the old ones were authorized
+    # for another inviter and role.
+    def reissue_invitation!(invitation, inviter, role)
+      invitation.lock!
+      invitation.grants.delete_all(:delete_all) if Organizations::GrantHolder.grants_table?
+      invitation.update!(invited_by: inviter, role: role.to_s, token: generate_unique_token,
+                         expires_at: calculate_expiry)
+      invitation
+    end
+
+    def add_invitation_grants(invitation, grants, inviter)
+      return invitation if grants.empty?
+
+      ActiveRecord::Base.transaction(requires_new: true) { apply_invitation_grants(invitation, grants, inviter) }
+      invitation
+    end
+
+    def apply_invitation_grants(invitation, grants, inviter)
+      grants.each do |resource, capabilities|
+        invitation.grant!(resource, capabilities: capabilities, granted_by: inviter)
+      end
     end
 
     def ensure_join_request_belongs_here!(join_request)

@@ -180,6 +180,30 @@ ActiveRecord::Schema.define do
     t.timestamps
   end
   add_index :organizations_join_requests, :status
+
+  # === Scoped resource grants (v0.7.0) — same shape as the generator's migration ===
+  create_table :organizations_grants, force: :cascade do |t|
+    t.references :membership, null: true, foreign_key: { to_table: :organizations_memberships, on_delete: :cascade }
+    t.references :invitation, null: true, foreign_key: { to_table: :organizations_invitations, on_delete: :cascade }
+    t.string :grantable_type, null: false
+    t.bigint :grantable_id, null: false
+    t.json :capabilities, null: false, default: []
+    t.references :granted_by, null: true, foreign_key: { to_table: :users, on_delete: :nullify }
+    t.timestamps
+  end
+  add_index :organizations_grants, [:membership_id, :grantable_type, :grantable_id],
+            unique: true, name: "index_org_grants_on_membership_and_grantable"
+  add_index :organizations_grants, [:invitation_id, :grantable_type, :grantable_id],
+            unique: true, name: "index_org_grants_on_invitation_and_grantable"
+  add_index :organizations_grants, [:grantable_type, :grantable_id], name: "index_org_grants_on_grantable"
+  add_check_constraint :organizations_grants,
+                       "(membership_id IS NULL) <> (invitation_id IS NULL)", name: "org_grants_one_holder"
+
+  # A host resource for the grants tests
+  create_table :documents, force: :cascade do |t|
+    t.references :organization, null: false
+    t.string :title
+  end
   ActiveRecord::Base.connection.execute(<<~SQL)
     CREATE UNIQUE INDEX index_org_join_requests_pending_unique
     ON organizations_join_requests (organization_id, user_id)
@@ -193,6 +217,13 @@ class User < ActiveRecord::Base
   has_organizations
 
   validates :email, presence: true, uniqueness: true
+end
+
+# A host resource for the grants tests
+class Document < ActiveRecord::Base
+  include Organizations::Grantable
+
+  belongs_to :organization, class_name: "Organizations::Organization"
 end
 
 # ActiveRecord does not include GlobalID in this non-Rails test harness by default.
@@ -227,6 +258,8 @@ module Organizations
     private
 
     def clean_database
+      Organizations::Grant.delete_all
+      Document.delete_all
       Organizations::JoinRequest.delete_all
       Organizations::AllowlistEntry.delete_all
       Organizations::JoinCode.delete_all

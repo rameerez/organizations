@@ -174,6 +174,10 @@ module Organizations
             # The method name is kept from earlier versions, so a host's
             # skip_callback for it keeps working.
             before_destroy :prevent_deletion_while_owning_organizations, prepend: true
+            # Before sent_organization_invitations is nullified: grants that
+            # this user attached to pending invitations die with the account,
+            # so an orphaned invitation never hands out unchecked access.
+            before_destroy :drop_grants_of_sent_invitations, prepend: true
           end
         end
 
@@ -562,9 +566,10 @@ module Organizations
           # @param email [String] Email address to invite
           # @param organization [Organizations::Organization] (optional, defaults to current)
           # @param role [Symbol] (optional, defaults to configured default)
+          # @param grants [Hash{resource => Array}, nil] see Organization#send_invite_to!
           # @return [Organizations::Invitation]
           # @raise [Organizations::NotAuthorized] if user doesn't have permission
-          def send_organization_invite_to!(email, organization: nil, role: nil)
+          def send_organization_invite_to!(email, organization: nil, role: nil, grants: nil)
             org = organization || current_organization
 
             unless org
@@ -583,7 +588,7 @@ module Organizations
               )
             end
 
-            org.send_invite_to!(email, invited_by: self, role: role)
+            org.send_invite_to!(email, invited_by: self, role: role, grants: grants)
           end
 
           # === Verified Joining (v0.5.0) ===
@@ -778,6 +783,12 @@ module Organizations
 
             plan.organizations_to_destroy.each { |organization| destroy_personal_organization_for_deletion(organization) }
             memberships.reset if plan.organizations_to_destroy.any?
+          end
+
+          def drop_grants_of_sent_invitations
+            return unless Organizations::GrantHolder.grants_table?
+
+            Organizations::Grant.where(invitation_id: sent_organization_invitations.select(:id)).delete_all
           end
 
           def lock_own_row_for_deletion
