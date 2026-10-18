@@ -21,7 +21,7 @@
                 else 'bg-gray-100 text-gray-800'
                 end %>">
             <%= heroicon "user-circle", variant: :solid, options: { class: "h-5 w-5" } %>
-            You'll join as <%= @invitation.role.capitalize %>
+            You'll join as <%= organization_role_label(@invitation.role, organization: @invitation.organization) %>
           </span>
         </div>
 

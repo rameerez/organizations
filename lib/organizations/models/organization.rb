@@ -260,7 +260,7 @@ module Organizations
 
       # Owner role is only assignable via transfer_ownership_to! or initial creation
       if role_sym == :owner
-        raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_add_as_owner")
+        raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_add_as_owner", organization: self)
       end
 
       # Check if already a member (idempotent operation)
@@ -331,7 +331,7 @@ module Organizations
       return unless membership
 
       if membership.role.to_sym == :owner
-        raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner")
+        raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner", organization: self)
       end
 
       ActiveRecord::Base.transaction do
@@ -344,7 +344,7 @@ module Organizations
         # above is judged by the role they hold now.
         locked_role = Membership.where(id: membership.id).lock.pick(:role)
         if locked_role == "owner"
-          raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner")
+          raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner", organization: self)
         end
 
         # Only roles removed_by may act on (see Roles.assignment_refusal)
@@ -392,12 +392,12 @@ module Organizations
         if new_role == :owner && old_role != :owner
           # Promoting to owner - this is only allowed via transfer_ownership_to!
           # Direct role change to owner is not permitted
-          raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_promote_to_owner")
+          raise CannotHaveMultipleOwners, Organizations.t(:"errors.cannot_promote_to_owner", organization: self)
         end
 
         if old_role == :owner && new_role != :owner
           # Demoting owner - not allowed directly
-          raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner_directly")
+          raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner_directly", organization: self)
         end
 
         # Only roles at or below changed_by's own may be given or taken away
@@ -437,16 +437,16 @@ module Organizations
         new_owner_membership = memberships.find_by(user_id: new_owner.id)
 
         unless old_owner_membership
-          raise NoOwnerPresent, Organizations.t(:"errors.transfer_no_owner")
+          raise NoOwnerPresent, Organizations.t(:"errors.transfer_no_owner", organization: self)
         end
 
         unless new_owner_membership
-          raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
+          raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member", organization: self)
         end
 
         # New owner must be at least an admin (per README: "Ownership can be transferred to any admin")
         unless Roles.at_least?(new_owner_membership.role.to_sym, :admin)
-          raise CannotTransferToNonAdmin, Organizations.t(:"errors.transfer_to_non_admin")
+          raise CannotTransferToNonAdmin, Organizations.t(:"errors.transfer_to_non_admin", organization: self)
         end
 
         # No-op transfer to the current owner.
@@ -494,7 +494,7 @@ module Organizations
 
       # Owner role cannot be assigned via invitation - only via transfer_ownership_to!
       if role_sym == :owner
-        raise CannotInviteAsOwner, Organizations.t(:"errors.invite_as_owner")
+        raise CannotInviteAsOwner, Organizations.t(:"errors.invite_as_owner", organization: self)
       end
 
       # Nobody can invite to a role that ranks above their own
@@ -508,7 +508,7 @@ module Organizations
 
       # Check if already a member (case-insensitive)
       if users.where("LOWER(email) = ?", normalized_email).exists?
-        raise Organizations::InvitationError, Organizations.t(:"errors.invitation_already_member")
+        raise Organizations::InvitationError, Organizations.t(:"errors.invitation_already_member", organization: self)
       end
 
       # Allow callback hooks to veto invitations (e.g., plan seat limits) before write.
@@ -692,19 +692,19 @@ module Organizations
     #   the email is unconfirmed, or the feature is disabled
     def join_with_account_email!(user)
       unless Organizations.configuration.trust_confirmed_account_email
-        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_trust_disabled")
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_trust_disabled", organization: self)
       end
 
       email = user.respond_to?(:email) ? user.email.to_s : ""
       confirmed = user.respond_to?(:confirmed_at) && user.confirmed_at.present?
 
       unless confirmed
-        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_unconfirmed")
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_unconfirmed", organization: self)
       end
 
       matched_domain = domains.joinable.matching_email(email).first
       unless matched_domain
-        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible", organization: self)
       end
 
       # Uniform funnel: every self-serve join goes through a JoinRequest so
@@ -715,7 +715,7 @@ module Organizations
       ActiveRecord::Base.transaction do
         if Membership.where(organization_id: id, verified_email_normalized: normalized).exists?
           raise VerificationEmailAlreadyClaimed,
-                Organizations.t(:"errors.verification_email_already_claimed")
+                Organizations.t(:"errors.verification_email_already_claimed", organization: self)
         end
 
         request.assign_attributes(
@@ -743,7 +743,7 @@ module Organizations
       user_class = new_owner.class
       return if user_class.unscoped.where(user_class.primary_key => new_owner.id).lock.pick(user_class.primary_key)
 
-      raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
+      raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member", organization: self)
     end
 
     # A personal organization belongs to its owner. Call convert_to_shared!
@@ -751,7 +751,7 @@ module Organizations
     def ensure_not_personal_for_transfer!
       return unless personal?
 
-      raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization")
+      raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization", organization: self)
     end
 
     def personal_owner_changed_to_someone?
@@ -767,7 +767,7 @@ module Organizations
       owner_id = memberships.where(role: "owner").pick(:user_id)
       return if owner_id.present? && owner_id == personal_owner_id
 
-      errors.add(:personal_owner, Organizations.t(:"attributes.personal_owner_not_owner"))
+      errors.add(:personal_owner, Organizations.t(:"attributes.personal_owner_not_owner", organization: self))
     end
 
     def ensure_join_request_belongs_here!(join_request)
@@ -792,7 +792,7 @@ module Organizations
 
       unless inviter_membership
         raise Organizations::NotAMember.new(
-          Organizations.t(:"errors.invite_not_a_member"),
+          Organizations.t(:"errors.invite_not_a_member", organization: self),
           organization: self,
           user: inviter
         )
@@ -801,7 +801,7 @@ module Organizations
       return if Roles.has_permission?(inviter_membership.role.to_sym, :invite_members)
 
       raise Organizations::NotAuthorized.new(
-        Organizations.t(:"errors.invite_not_authorized"),
+        Organizations.t(:"errors.invite_not_authorized", organization: self),
         permission: :invite_members,
         organization: self,
         user: inviter

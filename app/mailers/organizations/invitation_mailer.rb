@@ -36,14 +36,14 @@ module Organizations
       mail(
         to: invitation.email,
         subject: Organizations.t(:"mailers.invitation.subject",
-                                 inviter: @inviter_name, organization: @organization.name)
+                                 inviter: @inviter_name, organization: @organization)
       )
     end
 
     private
 
     def inviter_name
-      return Organizations.t(:"mailers.from_team") unless @inviter
+      return Organizations.t(:"mailers.from_team", organization: @organization) unless @inviter
 
       if @inviter.respond_to?(:name) && @inviter.name.present?
         @inviter.name

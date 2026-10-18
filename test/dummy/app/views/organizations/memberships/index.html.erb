@@ -48,7 +48,7 @@
                     when 'member' then 'bg-blue-100 text-blue-800'
                     else 'bg-gray-100 text-gray-800'
                     end %>">
-                <%= membership.role.capitalize %>
+                <%= organization_role_label(membership.role, organization: membership.organization) %>
               </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -68,7 +68,7 @@
                   <% if can_change_role %>
                     <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
                       <%= form.select :role,
-                        Organizations::Roles.hierarchy.select { |r| r != :owner && current_membership.can_assign_role?(r) }.map { |role| [role.to_s.capitalize, role] },
+                        Organizations::Roles.hierarchy.select { |r| r != :owner && current_membership.can_assign_role?(r) }.map { |role| [organization_role_label(role, organization: membership.organization), role] },
                         { selected: membership.role },
                         class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
                       <%= form.submit "Update",

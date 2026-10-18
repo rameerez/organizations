@@ -1,7 +1,7 @@
-<%= Organizations.t(:"mailers.verification.lead", organization: @organization.name) %>
+<%= Organizations.t(:"mailers.verification.lead", organization: @organization) %>
 
   <%= @code %>
 
-<%= Organizations.t(:"mailers.verification.expires", minutes: @expires_in_minutes) %>
+<%= Organizations.t(:"mailers.verification.expires", organization: @organization, minutes: @expires_in_minutes) %>
 
-<%= Organizations.t(:"mailers.verification.ignore", organization: @organization.name) %>
+<%= Organizations.t(:"mailers.verification.ignore", organization: @organization) %>

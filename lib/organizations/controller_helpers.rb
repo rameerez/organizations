@@ -625,7 +625,7 @@ module Organizations
 
       # Default behavior
       error = Organizations::NotAuthorized.new(
-        build_unauthorized_message(permission, required_role),
+        build_unauthorized_message(permission, required_role, current_organization),
         permission: permission,
         organization: current_organization,
         user: user
@@ -654,16 +654,20 @@ module Organizations
       instance_exec(context, &handler)
     end
 
-    def build_unauthorized_message(permission, required_role)
+    # The organization is the one the check ran against (it selects the
+    # vocabulary, config.vocabulary).
+    def build_unauthorized_message(permission, required_role, organization = nil)
       if required_role
         # Same custom-role fallback as ViewHelpers#organization_role_label:
         # humanized, so "superfan" renders as "Superfan" in both places.
-        Organizations.t(:"errors.unauthorized_role",
-                        role: Organizations.t(:"roles.#{required_role}", default: required_role.to_s.humanize))
+        role = Organizations.t(:"roles.#{required_role}", organization: organization,
+                                                          default: required_role.to_s.humanize)
+        Organizations.t(:"errors.unauthorized_role", organization: organization, role: role)
       elsif permission
-        Organizations.t(:"errors.unauthorized_permission", permission: permission.to_s.humanize.downcase)
+        Organizations.t(:"errors.unauthorized_permission", organization: organization,
+                                                           permission: permission.to_s.humanize.downcase)
       else
-        Organizations.t(:"errors.unauthorized")
+        Organizations.t(:"errors.unauthorized", organization: organization)
       end
     end
 
@@ -836,10 +840,11 @@ module Organizations
     end
 
     def default_pending_invitation_acceptance_notice(result)
-      organization_name = result.invitation.organization.name
-      return Organizations.t(:"notices.already_member", organization: organization_name) if result.already_member?
+      # The record: its name fills %{organization}, and it selects its vocabulary.
+      organization = result.invitation.organization
+      return Organizations.t(:"notices.already_member", organization: organization) if result.already_member?
 
-      Organizations.t(:"notices.welcome", organization: organization_name)
+      Organizations.t(:"notices.welcome", organization: organization)
     end
   end
 end

@@ -146,7 +146,7 @@ module Organizations
       address = email.to_s.strip
 
       unless address.match?(URI::MailTo::EMAIL_REGEXP)
-        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_invalid")
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_invalid", organization: organization)
       end
 
       code = nil
@@ -195,7 +195,9 @@ module Organizations
           # raising here would roll the increment back and give attackers
           # unlimited tries.
           update!(verification_attempts: verification_attempts + 1)
-          failure = VerificationCodeInvalid.new(Organizations.t(:"errors.verification_code_invalid"))
+          failure = VerificationCodeInvalid.new(
+            Organizations.t(:"errors.verification_code_invalid", organization: organization)
+          )
         end
       end
 
@@ -358,7 +360,7 @@ module Organizations
       return if verification_email.blank? && !require_proof
       return if instruments_still_eligible?(require_proof)
 
-      raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
+      raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible", organization: organization)
     end
 
     def instruments_still_eligible?(require_proof)
@@ -382,7 +384,7 @@ module Organizations
 
     # Raise unless this request is still open (pending and not expired)
     def ensure_open!
-      raise JoinRequestExpired, Organizations.t(:"errors.join_request_expired") if expired?
+      raise JoinRequestExpired, Organizations.t(:"errors.join_request_expired", organization: organization) if expired?
       raise JoinRequestAlreadyDecided, already_decided_message if decided?
     end
 
@@ -397,7 +399,7 @@ module Organizations
     # so the whole sentence localizes as one unit.
     def already_decided_message
       Organizations.t(:"errors.join_request_already_decided",
-                      status: Organizations.t(:"join_request_status.#{status}", default: status))
+                      status: Organizations.t(:"join_request_status.#{status}", organization: organization, default: status))
     end
 
     def auto_approvable_after_verification?
@@ -414,7 +416,7 @@ module Organizations
     # Raises if it was removed after approval — the request can't be reused.
     def approved_membership!
       membership = existing_membership
-      raise JoinRequestAlreadyDecided, Organizations.t(:"errors.join_request_membership_gone") unless membership
+      raise JoinRequestAlreadyDecided, Organizations.t(:"errors.join_request_membership_gone", organization: organization) unless membership
 
       membership
     end
@@ -452,7 +454,7 @@ module Organizations
       matched_entry = matched_domain ? nil : organization.allowlist_entries.unclaimed.for_email(address).first
 
       unless matched_domain || matched_entry
-        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
+        raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible", organization: organization)
       end
 
       [matched_domain, matched_entry]
@@ -465,34 +467,34 @@ module Organizations
       return unless Membership.where(organization_id: organization_id, verified_email_normalized: normalized).exists?
 
       raise VerificationEmailAlreadyClaimed,
-            Organizations.t(:"errors.verification_email_already_claimed")
+            Organizations.t(:"errors.verification_email_already_claimed", organization: organization)
     end
 
     def ensure_send_allowed!
       config = Organizations.configuration
 
       if verification_sends_count >= config.verification_max_sends
-        raise VerificationThrottled, Organizations.t(:"errors.verification_sends_exceeded")
+        raise VerificationThrottled, Organizations.t(:"errors.verification_sends_exceeded", organization: organization)
       end
 
       resend_floor = interval_ago(config.verification_resend_interval)
       return unless verification_sent_at.present? && verification_sent_at > resend_floor
 
-      raise VerificationThrottled, Organizations.t(:"errors.verification_resend_throttled")
+      raise VerificationThrottled, Organizations.t(:"errors.verification_resend_throttled", organization: organization)
     end
 
     def ensure_active_challenge!
       config = Organizations.configuration
 
-      raise VerificationCodeInvalid, Organizations.t(:"errors.verification_code_missing") if verification_code_digest.blank?
+      raise VerificationCodeInvalid, Organizations.t(:"errors.verification_code_missing", organization: organization) if verification_code_digest.blank?
 
       if verification_attempts >= config.verification_max_attempts
-        raise VerificationAttemptsExceeded, Organizations.t(:"errors.verification_attempts_exceeded")
+        raise VerificationAttemptsExceeded, Organizations.t(:"errors.verification_attempts_exceeded", organization: organization)
       end
 
       return unless verification_expires_at.blank? || verification_expires_at <= Time.current
 
-      raise VerificationCodeExpired, Organizations.t(:"errors.verification_code_expired")
+      raise VerificationCodeExpired, Organizations.t(:"errors.verification_code_expired", organization: organization)
     end
 
     def correct_code?(code)
@@ -543,7 +545,7 @@ module Organizations
       return existing if existing
 
       raise VerificationEmailAlreadyClaimed,
-            Organizations.t(:"errors.verification_email_already_claimed")
+            Organizations.t(:"errors.verification_email_already_claimed", organization: organization)
     end
 
     def insert_membership_row!(effective_joined_via)
@@ -673,7 +675,7 @@ module Organizations
         .where.not(id: id)
         .exists?
 
-      errors.add(:user_id, Organizations.t(:"attributes.pending_request_taken")) if existing
+      errors.add(:user_id, Organizations.t(:"attributes.pending_request_taken", organization: organization)) if existing
     end
   end
   # rubocop:enable Metrics/ClassLength

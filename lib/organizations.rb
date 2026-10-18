@@ -298,13 +298,57 @@ module Organizations
     # Hosts override any key the standard Rails way — app locale files load
     # after engine locale files, so the host's value wins.
     #
+    # VOCABULARY (config.vocabulary): pass the organization record as
+    # `organization:` and the key resolves under
+    # `organizations.vocabularies.<vocabulary>.` first, then the ordinary
+    # key, then the caller's `default:`. `%{organization}` then interpolates
+    # the organization's name. A String `organization:` stays a plain
+    # interpolation value, as before.
+    #
+    #   Organizations.t("roles.member", organization: school)  # => "Student"
+    #
     # @param key [String, Symbol] key under the `organizations.` scope,
     #   e.g. :"errors.join_code_invalid" or "roles.owner"
-    # @param options [Hash] I18n options (interpolations, :locale, :default…)
+    # @param options [Hash] I18n options (interpolations, :locale, :count,
+    #   :default…) and :organization (a record or a String)
     # @return [String]
-    def translate(key, **)
-      I18n.t(key, scope: :organizations, **)
+    def translate(key, **options)
+      record = options[:organization].is_a?(Organizations::Organization) ? options[:organization] : nil
+      options = options.merge(organization: record.name) if record
+      primary, *fallbacks = i18n_keys(key, organization: record)
+      return I18n.t(key, scope: :organizations, **options) if fallbacks.empty?
+
+      I18n.t(primary, **options.except(:default), default: fallbacks + Array(options.fetch(:default, [])))
     end
+
+    # The I18n lookup chain for a key, most specific first: the vocabulary
+    # key (when config.vocabulary selects one for this organization), then
+    # the ordinary key. Absolute keys, for the Rails `t` view helper (needed
+    # for `_html` keys):
+    #
+    #   primary, *fallbacks = Organizations.i18n_keys(:"mailers.invitation.invited_by_html", organization: org)
+    #   t(primary, default: fallbacks, inviter: name, organization: org.name)
+    #
+    # @param key [String, Symbol]
+    # @param organization [Organizations::Organization, nil]
+    # @return [Array<Symbol>]
+    def i18n_keys(key, organization: nil)
+      ordinary = :"organizations.#{key}"
+      vocabulary = vocabulary_for(organization)
+      vocabulary ? [:"organizations.vocabularies.#{vocabulary}.#{key}", ordinary] : [ordinary]
+    end
+
+    # The vocabulary config.vocabulary selects: a Symbol/String for the whole
+    # app, or a callable that receives the organization (never called
+    # without one). nil selects the ordinary translations.
+    # @param organization [Organizations::Organization, nil]
+    # @return [String, nil]
+    def vocabulary_for(organization)
+      setting = configuration.vocabulary
+      setting = organization ? setting.call(organization) : nil if setting.respond_to?(:call)
+      setting.to_s.presence
+    end
+
     alias t translate
   end
 end

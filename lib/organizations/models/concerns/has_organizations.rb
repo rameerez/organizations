@@ -523,14 +523,14 @@ module Organizations
               if membership.role.to_sym == :owner
                 owner_count = org.memberships.where(role: "owner").count
                 if owner_count == 1
-                  raise CannotLeaveAsLastOwner, Organizations.t(:"errors.cannot_leave_as_last_owner")
+                  raise CannotLeaveAsLastOwner, Organizations.t(:"errors.cannot_leave_as_last_owner", organization: org)
                 end
               end
 
               # Check require_organization setting
               settings = self.class.organization_settings
               if settings[:require_organization] && organizations.count == 1
-                raise CannotLeaveLastOrganization, Organizations.t(:"errors.cannot_leave_last_organization")
+                raise CannotLeaveLastOrganization, Organizations.t(:"errors.cannot_leave_last_organization", organization: org)
               end
 
               membership.destroy!
@@ -576,7 +576,7 @@ module Organizations
             user_role = role_in(org)
             unless user_role && Roles.has_permission?(user_role, :invite_members)
               raise Organizations::NotAuthorized.new(
-                Organizations.t(:"errors.invite_not_authorized"),
+                Organizations.t(:"errors.invite_not_authorized", organization: org),
                 permission: :invite_members,
                 organization: org,
                 user: self
@@ -608,7 +608,7 @@ module Organizations
             existing_membership = memberships.find_by(organization_id: organization.id)
             if existing_membership
               raise Organizations::JoinRequestAlreadyDecided,
-                    Organizations.t(:"errors.join_request_already_member")
+                    Organizations.t(:"errors.join_request_already_member", organization: organization)
             end
 
             # SAVEPOINT: the RecordNotUnique rescue below must stay reachable

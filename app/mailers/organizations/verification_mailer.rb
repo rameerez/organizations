@@ -30,7 +30,7 @@ module Organizations
       mail(
         to: join_request.verification_email,
         subject: Organizations.t(:"mailers.verification.subject",
-                                 code: @code, organization: @organization.name)
+                                 code: @code, organization: @organization)
       )
     end
 

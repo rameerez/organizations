@@ -95,32 +95,36 @@ module Organizations
 
     # Returns a human-readable role label
     # @param role [Symbol, String] The role
+    # @param organization [Organizations::Organization, nil] pass it to use
+    #   that organization's vocabulary (config.vocabulary); never inferred
     # @return [String]
     #
     # @example
     #   organization_role_label(:admin) # => "Admin"
+    #   organization_role_label(:member, organization: school) # => "Student"
     #
-    def organization_role_label(role)
+    def organization_role_label(role, organization: nil)
       # I18n-backed (organizations.roles.*) so hosts localize/retheme labels
       # by overriding locale keys instead of monkey-patching this helper.
       # Custom roles defined via config.roles fall back to humanize unless
       # the host adds a matching organizations.roles.<name> key.
-      Organizations.t(:"roles.#{role}", default: role.to_s.humanize)
+      Organizations.t(:"roles.#{role}", organization: organization, default: role.to_s.humanize)
     end
 
     # Returns a hash of role information for building badges
     # @param role [Symbol, String] The role
+    # @param organization [Organizations::Organization, nil] for its vocabulary
     # @return [Hash] Hash with :role, :label, and :color keys
     #
     # @example
     #   organization_role_info(:admin)
     #   # => { role: :admin, label: "Admin", color: :blue }
     #
-    def organization_role_info(role)
+    def organization_role_info(role, organization: nil)
       role_sym = role.to_sym
       {
         role: role_sym,
-        label: organization_role_label(role_sym),
+        label: organization_role_label(role_sym, organization: organization),
         color: role_color(role_sym)
       }
     end

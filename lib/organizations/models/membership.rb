@@ -218,7 +218,9 @@ module Organizations
 
         key = refusal == :outranks ? message_key : :"errors.role_has_permissions_actor_lacks"
         raise Organizations::NotAuthorized.new(
-          Organizations.t(key, role: Organizations.t(:"roles.#{role}", default: role.to_s.humanize)),
+          Organizations.t(key, organization: organization,
+                               role: Organizations.t(:"roles.#{role}", organization: organization,
+                                                                       default: role.to_s.humanize)),
           permission: permission,
           organization: organization,
           user: actor
