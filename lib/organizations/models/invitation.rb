@@ -38,8 +38,10 @@ module Organizations
     # Alias for invited_by (semantic convenience as per README)
     alias_method :from, :invited_by
 
-    # Grants that move to the membership on acceptance (scoped resource grants)
-    has_many :grants, class_name: "Organizations::Grant", inverse_of: :invitation, dependent: :delete_all
+    # Grants that move to the membership on acceptance (scoped resource
+    # grants). No dependent: option, because the table is optional.
+    has_many :grants, class_name: "Organizations::Grant", inverse_of: :invitation
+    before_destroy :delete_grants
 
     # === Validations ===
 
@@ -258,19 +260,29 @@ module Organizations
     # The invitation's grants become the membership's (a grant on the same
     # resource takes the invitation's capabilities). The inviter was
     # checked when the invitation was sent.
-    def move_grants_to!(membership)
-      return unless grants_table?
+    # Grants are written only while the invitation is pending, under its
+    # row lock (accept! takes the same lock).
+    def lock_for_grant_write!
+      return unless persisted?
 
-      grants.each do |grant|
-        target = membership.grants.find_or_initialize_by(grantable_type: grant.grantable_type,
-                                                         grantable_id: grant.grantable_id)
-        target.update!(capabilities: grant.capabilities, granted_by_id: grant.granted_by_id)
-      end
-      grants.delete_all
+      lock!
+      raise InvitationAlreadyAccepted, Organizations.t(:"errors.invitation_already_accepted", organization: organization) if accepted?
     end
 
-    def grants_table?
-      Organizations::Grant.table_exists?
+    # Each grant is checked again, against the inviter as it is now and the
+    # membership that receives it (an existing member may hold a higher
+    # role than the invitation): a grant the inviter may no longer give is
+    # dropped.
+    def move_grants_to!(membership)
+      return unless Organizations::GrantHolder.grants_table?
+
+      grants.each do |grant|
+        membership.authorize_grants!([[grant.resource, grant.capabilities]], invited_by)
+        membership.send(:upsert_grant!, grant.grantable_type, grant.grantable_id, grant.capabilities, invited_by)
+      rescue Organizations::NotAuthorized, ArgumentError => e
+        Callbacks.log_warn("[Organizations] Invitation grant on #{grant.grantable_type}##{grant.grantable_id} dropped: #{e.message}")
+      end
+      grants.delete_all(:delete_all)
     end
 
     # Create the membership for an acceptance.

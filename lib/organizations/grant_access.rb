@@ -19,6 +19,9 @@ module Organizations
     # @param resource [ActiveRecord::Base, Organizations::Resource, #id]
     # @return [Set<Symbol>]
     def capabilities_for(resource)
+      owner_id = Organizations::Grant.resource_organization_id(resource)
+      return Set.new if owner_id && owner_id != organization_id
+
       permitted = Roles.permissions_for(role_sym).to_set
       return permitted unless limited_by_grants?
 
@@ -44,20 +47,29 @@ module Organizations
     # @return [ActiveRecord::Relation]
     def visible(relation, capability: nil)
       return relation.none if capability && !has_permission_to?(capability)
+
+      # A model that belongs to organizations shows only this one's records.
+      if relation.klass.column_names.include?("organization_id")
+        relation = relation.where(organization_id: organization_id)
+      end
       return relation unless limited_by_grants?
 
       relation.where(relation.klass.primary_key => granted_ids(relation.klass, capability: capability))
     end
 
-    # Ids of the granted resources of one type.
+    # Ids of the granted resources of one type, where the grant gives at
+    # least one capability that the role also has.
     # @param type [Class, String] e.g. Document or "Ledger::Entity"
-    # @param capability [Symbol, String, nil] only grants that list it
+    # @param capability [Symbol, String, nil] only where the grant and the role both have it
     # @return [Array]
     def granted_ids(type, capability: nil)
-      rows = grants.of_type(type)
-      return rows.pluck(:grantable_id) unless capability
+      permitted = Roles.permissions_for(role_sym).map(&:to_s)
+      return [] if capability && !permitted.include?(capability.to_s)
 
-      rows.select { |grant| grant.allows?(capability) }.map(&:grantable_id)
+      grants.of_type(type).select do |grant|
+        effective = grant.capabilities & permitted # the role is the ceiling
+        capability ? effective.include?(capability.to_s) : effective.any?
+      end.map(&:grantable_id)
     end
   end
 end

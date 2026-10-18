@@ -47,17 +47,46 @@ module Organizations
     # Grants held by memberships (accepted), not by pending invitations
     scope :active, -> { where.not(membership_id: nil) }
 
-    # [type, id] for a resource.
+    # [type, id] for a resource. The id must fit the grantable_id column
+    # without loss ("42-a" never becomes 42).
     # @param resource [ActiveRecord::Base, Organizations::Resource, #id]
     # @return [Array(String, Object)]
+    # @raise [ArgumentError] for an object without an id, or an id that does not fit
     def self.resource_key(resource)
-      case resource
-      when Organizations::Resource then [resource.type.to_s, resource.id]
-      when ActiveRecord::Base then [resource.class.polymorphic_name, resource.id]
-      else
-        raise ArgumentError, "A grant needs a resource with an id, got #{resource.inspect}" unless resource.respond_to?(:id)
+      type, id =
+        case resource
+        when Organizations::Resource then [resource.type.to_s, resource.id]
+        when ActiveRecord::Base then [resource.class.polymorphic_name, resource.id]
+        else
+          raise ArgumentError, "A grant needs a resource with an id, got #{resource.inspect}" unless resource.respond_to?(:id)
 
-        [resource.class.name, resource.id]
+          [resource.class.name, resource.id]
+        end
+      [type, lossless_id(id)]
+    end
+
+    # @api private
+    # The id as the grantable_id column stores it, or ArgumentError when the
+    # column would change it.
+    def self.lossless_id(id)
+      cast = type_for_attribute("grantable_id").cast(id)
+      return cast if cast.to_s == id.to_s
+
+      raise ArgumentError, "The id #{id.inspect} does not fit the grantable_id column (#{columns_hash['grantable_id']&.type})"
+    end
+
+    # @api private
+    # The organization a resource belongs to, or nil when it does not say:
+    # an object with organization_id, or an Organizations::Resource naming
+    # an ActiveRecord model with an organization_id column (one query).
+    def self.resource_organization_id(resource)
+      if resource.is_a?(Organizations::Resource)
+        model = resource.type.to_s.safe_constantize
+        return nil unless tenant_model?(model)
+
+        model.where(model.primary_key => resource.id).pick(:organization_id)
+      elsif resource.respond_to?(:organization_id)
+        resource.organization_id.presence
       end
     end
 
@@ -65,6 +94,11 @@ module Organizations
     # @return [String]
     def self.type_name(type)
       type.respond_to?(:polymorphic_name) ? type.polymorphic_name : type.to_s
+    end
+
+    # @api private
+    def self.tenant_model?(model)
+      model.is_a?(Class) && model < ActiveRecord::Base && model.column_names.include?("organization_id")
     end
 
     # @return [Array<String>]

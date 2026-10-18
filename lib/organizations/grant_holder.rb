@@ -4,6 +4,12 @@ module Organizations
   # Grant management shared by Membership and Invitation (an invitation holds
   # grants until it is accepted, then they move to the membership).
   module GrantHolder
+    # Whether the optional grants table exists (rails g organizations:grants).
+    # @return [Boolean]
+    def self.grants_table?
+      Organizations::Grant.table_exists?
+    end
+
     # Give access to one resource with these capabilities. Again on the same
     # resource, it replaces the capabilities. No capabilities removes the
     # grant (and returns nil).
@@ -13,8 +19,9 @@ module Organizations
     # @param granted_by [User, nil] checked when it is a member of the
     #   organization: it needs config.grant_management_permission, may act
     #   only on roles at or below its own, and, when grants limit it, may give
-    #   only capabilities it has on that resource. nil (a console, a job, your
-    #   own authorization) is not checked.
+    #   only capabilities it has on that resource. An account that is not a
+    #   member is refused. nil (a console, a job, your own authorization) is
+    #   not checked.
     # @return [Organizations::Grant, nil]
     # @raise [Organizations::NotAuthorized]
     # @raise [ArgumentError] when the resource belongs to another organization
@@ -75,6 +82,7 @@ module Organizations
       # SAVEPOINT: the unique-index race below must stay rescuable inside a
       # host transaction on PostgreSQL.
       ActiveRecord::Base.transaction(requires_new: true) do
+        lock_for_grant_write!
         grant = grants.find_or_initialize_by(grantable_type: type, grantable_id: id)
         grant.update!(capabilities: capabilities, granted_by_id: granted_by&.id || grant.granted_by_id)
         grant
@@ -87,18 +95,28 @@ module Organizations
       grant
     end
 
-    # A resource that says which organization it belongs to must belong to
-    # this one.
+    # A resource that belongs to an organization (organization_id, also
+    # when named by an Organizations::Resource of such a model) must belong
+    # to this one.
     def ensure_resource_in_organization!(resource)
-      return unless resource.respond_to?(:organization_id) && resource.organization_id.present?
-      return if resource.organization_id == organization_id
+      owner_id = Organizations::Grant.resource_organization_id(resource)
+      return if owner_id.nil? || owner_id == organization_id
 
       raise ArgumentError, "The resource belongs to another organization"
     end
 
+    def delete_grants
+      grants.delete_all(:delete_all) if Organizations::GrantHolder.grants_table? && persisted?
+    end
+
+    # An invitation takes grants only while it is pending (see Invitation).
+    def lock_for_grant_write!; end
+
     def authorize_grant!(resource, capabilities, actor)
-      actor_membership = actor && organization.memberships.find_by(user_id: actor.id)
-      return unless actor_membership
+      return unless actor
+
+      actor_membership = organization.memberships.find_by(user_id: actor.id)
+      raise_grant_refusal(:"errors.grant_not_authorized", actor, :membership) unless actor_membership
 
       permission = Organizations.configuration.grant_management_permission
       unless actor_membership.has_permission_to?(permission)
@@ -107,6 +125,11 @@ module Organizations
 
       Membership.authorize_rank!(organization, actor, [role], permission: permission,
                                                               message_key: :"errors.grant_outranks_actor")
+      authorize_within_own_access!(actor_membership, resource, capabilities, actor, permission)
+    end
+
+    # A granter that grants limit too may give only access it has itself.
+    def authorize_within_own_access!(actor_membership, resource, capabilities, actor, permission)
       return unless actor_membership.limited_by_grants?
 
       held = actor_membership.capabilities_for(resource).map(&:to_s)

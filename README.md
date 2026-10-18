@@ -915,6 +915,25 @@ rails g organizations:grants   # check the type of grantable_id, then:
 rails db:migrate
 ```
 
+Capabilities are checked against the role's permissions, so give your roles the capabilities they may use on granted records (custom roles work too):
+
+```ruby
+config.roles do
+  role :viewer do
+    can :view_organization
+    can :read
+  end
+  role :client, inherits: :viewer do   # a narrow custom role
+    can :comment
+  end
+  role :member, inherits: :viewer do
+    can :comment
+    can :edit
+  end
+  # admin and owner as usual (they inherit member)
+end
+```
+
 ```ruby
 class Project < ApplicationRecord
   include Organizations::Grantable   # project.organization_grants, Project.visible_to(membership)
@@ -935,10 +954,10 @@ membership.granted?(project)
 membership.grant_for(project)          # => #<Organizations::Grant capabilities: ["read"]>
 membership.limited_by_grants?          # => true for a member, false for an admin
 
-Project.where(organization: org).visible_to(membership)                    # what they may see
-Project.where(organization: org).visible_to(membership, capability: :edit) # …and edit
-membership.visible(Project.where(organization: org))                       # the same, for any relation
-membership.granted_ids(Project, capability: :edit)                          # just the ids
+Project.visible_to(membership)                     # what they may see
+Project.visible_to(membership, capability: :edit)  # …and edit
+membership.visible(Project.active)                 # the same, for any relation
+membership.granted_ids(Project, capability: :edit) # just the ids
 
 org.memberships.with_grant_on(project)  # who was granted this project
 org.grants                              # every grant in the organization
@@ -966,9 +985,12 @@ invitation.grant!(project, capabilities: %i[read])   # add one later
 
 The rules:
 
-- **Who may grant.** When `granted_by:` (or `revoked_by:`, or the inviter) is a member, it needs `config.grant_management_permission` (`:edit_member_roles` by default), it may act only on members whose role ranks at or below its own, and, when grants limit it too, it may give only access it has on that record. A nil actor (a console, a job, your own authorization) is not checked, like the rest of the gem.
+- **Who may grant.** `granted_by:` (or `revoked_by:`, or the inviter) must be a member: it needs `config.grant_management_permission` (`:edit_member_roles` by default), it may act only on members whose role ranks at or below its own, and, when grants limit it too, it may give only access it has on that record. An account that is not a member is refused. A nil actor (a console, a job, your own authorization) is not checked.
+- **The role is the ceiling everywhere.** `can?`, `capabilities_for`, `granted_ids` and `visible_to` all count only capabilities that the grant lists and the role has. A grant that lists none of the role's capabilities gives nothing.
+- **Organizations stay apart.** For a model with `organization_id`, `visible_to` returns only the membership's organization's records (admins included), `can?` is false for another organization's record (also through `Organizations::Resource`, which reads its `organization_id`), and `grant!` raises `ArgumentError`. A record moved to another organization loses its access.
+- **Invitation grants are checked twice:** when they are attached, and again at acceptance against the inviter as it is then and the membership that receives them (an existing member may hold a higher role). A grant that fails the second check is dropped and logged. Grants cannot be added to an accepted invitation, and a reissued expired invitation carries only the new grants.
+- **Ids must fit the column.** `grantable_id` has your primary key type by default. An id it would change (`"42-a"` in an integer column) raises `ArgumentError`. For resources with other key types, make the column `:string` (or `:uuid`) in the generated migration before you migrate.
 - **Capability names.** Any name by default. To catch typos, list them: `config.grant_capabilities = %i[read edit comment]`.
-- **A resource that has `organization_id`** must belong to the membership's organization (`ArgumentError` otherwise). Scope your own queries to the organization too: `visible_to` filters by grants, not by organization.
 - **Removing a member removes their grants.** Deleting a `Grantable` record removes its grants. Changing a role keeps the grants: a member promoted to admin sees everything, and sees only the granted records again after a demotion.
 - **Concurrent grants converge** on one row per membership and record (unique index).
 

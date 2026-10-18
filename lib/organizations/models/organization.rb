@@ -547,24 +547,17 @@ module Organizations
       ActiveRecord::Base.transaction(requires_new: true) do
         # Check for expired invitation and refresh it instead of creating duplicate
         expired_invitation = invitations.expired.for_email(normalized_email).first
-        if expired_invitation
-          expired_invitation.lock!
-          expired_invitation.update!(
-            invited_by: inviter,
-            role: role.to_s,
-            token: generate_unique_token,
-            expires_at: calculate_expiry
-          )
-          invitation = expired_invitation
-        else
-          invitation = invitations.create!(
-            email: normalized_email,
-            invited_by: inviter,
-            role: role.to_s,
-            token: generate_unique_token,
-            expires_at: calculate_expiry
-          )
-        end
+        invitation = if expired_invitation
+                       reissue_invitation!(expired_invitation, inviter, role)
+                     else
+                       invitations.create!(
+                         email: normalized_email,
+                         invited_by: inviter,
+                         role: role.to_s,
+                         token: generate_unique_token,
+                         expires_at: calculate_expiry
+                       )
+                     end
         apply_invitation_grants(invitation, grants, inviter)
       end
 
@@ -573,8 +566,9 @@ module Organizations
 
       invitation
     rescue ActiveRecord::RecordNotUnique
-      # Race condition: invitation was created by another process
-      invitations.pending.for_email(normalized_email).first!
+      # Race condition: invitation was created by another process. Its
+      # grants are added the same way as for any existing invitation.
+      add_invitation_grants(invitations.pending.for_email(normalized_email).first!, grants.to_a, inviter)
     end
 
     # === Verified Joining Methods (v0.5.0) ===
@@ -781,6 +775,17 @@ module Organizations
       return if owner_id.present? && owner_id == personal_owner_id
 
       errors.add(:personal_owner, Organizations.t(:"attributes.personal_owner_not_owner", organization: self))
+    end
+
+    # Refresh an expired invitation instead of creating a duplicate. It
+    # carries only the grants of the new call: the old ones were authorized
+    # for another inviter and role.
+    def reissue_invitation!(invitation, inviter, role)
+      invitation.lock!
+      invitation.grants.delete_all(:delete_all) if Organizations::GrantHolder.grants_table?
+      invitation.update!(invited_by: inviter, role: role.to_s, token: generate_unique_token,
+                         expires_at: calculate_expiry)
+      invitation
     end
 
     def add_invitation_grants(invitation, grants, inviter)

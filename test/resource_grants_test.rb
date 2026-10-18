@@ -359,6 +359,105 @@ class ResourceGrantsTest < Organizations::Test
     assert_equal 1, invitation.grants.count
   end
 
+  # === Review findings ===
+
+  test "apps without the grants table can still remove members and revoke invitations" do
+    invitation = @org.send_invite_to!("no-table@example.com", invited_by: @owner)
+    without_grants_table do
+      @org.remove_member!(@accountant)
+      invitation.revoke!
+      @org.reload.destroy!
+    end
+
+    refute Organizations::Organization.exists?(@org.id)
+  end
+
+  test "an explicit actor who is not a member is refused" do
+    outsider = create_user!
+
+    assert_raises(Organizations::NotAuthorized) do
+      @membership.grant!(@alpha, capabilities: %w[read], granted_by: outsider)
+    end
+    assert_raises(Organizations::NotAuthorized) { @membership.revoke_grant!(@alpha, revoked_by: outsider) }
+  end
+
+  test "another organization's record is never accessible, also to admins and through Resource" do
+    other_org, = create_org_with_owner!(name: "Other")
+    foreign = Document.create!(organization: other_org, title: "Foreign")
+    admin_membership = @org.add_member!(create_user!, role: :admin)
+
+    refute admin_membership.can?(:read, foreign)
+    refute admin_membership.can?(:read, Organizations::Resource.new("Document", foreign.id))
+    assert_raises(ArgumentError) do
+      @membership.grant!(Organizations::Resource.new("Document", foreign.id), capabilities: %w[read])
+    end
+  end
+
+  test "a record moved to another organization loses its access" do
+    @membership.grant!(@alpha, capabilities: %w[read])
+    other_org, = create_org_with_owner!(name: "Other")
+
+    @alpha.update!(organization: other_org)
+
+    refute @membership.can?(:read, @alpha)
+    refute_includes Document.visible_to(@membership), @alpha
+  end
+
+  test "visible filters by the membership's organization when the model has organization_id" do
+    other_org, = create_org_with_owner!(name: "Other")
+    Document.create!(organization: other_org, title: "Foreign")
+    admin_membership = @org.add_member!(create_user!, role: :admin)
+
+    assert_equal 3, Document.visible_to(admin_membership).count
+  end
+
+  test "enumeration respects the role ceiling" do
+    @membership.grant!(@alpha, capabilities: %w[approve])
+    @membership.grant!(@beta, capabilities: %w[read approve])
+
+    assert_empty @membership.granted_ids(Document, capability: :approve)
+    assert_equal [@beta.id], @membership.granted_ids(Document)
+    assert_equal [@beta], Document.visible_to(@membership).to_a
+  end
+
+  test "reissuing an expired invitation drops its old grants" do
+    invitation = @org.send_invite_to!("again@example.com", invited_by: @owner, grants: { @alpha => %w[read] })
+    invitation.update_column(:expires_at, 1.day.ago)
+
+    reissued = @org.send_invite_to!("again@example.com", invited_by: @owner, grants: { @beta => %w[read] })
+
+    assert_equal invitation.id, reissued.id
+    assert_equal [@beta.id], reissued.grants.pluck(:grantable_id)
+  end
+
+  test "acceptance checks the grants again against the inviter and the recipient" do
+    Organizations.configure { |c| c.full_resource_access_role = nil }
+    admin = create_user!
+    @org.add_member!(admin, role: :admin)
+    invitation = @org.invitations.create!(email: @owner.email, invited_by: admin, role: "member")
+    invitation.grants.create!(grantable_type: "Document", grantable_id: @alpha.id, capabilities: %w[read])
+
+    invitation.accept!(@owner)
+
+    assert_equal 0, @org.owner_membership.grants.count, "an admin cannot grant to the owner, not even by invitation"
+  end
+
+  test "grants cannot be added to an accepted invitation" do
+    invitation = @org.send_invite_to!("done@example.com", invited_by: @owner)
+    invitation.accept!(create_user!(email: "done@example.com"))
+
+    assert_raises(Organizations::InvitationAlreadyAccepted) do
+      invitation.grant!(@alpha, capabilities: %w[read])
+    end
+  end
+
+  test "an id that does not fit the grantable_id column is refused, never truncated" do
+    assert_raises(ArgumentError) do
+      @membership.grant!(Organizations::Resource.new("Ledger::Entity", "42-client-a"), capabilities: %w[read])
+    end
+    assert_raises(ArgumentError) { @membership.can?(:read, Organizations::Resource.new("Ledger::Entity", "42-x")) }
+  end
+
   # === Configuration ===
 
   test "grant settings are validated" do
@@ -368,6 +467,22 @@ class ResourceGrantsTest < Organizations::Test
   end
 
   private
+
+  # The table as in an app that never ran rails g organizations:grants.
+  def without_grants_table
+    connection = ActiveRecord::Base.connection
+    connection.rename_table(:organizations_grants, :organizations_grants_parked)
+    forget_schema
+    yield
+  ensure
+    connection.rename_table(:organizations_grants_parked, :organizations_grants)
+    forget_schema
+  end
+
+  def forget_schema
+    ActiveRecord::Base.connection.schema_cache.clear!
+    Organizations::Grant.reset_column_information
+  end
 
   def stub_const_name(klass, name, &)
     klass.stub(:name, name, &)

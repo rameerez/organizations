@@ -57,8 +57,10 @@ module Organizations
                optional: true
 
     # Scoped resource grants (rails g organizations:grants). Removed with the
-    # membership: a member who leaves keeps no access.
-    has_many :grants, class_name: "Organizations::Grant", inverse_of: :membership, dependent: :delete_all
+    # membership: a member who leaves keeps no access. (No dependent:
+    # option, because the table is optional: see GrantHolder.)
+    has_many :grants, class_name: "Organizations::Grant", inverse_of: :membership
+    before_destroy :delete_grants
 
     # === Validations ===
 
