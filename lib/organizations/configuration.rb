@@ -277,6 +277,7 @@ module Organizations
       @engine_routes = value.nil? ? nil : normalize_engine_routes(value)
     end
 
+    # @api private
     # The resolved set of enabled groups.
     # @return [Array<Symbol>]
     def engine_route_groups
@@ -582,6 +583,7 @@ module Organizations
       end
     end
 
+    # @api private
     # Normalize an email through the configured (or default) normalizer
     # @param email [String, nil]
     # @return [String] normalized email
@@ -592,12 +594,14 @@ module Organizations
       EmailNormalizer.normalize(email)
     end
 
+    # @api private
     # The blocked email domains, lowercased.
     # @return [Array<String>]
     def normalized_blocked_email_domains
       Array(@blocked_email_domains).map { |d| d.to_s.strip.downcase.delete_prefix("@") }
     end
 
+    # @api private
     # Resolve the default organization name for a user
     # @param user [Object] The user object
     # @return [String] The organization name

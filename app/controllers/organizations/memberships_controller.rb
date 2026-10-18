@@ -51,12 +51,12 @@ module Organizations
            Organizations::Error => e
       respond_to do |format|
         format.html { redirect_back fallback_location: memberships_path, alert: e.message }
-        format.json { render json: { error: e.message }, status: :unprocessable_entity }
+        format.json { render json: { error: e.message }, status: 422 }
       end
     rescue ActiveRecord::RecordInvalid => e
       respond_to do |format|
         format.html { redirect_back fallback_location: memberships_path, alert: e.record.errors.full_messages.join(", ") }
-        format.json { render json: { errors: e.record.errors }, status: :unprocessable_entity }
+        format.json { render json: { errors: e.record.errors }, status: 422 }
       end
     end
 
@@ -76,7 +76,7 @@ module Organizations
     rescue Organizations::Organization::CannotRemoveOwner, Organizations::Error => e
       respond_to do |format|
         format.html { redirect_back fallback_location: memberships_path, alert: e.message }
-        format.json { render json: { error: e.message }, status: :unprocessable_entity }
+        format.json { render json: { error: e.message }, status: 422 }
       end
     end
 
@@ -100,7 +100,7 @@ module Organizations
              Error => e
         respond_to do |format|
           format.html { redirect_back fallback_location: organizations_path, alert: e.message }
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+          format.json { render json: { error: e.message }, status: 422 }
         end
       end
     end
@@ -122,7 +122,7 @@ module Organizations
              Organizations::Error => e
         respond_to do |format|
           format.html { redirect_back fallback_location: memberships_path, alert: e.message }
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+          format.json { render json: { error: e.message }, status: 422 }
         end
       end
     end

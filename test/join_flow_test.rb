@@ -6,7 +6,7 @@ require "test_helper"
 # Pins: dispatch order, every outcome, every REASONS symbol, the security
 # posture (foreign/unknown codes are indistinguishable), veto integration,
 # and that messages ride the i18n catalog.
-# rubocop:disable Metrics/ClassLength -- exhaustive outcome/reason contract suite, one class on purpose
+# rubocop:disable-next Metrics/ClassLength -- exhaustive outcome/reason contract suite, one class on purpose
 class JoinFlowTest < ActiveSupport::TestCase
   include Organizations::TestHelpers
 
@@ -266,4 +266,3 @@ class JoinFlowTest < ActiveSupport::TestCase
     issue_verification_code(request)
   end
 end
-# rubocop:enable Metrics/ClassLength

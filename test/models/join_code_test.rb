@@ -4,7 +4,7 @@ require "test_helper"
 
 module Organizations
   # Comprehensive lifecycle suite — size is the point.
-  # rubocop:disable Metrics/ClassLength
+  # rubocop:disable-next Metrics/ClassLength
   class JoinCodeTest < Organizations::Test
     def setup
       super
@@ -298,5 +298,4 @@ module Organizations
       assert_equal 1, code_b.reload.uses_count
     end
   end
-  # rubocop:enable Metrics/ClassLength
 end

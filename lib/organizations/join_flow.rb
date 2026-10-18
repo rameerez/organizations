@@ -84,12 +84,11 @@ module Organizations
     # Every parameter is an optional keyword with a safe default — this IS
     # the public API surface, not incidental complexity (same posture as
     # Organization#generate_join_code!).
-    # rubocop:disable Metrics/ParameterLists
+    # rubocop:disable-next Metrics/ParameterLists
     def self.attempt(user:, organization:, code: nil, email: nil, verification_code: nil, message: nil)
       new(user: user, organization: organization)
         .attempt(code: code, email: email, verification_code: verification_code, message: message)
     end
-    # rubocop:enable Metrics/ParameterLists
 
     def initialize(user:, organization:)
       @user = user

@@ -124,7 +124,7 @@ module Organizations
       role_sym = role.to_sym
       {
         role: role_sym,
-        label: organization_role_label(role_sym, organization: organization),
+        label: role_label_for(role_sym, organization),
         color: role_color(role_sym)
       }
     end
@@ -176,8 +176,8 @@ module Organizations
           name: user.respond_to?(:name) && user.name.present? ? user.name : user.email,
           email: user.email,
           role: membership.role.to_sym,
-          role_label: organization_role_label(membership.role),
-          role_info: organization_role_info(membership.role),
+          role_label: role_label_for(membership.role, organization),
+          role_info: organization_role_info(membership.role, organization: organization),
           joined_at: membership.created_at,
           is_owner: membership.owner?
         }
@@ -194,7 +194,7 @@ module Organizations
           id: invitation.id,
           email: invitation.email,
           role: invitation.role.to_sym,
-          role_label: organization_role_label(invitation.role),
+          role_label: role_label_for(invitation.role, organization),
           invited_by: inviter,
           invited_by_name: inviter_display_name(inviter),
           status: organization_invitation_status(invitation),
@@ -358,6 +358,24 @@ module Organizations
         ->(org_id) { main_app.switch_organization_path(org_id) }
       else
         ->(org_id) { "/organizations/switch/#{org_id}" }
+      end
+    end
+
+    # organization_role_label with the organization, unless a host override
+    # of it takes only the role (written before 0.7.0).
+    def role_label_for(role, organization)
+      if role_label_takes_organization?
+        organization_role_label(role, organization: organization)
+      else
+        organization_role_label(role)
+      end
+    end
+
+    def role_label_takes_organization?
+      return @_role_label_takes_organization if defined?(@_role_label_takes_organization)
+
+      @_role_label_takes_organization = method(:organization_role_label).parameters.any? do |kind, name|
+        kind == :keyrest || name == :organization
       end
     end
 

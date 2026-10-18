@@ -1,12 +1,7 @@
 # frozen_string_literal: true
 
 require "simplecov"
-SimpleCov.start do
-  add_filter "/test/"
-  # Don't fail on low coverage during development
-  # These thresholds will be increased as tests are added
-  minimum_coverage line: 0, branch: 0
-end
+SimpleCov.start # configuration: .simplecov
 
 ENV["RAILS_ENV"] ||= "test"
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)

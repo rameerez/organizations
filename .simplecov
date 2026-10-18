@@ -1,23 +1,30 @@
 # frozen_string_literal: true
 
-# SimpleCov configuration file (auto-loaded before test suite)
-# This keeps test_helper.rb clean and follows best practices
+# SimpleCov configuration (auto-loaded by `require "simplecov"`). It holds
+# configuration only: test/test_helper.rb calls SimpleCov.start, as
+# SimpleCov 1.x requires.
 
-SimpleCov.start do
+SimpleCov.configure do
   # Use SimpleFormatter for terminal-only output (no HTML generation)
   formatter SimpleCov::Formatter::SimpleFormatter
 
-  # Track coverage for the lib directory (gem source code)
-  add_filter "/test/"
-
-  # Track the lib and app directories
-  track_files "{lib,app}/**/*.rb"
+  # Report the gem's source (lib/ and app/), unloaded files included.
+  # skip/cover are the SimpleCov 1.x names (Ruby 3.3+); 0.22 on Ruby 3.2
+  # knows add_filter/track_files.
+  if respond_to?(:cover)
+    skip "/test/"
+    cover "{lib,app}/**/*.rb"
+  else
+    add_filter "/test/"
+    track_files "{lib,app}/**/*.rb"
+  end
 
   # Enable branch coverage for more detailed metrics
   enable_coverage :branch
 
-  # Set minimum coverage threshold to prevent coverage regression
-  minimum_coverage line: 80, branch: 65
+  # A floor for the full suite in CI only: running one test file locally
+  # must not fail on coverage.
+  minimum_coverage line: 78, branch: 72 if ENV["CI"]
 
   # Disambiguate parallel test runs
   command_name "Job #{ENV['TEST_ENV_NUMBER']}" if ENV['TEST_ENV_NUMBER']

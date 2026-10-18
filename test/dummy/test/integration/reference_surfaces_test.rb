@@ -35,7 +35,7 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
     assert_match 'name="code"', response.body
 
     post organization_join_path(@org), params: { code: "WRONGCODE" }
-    assert_response :unprocessable_entity
+    assert_response 422
     assert_match Organizations.t(:"errors.join_code_invalid"), response.body
 
     post organization_join_path(@org), params: { code: code.display_code } # hyphenated form must normalize
@@ -134,7 +134,7 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
     sign_in_as "unlucky@example.com"
     post organization_join_path(@org), params: { code: code.code }
 
-    assert_response :unprocessable_entity
+    assert_response 422
     assert_match "Demo is full", response.body
     assert_equal 0, @org.memberships.where.not(role: "owner").count
     assert_equal 1, @org.join_requests.pending.count,

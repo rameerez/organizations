@@ -51,18 +51,18 @@ module Organizations
           format.html do
             @organization = Organization.new(organization_params)
             flash.now[:alert] = e.message
-            render :new, status: :unprocessable_entity
+            render :new, status: 422
           end
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+          format.json { render json: { error: e.message }, status: 422 }
         end
       rescue ActiveRecord::RecordInvalid => e
         respond_to do |format|
           format.html do
             @organization = Organization.new(organization_params)
             flash.now[:alert] = e.record.errors.full_messages.join(", ")
-            render :new, status: :unprocessable_entity
+            render :new, status: 422
           end
-          format.json { render json: { errors: e.record.errors }, status: :unprocessable_entity }
+          format.json { render json: { errors: e.record.errors }, status: 422 }
         end
       end
     end
@@ -82,8 +82,8 @@ module Organizations
         end
       else
         respond_to do |format|
-          format.html { render :edit, status: :unprocessable_entity }
-          format.json { render json: { errors: @organization.errors }, status: :unprocessable_entity }
+          format.html { render :edit, status: 422 }
+          format.json { render json: { errors: @organization.errors }, status: 422 }
         end
       end
     end

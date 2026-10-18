@@ -88,7 +88,7 @@ class RoleAssignmentCapTest < ActionDispatch::IntegrationTest
   test "a crafted owner invitation is refused with the form's 422, not an error page" do
     post "/invitations", params: { invitation: { email: "crafted@example.com", role: "owner" } }
 
-    assert_response :unprocessable_entity
+    assert_response 422
     assert_equal 0, @org.invitations.count
   end
 

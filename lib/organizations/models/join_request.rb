@@ -31,7 +31,7 @@ module Organizations
   # The class carries the request's FULL lifecycle (statuses, challenge,
   # decisions) exactly like its mirror Invitation does — splitting it would
   # scatter one cohesive state machine across files.
-  # rubocop:disable Metrics/ClassLength
+  # rubocop:disable-next Metrics/ClassLength
   class JoinRequest < ActiveRecord::Base
     self.table_name = "organizations_join_requests"
 
@@ -680,7 +680,6 @@ module Organizations
       errors.add(:user_id, Organizations.t(:"attributes.pending_request_taken", organization: organization)) if existing
     end
   end
-  # rubocop:enable Metrics/ClassLength
 end
 
 # Host extension seam — see the load-hooks note in models/organization.rb.

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# rubocop:disable Metrics/BlockLength -- a routes file is one declarative block by nature
+# rubocop:disable-next Metrics/BlockLength -- a routes file is one declarative block by nature
 Organizations::Engine.routes.draw do
   # Route groups are drawn per config.engine_routes (devise_for-style
   # only:/except:) so hosts declare what they want instead of shadowing
@@ -55,4 +55,3 @@ Organizations::Engine.routes.draw do
     post "invitations/:token/accept", to: "public_invitations#accept", as: :accept_invitation
   end
 end
-# rubocop:enable Metrics/BlockLength

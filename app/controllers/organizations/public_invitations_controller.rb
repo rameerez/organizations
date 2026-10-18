@@ -76,7 +76,7 @@ module Organizations
         html_path: main_app.root_path,
         alert: "Unable to accept this invitation.",
         json_error: "Acceptance failed",
-        status: :unprocessable_entity
+        status: 422
       )
     end
 

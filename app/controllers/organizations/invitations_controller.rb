@@ -54,9 +54,9 @@ module Organizations
         format.html do
           @invitation = current_organization.invitations.build(invitation_params)
           flash.now[:alert] = e.message
-          render :new, status: :unprocessable_entity
+          render :new, status: 422
         end
-        format.json { render json: { error: e.message }, status: :unprocessable_entity }
+        format.json { render json: { error: e.message }, status: 422 }
       end
     end
 
@@ -88,7 +88,7 @@ module Organizations
       rescue ::Organizations::InvitationAlreadyAccepted => e
         respond_to do |format|
           format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+          format.json { render json: { error: e.message }, status: 422 }
         end
       end
     end

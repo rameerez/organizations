@@ -46,6 +46,7 @@ module Organizations
       destroy_grants_on(resource)
     end
 
+    # @api private
     # Check grants before they are written (an invitation checks them before
     # it is saved). Same rules as grant!.
     # @param grants [Array<Array(resource, capabilities)>]
