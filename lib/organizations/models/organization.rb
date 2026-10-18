@@ -144,7 +144,7 @@ module Organizations
       organization
     end
 
-    # @api private
+    # @api private (public only because HasOrganizations#create_organization! calls it)
     # A new organization may be personal only for the user who becomes its
     # owner in the same transaction (user.create_organization!,
     # create_with_owner!). Raw Organization.create! writes stay privileged.
@@ -426,23 +426,10 @@ module Organizations
     # @raise [CannotTransferToNonAdmin] if user is not an admin
     def transfer_ownership_to!(new_owner)
       ActiveRecord::Base.transaction do
-        # Lock organization first to prevent concurrent operations
-        lock!
+        lock_new_owner_row!(new_owner)
+        lock! # then the organization row, to prevent concurrent operations
 
-        # A personal organization belongs to its owner. Call
-        # convert_to_shared! first to move it to someone else.
-        if personal?
-          raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization")
-        end
-
-        # Lock the new owner's user row, the lock the account-deletion guard
-        # takes first. A concurrent deletion of that user then either
-        # finishes first (the membership is gone and the transfer is refused)
-        # or waits until the transfer commits (and sees the new ownership).
-        user_class = new_owner.class
-        unless user_class.unscoped.where(user_class.primary_key => new_owner.id).lock.pick(user_class.primary_key)
-          raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
-        end
+        ensure_not_personal_for_transfer!
 
         # Always perform a fresh read in this write path, even if memberships
         # are preloaded on this instance, to avoid stale-owner selection.
@@ -466,8 +453,7 @@ module Organizations
         return old_owner_membership if old_owner_membership.user_id == new_owner.id
 
         # Lock both memberships
-        old_owner_membership.lock!
-        new_owner_membership.lock!
+        [old_owner_membership, new_owner_membership].each(&:lock!)
 
         old_owner_user = old_owner_membership.user
 
@@ -743,6 +729,27 @@ module Organizations
     end
 
     private
+
+    # Lock the new owner's user row before the organization row: the
+    # account-deletion guard locks a user row before organization rows, so
+    # both take their locks in the same order and cannot deadlock. A
+    # concurrent deletion of that user either finishes first (the membership
+    # is gone and the transfer is refused) or waits until the transfer
+    # commits (and sees the new ownership).
+    def lock_new_owner_row!(new_owner)
+      user_class = new_owner.class
+      return if user_class.unscoped.where(user_class.primary_key => new_owner.id).lock.pick(user_class.primary_key)
+
+      raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member")
+    end
+
+    # A personal organization belongs to its owner. Call convert_to_shared!
+    # first to move it to someone else.
+    def ensure_not_personal_for_transfer!
+      return unless personal?
+
+      raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization")
+    end
 
     def personal_owner_changed_to_someone?
       has_attribute?(:personal_owner_id) && will_save_change_to_personal_owner_id? && personal_owner_id.present?

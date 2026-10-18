@@ -47,6 +47,9 @@ module Organizations
           def has_organizations(**options, &block)
             # Include instance methods
             include InstanceMethods
+            # Prepended, so a host override of destroy or of the association
+            # reader cannot drop these guards.
+            prepend PrependedMethods
 
             # Define associations
             define_organization_associations
@@ -200,6 +203,31 @@ module Organizations
           # @param value [Boolean]
           def require_organization(value)
             @settings[:require_organization] = value
+          end
+        end
+
+        # Prepended to the user model (see has_organizations).
+        module PrependedMethods
+          # Destroy inside its own SAVEPOINT. The account-deletion guard can
+          # delete a personal organization before a later callback aborts the
+          # destroy. Inside a host transaction, Rails would only release (not
+          # roll back) a joined transaction on abort, and the organization
+          # would stay deleted while the user survives. The savepoint makes
+          # the abort roll back everything this destroy did.
+          def destroy
+            result = nil
+            self.class.transaction(requires_new: true) do
+              result = super
+              raise ActiveRecord::Rollback unless result
+            end
+            result
+          end
+
+          # nil, not an unknown-column error, before the upgrade migration ran.
+          def personal_organization
+            return nil unless Organizations::Organization.column_names.include?("personal_owner_id")
+
+            super
           end
         end
 
@@ -606,21 +634,6 @@ module Organizations
           # @return [Organizations::JoinRequest, nil]
           def pending_join_request_for(organization)
             organization_join_requests.pending.find_by(organization_id: organization.id)
-          end
-
-          # Destroy inside its own SAVEPOINT. The account-deletion guard can
-          # delete a personal organization before a later callback aborts the
-          # destroy. Inside a host transaction, Rails would only release (not
-          # roll back) a joined transaction on abort, and the organization
-          # would stay deleted while the user survives. The savepoint makes
-          # the abort roll back everything this destroy did.
-          def destroy
-            result = nil
-            self.class.transaction(requires_new: true) do
-              result = super
-              raise ActiveRecord::Rollback unless result
-            end
-            result
           end
 
           # === Personal organization (v0.7.0) ===

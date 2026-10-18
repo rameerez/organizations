@@ -10,8 +10,8 @@
 ### Changed
 
 - `transfer_ownership_to!` raises `Organization::CannotTransferPersonalOrganization` for a personal organization. Call `convert_to_shared!` first. Organizations that are not personal are not affected.
-- `User#destroy` (from `has_organizations`) runs in its own savepoint, so an aborted destroy inside a host transaction rolls back what the deletion guard did.
-- `transfer_ownership_to!` locks the new owner's user row, so a transfer cannot race the deletion of that user. `create_with_owner!` and `create_organization!` raise `ArgumentError` for a `personal_owner` who is not the new owner.
+- `User#destroy` (from `has_organizations`, prepended so a host override cannot drop it) runs in its own savepoint, so an aborted destroy inside a host transaction rolls back what the deletion guard did.
+- `transfer_ownership_to!` locks the new owner's user row before the organization row (the same order as the deletion guard, so the two cannot deadlock), so a transfer cannot race the deletion of that user. `create_with_owner!` and `create_organization!` raise `ArgumentError` for a `personal_owner` who is not the new owner.
 - The account-deletion guard now locks the user row and the owned organization rows before it checks ownership. A concurrent organization creation for the user can no longer slip past the check and lose its owner membership. The default policy (`:prevent`) and its error message are unchanged, and the guard keeps its method name (`prevent_deletion_while_owning_organizations`), so a host `skip_callback` for it still works.
 
 ### Upgrading

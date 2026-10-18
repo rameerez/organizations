@@ -83,6 +83,8 @@ module Organizations
     end
 
     def classify(organizations)
+      @shared_ids = Membership.where(organization_id: organizations.map(&:id)).where.not(user_id: user.id)
+        .distinct.pluck(:organization_id).to_set
       organizations.each do |organization|
         reason = blocker_reason(organization)
         if reason
@@ -94,7 +96,7 @@ module Organizations
     end
 
     def blocker_reason(organization)
-      others = organization.memberships.where.not(user_id: user.id).exists?
+      others = @shared_ids.include?(organization.id)
       personal = personal_column? && organization.personal_owner_id == user.id
 
       return (others ? :owns_organization_with_members : :owns_organization) unless personal

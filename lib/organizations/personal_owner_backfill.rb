@@ -85,15 +85,17 @@ module Organizations
 
     # One query per rule, for the whole mapping.
     def load_lookups
+      user_ids = @pairs.map(&:first)
       organization_ids = @pairs.map(&:last)
       @organizations = Organization.where(id: organization_ids).index_by(&:id)
       @owners = Membership.where(organization_id: @organizations.keys, role: "owner")
         .pluck(:organization_id, :user_id).to_h
-      @linked = Organization.personal.where(personal_owner_id: @pairs.map(&:first))
-        .pluck(:personal_owner_id, :id).to_h
-      @mapped_twice = organization_ids.tally.select { |_, count| count > 1 }.keys
-      @users_mapped_twice = @pairs.map(&:first).tally.select { |_, count| count > 1 }.keys
+      @linked = Organization.personal.where(personal_owner_id: user_ids).pluck(:personal_owner_id, :id).to_h
+      @mapped_twice = repeated(organization_ids)
+      @users_mapped_twice = repeated(user_ids)
     end
+
+    def repeated(ids) = ids.tally.select { |_, count| count > 1 }.keys
 
     def conflict_for(user_id, organization_id)
       organization = @organizations[organization_id]
@@ -101,12 +103,16 @@ module Organizations
       return :user_mapped_twice if @users_mapped_twice.include?(user_id)
       return :organization_mapped_twice if @mapped_twice.include?(organization_id)
       return :not_the_owner unless @owners[organization_id] == user_id
-      if organization.personal_owner_id.present? && organization.personal_owner_id != user_id
-        return :organization_personal_for_another_user
-      end
-      return :user_has_another_personal_organization if @linked[user_id] && @linked[user_id] != organization_id
 
-      nil
+      link_conflict(user_id, organization)
+    end
+
+    def link_conflict(user_id, organization)
+      if organization.personal_owner_id.present? && organization.personal_owner_id != user_id
+        :organization_personal_for_another_user
+      elsif @linked[user_id] && @linked[user_id] != organization.id
+        :user_has_another_personal_organization
+      end
     end
 
     def id_of(record)
