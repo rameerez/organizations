@@ -207,6 +207,33 @@ class VocabularyTest < Organizations::Test
     assert_equal "Patron", helper.organization_role_info(:member, organization: @library)[:label]
   end
 
+  test "a nil organization is no organization" do
+    use_resolver
+
+    assert_equal I18n.t("organizations.roles.member"), Organizations.t("roles.member", organization: nil)
+    assert_equal I18n.t("organizations.mailers.invitation.title"),
+                 Organizations.t(:"mailers.invitation.title", organization: nil)
+  end
+
+  test "an object that is not an organization record is a plain interpolation value" do
+    use_resolver
+    presenter = Struct.new(:name).new("Riverside School")
+
+    assert_equal "Member", Organizations.t("roles.member", organization: presenter)
+  end
+
+  test "a resolver that raises or returns a bad name selects the ordinary translations" do
+    Organizations.configure { |c| c.vocabulary = ->(_org) { raise "metadata is nil" } }
+    _out, err = capture_io { assert_equal "Member", Organizations.t("roles.member", organization: @school) }
+
+    assert_match "resolver failed", err
+
+    Organizations.configure { |c| c.vocabulary = ->(_org) { "classroom.roles" } }
+    _out, err = capture_io { assert_equal "Member", Organizations.t("roles.member", organization: @school) }
+
+    assert_match "Ignored vocabulary", err
+  end
+
   test "vocabulary must be nil, a Symbol, a String or callable" do
     assert_raises(Organizations::ConfigurationError) { Organizations.configure { |c| c.vocabulary = 42 } }
   end

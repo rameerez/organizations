@@ -27,7 +27,7 @@
 - A revoked domain never admits, whatever `require_verified_domains` says. The admission locks the matched domain or roster row, so a concurrent revocation or removal either finishes first or waits.
 
 - `Organizations.t` treats an `organization:` that is an `Organizations::Organization` record as the vocabulary selector, and interpolates its name. A String keeps working as before.
-- `handle_unauthorized` takes `organization:` (default: the current organization) for the message's vocabulary. The organization CRUD controller passes the organization it checked.
+- `handle_unauthorized` takes `organization:` (default: the current organization) for the message's vocabulary and for `NotAuthorized#organization`. The organization CRUD controller passes the organization it checked, so the error now names that organization.
 - The views of `rails g organizations:views` print role labels through `organization_role_label(role, organization:)` instead of `role.capitalize`. A custom role such as `team_lead` now reads "Team lead", the same as the gem's other labels. Views you copied earlier are not changed.
 - The dummy app's reference join and access controllers are now `OrganizationJoinsController` and `OrganizationAccessController`, with `organization_*` route names. They are the generator's templates.
 

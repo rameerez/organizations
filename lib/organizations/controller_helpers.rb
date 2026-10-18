@@ -630,7 +630,7 @@ module Organizations
       error = Organizations::NotAuthorized.new(
         build_unauthorized_message(permission, required_role, organization),
         permission: permission,
-        organization: current_organization,
+        organization: organization,
         user: user
       )
 

@@ -315,9 +315,13 @@ module Organizations
     #   :default…) and :organization (a record or a String)
     # @return [String]
     def translate(key, **options)
+      # A nil organization is no organization: the ordinary call stays unchanged.
+      options = options.except(:organization) if options.key?(:organization) && options[:organization].nil?
       record = options[:organization].is_a?(Organizations::Organization) ? options[:organization] : nil
       options = options.merge(organization: record.name) if record
       vocabulary_key = vocabulary_key_for(key, record, options)
+      # The vocabulary key exists, so the caller's default (meant for the
+      # ordinary key) does not apply.
       return I18n.t(vocabulary_key, scope: :organizations, **options.except(:default)) if vocabulary_key
 
       I18n.t(key, scope: :organizations, **options)
@@ -357,10 +361,21 @@ module Organizations
     # without one). nil selects the ordinary translations.
     # @param organization [Organizations::Organization, nil]
     # @return [String, nil]
+    # A resolver that raises, or returns a name that is not one plain label
+    # (letters, digits, underscores), selects the ordinary translations and
+    # logs a warning: wording must never break a page or an email.
     def vocabulary_for(organization)
       setting = configuration.vocabulary
       setting = organization ? setting.call(organization) : nil if setting.respond_to?(:call)
-      setting.to_s.presence
+      name = setting.to_s.presence
+      return nil unless name
+      return name if name.match?(/\A[a-z0-9_]+\z/i)
+
+      Callbacks.log_warn("[Organizations] Ignored vocabulary #{name.inspect}: use letters, digits and underscores")
+      nil
+    rescue StandardError => e
+      Callbacks.log_warn("[Organizations] The vocabulary resolver failed: #{e.class}: #{e.message}")
+      nil
     end
 
     alias t translate

@@ -2036,7 +2036,8 @@ The rules:
 
 - **Lookup order:** when the vocabulary has the key, in the current locale or one of its I18n fallbacks, it wins. Otherwise the call is exactly the ordinary one: the `organizations.*` key with your overrides, then the caller's `default:` (Symbol defaults keep the `organizations.` scope). A resolver that returns `nil` selects the ordinary keys. Calls with an Array of keys or a custom `scope:` skip the vocabulary.
 - **A vocabulary entry is a complete translation.** Its interpolation variables must be supplied, and a plural entry needs every form your locale uses; I18n raises on a gap there instead of falling back to the ordinary key.
-- **`%{organization}`** interpolates the record's name. A String `organization:` stays a plain interpolation value, as before.
+- **`%{organization}`** interpolates the record's name. Only an `Organizations::Organization` record (or a subclass) selects a vocabulary; a String, a presenter or `nil` stays a plain interpolation value, as before.
+- **A vocabulary name is one label** (letters, digits, underscores). A resolver that raises or returns another name selects the ordinary wording and logs a warning. When the name comes from data that organization admins can edit, check it against your list of vocabularies.
 - **Count, interpolation and locale work as in I18n.** For plurals, give the vocabulary key `one:`/`other:` (and the other forms your locales need):
 
   ```ruby
