@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-18
+
+**Personal organizations, safe account deletion, domain authority, join screens, vocabularies and scoped resource grants.** This release closes issue #21. Every new feature is opt-in: an existing app that upgrades and runs `rails g organizations:upgrade` keeps its behaviour, apart from the changes listed under "Changed".
+
 ### Added
 
 - **Personal organizations** (issue #21). `config.record_personal_organizations = true` records the auto-created organization as the user's personal organization. New API: `user.personal_organization` (a lookup, never creates), `user.create_personal_organization!` (idempotent, the repair path after a failed sign-up provisioning, converges under concurrency), `org.personal?`, `org.personal_owner`, `org.convert_to_shared!`, and the scopes `Organization.personal` and `Organization.not_personal`. The link is `organizations.personal_owner_id`: unique per user, `ON DELETE SET NULL`.
@@ -15,7 +19,7 @@
 - README: a recipe for URL handles (slugs) with `OrganizationScoped` (issue #21).
 - **Vocabulary** (issue #21). `config.vocabulary` selects organization-specific wording: a Symbol for the whole app, or a callable that receives the organization. `Organizations.t(key, organization: record)` uses `organizations.vocabularies.<name>.<key>` when that key exists (in the locale or its I18n fallbacks); otherwise the call is exactly the ordinary one, defaults and options included. `%{organization}` interpolates the record's name. `Organizations.i18n_keys(key, organization:)` gives the chain for the Rails `t` helper (`_html` keys). `organization_role_label` and `organization_role_info` take `organization:`. The gem's models, mailers and controller notices pass the organization they act on; the join-code errors stay generic on purpose. The default (`nil`) changes nothing.
 - **Scoped resource grants** (optional). A membership can be limited to some records of the host app, with a capability list per record: `membership.grant!(record, capabilities:, granted_by:)`, `revoke_grant!`, `grant_for`, `granted?`, `can?(capability, record)`, `capabilities_for`, `limited_by_grants?`, `visible(relation, capability:)` and `granted_ids(type, capability:)`. Members whose role ranks below `config.full_resource_access_role` (`:admin`) see only granted records; the role's permissions stay the ceiling, so a grant narrows and never widens. `include Organizations::Grantable` adds `Model.visible_to(membership, capability:)` and `record.organization_grants`. `Organizations::Resource.new(type, id)` grants records that are not ActiveRecord models. Invitations carry grants (`send_invite_to!(..., grants: { record => caps })`, `invitation.grant!`), which move to the membership on acceptance. `Membership.with_grant_on(record)`, `Organization#grants` and `Grant.for_resource` answer "who has access". Granting checks `config.grant_management_permission` (`:edit_member_roles`), the rank rule, and, for a limited granter, its own access; an actor that is not a member is refused. Records of a model with `organization_id` stay inside their organization for `can?`, `visible_to` and `grant!`. Invitation grants are checked again at acceptance. `config.grant_capabilities` lists the allowed names. `rails g organizations:grants` adds the table; nothing changes until you run it.
-- `rails g organizations:upgrade` now adds only the migrations an install lacks: the 0.5.0 verified-joining migration and the 0.7.0 personal-organizations migration. It asks the database when it can and reads `db/migrate` otherwise. `--steps NAME…` generates exactly the named steps, for squashed histories. Before, it always generated the 0.5.0 migration, which broke installs made on 0.5.0 or later.
+- `rails g organizations:upgrade` now adds only the migrations an install lacks: the 0.5.0 verified-joining migration and the two 0.7.0 migrations (personal organizations, domain verification). It asks the database when it can and reads `db/migrate` otherwise. `--steps NAME…` generates exactly the named steps, for squashed histories. Before, it always generated the 0.5.0 migration, which broke installs made on 0.5.0 or later.
 
 ### Changed
 
@@ -23,31 +27,31 @@
 - `User#destroy` (from `has_organizations`, prepended so a host override cannot drop it) runs in its own savepoint, so an aborted destroy inside a host transaction rolls back what the deletion guard did.
 - `transfer_ownership_to!` locks the new owner's user row before the organization row (the same order as the deletion guard, so the two cannot deadlock), so a transfer cannot race the deletion of that user. `create_with_owner!` and `create_organization!` raise `ArgumentError` for a `personal_owner` who is not the new owner.
 - The account-deletion guard now locks the user row and the owned organization rows before it checks ownership. A concurrent organization creation for the user can no longer slip past the check and lose its owner membership. The default policy (`:prevent`) and its error message are unchanged, and the guard keeps its method name (`prevent_deletion_while_owning_organizations`), so a host `skip_callback` for it still works.
-
 - A domain-backed admission checks its domain (or allowlist entry) again: `verify_email_code!` refuses with `VerificationEmailNotEligible` when the matched domain was removed, revoked or blocked, or the roster entry was removed, while the code was in flight. The request stays pending, and an admin can still approve it by hand. `JoinFlow` reports this as `:email_not_eligible`. Before, the code still granted membership.
 - A revoked domain never admits, whatever `require_verified_domains` says. The admission locks the matched domain or roster row, so a concurrent revocation or removal either finishes first or waits.
-
 - `Organizations.t` treats an `organization:` that is an `Organizations::Organization` record as the vocabulary selector, and interpolates its name. A String keeps working as before.
 - `handle_unauthorized` takes `organization:` (default: the current organization) for the message's vocabulary and for `NotAuthorized#organization`. The organization CRUD controller passes the organization it checked, so the error now names that organization.
 - The views of `rails g organizations:views` print role labels through `organization_role_label(role, organization:)` instead of `role.capitalize`. A custom role such as `team_lead` now reads "Team lead", the same as the gem's other labels. Views you copied earlier are not changed.
 - The dummy app's reference join and access controllers are now `OrganizationJoinsController` and `OrganizationAccessController`, with `organization_*` route names. They are the generator's templates.
-
 - Engine controllers answer validation failures with status 422 instead of the `:unprocessable_entity` symbol, which Rack 3.2 (Rails 8.1) deprecates. The status code is the same.
 - `organization_members_data`, `organization_invitations_data` and `organization_role_info` pass the organization to the role labels (vocabulary). A host override of `organization_role_label` that takes only the role keeps working.
 
 ### Development
 
 - RuboCop runs in CI, and the 8 open offenses are fixed (`rubocop:disable-next`, RuboCop 1.92+).
-- SimpleCov uses its 1.x API (`skip`, `cover`, `SimpleCov.start` in the test helper): no deprecation output.
+- SimpleCov uses its 1.x API (`skip`, `cover`, `SimpleCov.start` in the test helper) with no deprecation output, and still works with 0.22 on Ruby 3.2. CI enforces a coverage floor for the full suite.
 - The Appraisal gemfiles are regenerated from the Gemfile.
 - New coverage for the permission helpers and the hierarchy with custom roles (`test/custom_role_helpers_test.rb`).
 - README: the public API of the models, the helpers, `Roles` and `JoinState` is documented, with the authorization limits of `authorize_role_change!`, the join request decisions and `grant.allows?`; every configuration option is in the configuration block; the "Future API" example for bulk invitations, which does not exist, is gone.
-- `.simplecov` works with SimpleCov 0.22 (Ruby 3.2) and 1.x.
 - The CI step that uploaded a test report directory that nothing writes is gone.
 
 ### Upgrading
 
-Run `rails g organizations:upgrade && rails db:migrate`. Existing organizations stay unclassified until you backfill them. Existing domains start unverified with the `"none"` policy: verify them before you turn on `require_verified_domains`.
+1. Run `rails g organizations:upgrade && rails db:migrate`. It adds `organizations.personal_owner_id` and the domain verification columns, and nothing else.
+2. Existing organizations stay unclassified: link reviewed personal organizations with `Organization.backfill_personal_owners!(mapping, dry_run: true)`, then without `dry_run`.
+3. Existing domains start unverified with the `"none"` policy: verify them before you turn on `require_verified_domains`.
+4. Optional features need their own step: `rails g organizations:grants` (scoped resource grants) and `rails g organizations:join` (join and access screens).
+5. Check the behaviour changes above: `transfer_ownership_to!` on a personal organization, the re-check of domain-backed admissions, and `NotAuthorized#organization` from the organization CRUD controller.
 
 ## [0.6.1] - 2026-10-18
 
