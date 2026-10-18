@@ -59,7 +59,7 @@
       </div>
       <div>
         <p class="text-sm text-gray-500">Your Role</p>
-        <p class="text-2xl font-bold text-gray-900"><%= current_user.role_in(@organization)&.capitalize || "N/A" %></p>
+        <p class="text-2xl font-bold text-gray-900"><%= (role = current_user.role_in(@organization)) ? organization_role_label(role, organization: @organization) : "N/A" %></p>
       </div>
     </div>
   </div>
@@ -117,7 +117,7 @@
                   when 'member' then 'bg-blue-100 text-blue-800'
                   else 'bg-gray-100 text-gray-700'
                   end %>">
-              <%= membership.role.capitalize %>
+              <%= organization_role_label(membership.role, organization: @organization) %>
             </span>
           </div>
 
@@ -126,7 +126,7 @@
             <div class="flex items-center gap-2">
               <%= form_with(model: membership, url: organizations.membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
                 <%= form.select :role,
-                  Organizations::Roles.hierarchy.reject { |r| r == :owner }.map { |role| [role.to_s.capitalize, role] },
+                  Organizations::Roles.hierarchy.reject { |r| r == :owner }.map { |role| [organization_role_label(role, organization: @organization), role] },
                   { selected: membership.role },
                   class: "rounded-md border-gray-300 text-xs focus:border-slate-500 focus:ring-slate-500 py-1" %>
                 <%= form.submit "Update",

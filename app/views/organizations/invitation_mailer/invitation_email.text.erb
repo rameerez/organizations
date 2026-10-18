@@ -1,18 +1,18 @@
-<%= Organizations.t(:"mailers.invitation.title", organization: @organization.name) %>
+<%= Organizations.t(:"mailers.invitation.title", organization: @organization) %>
 
-<%= Organizations.t(:"mailers.invitation.greeting") %>
+<%= Organizations.t(:"mailers.invitation.greeting", organization: @organization) %>
 
-<% if @inviter %><%= Organizations.t(:"mailers.invitation.invited_by", inviter: @inviter_name, organization: @organization.name) %><% else %><%= Organizations.t(:"mailers.invitation.invited_generic", organization: @organization.name) %><% end %>
+<% if @inviter %><%= Organizations.t(:"mailers.invitation.invited_by", organization: @organization, inviter: @inviter_name) %><% else %><%= Organizations.t(:"mailers.invitation.invited_generic", organization: @organization) %><% end %>
 
-<%= Organizations.t(:"mailers.invitation.joining_as", role: Organizations.t(:"roles.#{@invitation.role}", default: @invitation.role.to_s.capitalize)) %>
+<%= Organizations.t(:"mailers.invitation.joining_as", organization: @organization, role: Organizations.t(:"roles.#{@invitation.role}", organization: @organization, default: @invitation.role.to_s.capitalize)) %>
 
-<%= Organizations.t(:"mailers.invitation.accept_cta") %>
+<%= Organizations.t(:"mailers.invitation.accept_cta", organization: @organization) %>
 <%= @accept_url %>
 
 <% if @expires_on %>
-<%= Organizations.t(:"mailers.invitation.expires_on", date: @expires_on) %>
+<%= Organizations.t(:"mailers.invitation.expires_on", organization: @organization, date: @expires_on) %>
 <% end %>
 
 ---
 
-<%= Organizations.t(:"mailers.invitation.ignore") %>
+<%= Organizations.t(:"mailers.invitation.ignore", organization: @organization) %>

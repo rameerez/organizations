@@ -166,6 +166,7 @@ Metrics/ClassLength:
     - 'test/role_assignment_cap_test.rb'
     - 'test/roles_test.rb'
     - 'test/view_helpers_test.rb'
+    - 'test/vocabulary_test.rb'
 
 # Offense count: 8
 # Configuration parameters: AllowedMethods, AllowedPatterns, Max.

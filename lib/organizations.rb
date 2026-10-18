@@ -298,13 +298,86 @@ module Organizations
     # Hosts override any key the standard Rails way — app locale files load
     # after engine locale files, so the host's value wins.
     #
-    # @param key [String, Symbol] key under the `organizations.` scope,
+    # VOCABULARY (config.vocabulary): pass the organization record as
+    # `organization:`. When the selected vocabulary has the key
+    # (`organizations.vocabularies.<vocabulary>.<key>`, in the current locale
+    # or one of its I18n fallbacks), that translation wins. Otherwise the call
+    # is exactly the ordinary one: same key, scope, defaults and options.
+    # `%{organization}` interpolates the record's name. A String
+    # `organization:` stays a plain interpolation value, as before. Calls
+    # with an Array key or a custom `scope:` skip the vocabulary.
+    #
+    #   Organizations.t("roles.member", organization: school)  # => "Student"
+    #
+    # @param key [String, Symbol, Array] key under the `organizations.` scope,
     #   e.g. :"errors.join_code_invalid" or "roles.owner"
-    # @param options [Hash] I18n options (interpolations, :locale, :default…)
+    # @param options [Hash] I18n options (interpolations, :locale, :count,
+    #   :default…) and :organization (a record or a String)
     # @return [String]
-    def translate(key, **)
-      I18n.t(key, scope: :organizations, **)
+    def translate(key, **options)
+      # A nil organization is no organization: the ordinary call stays unchanged.
+      options = options.except(:organization) if options.key?(:organization) && options[:organization].nil?
+      record = options[:organization].is_a?(Organizations::Organization) ? options[:organization] : nil
+      options = options.merge(organization: record.name) if record
+      vocabulary_key = vocabulary_key_for(key, record, options)
+      # The vocabulary key exists, so the caller's default (meant for the
+      # ordinary key) does not apply.
+      return I18n.t(vocabulary_key, scope: :organizations, **options.except(:default)) if vocabulary_key
+
+      I18n.t(key, scope: :organizations, **options)
     end
+
+    # The I18n lookup chain for a key, most specific first: the vocabulary
+    # key (when config.vocabulary selects one for this organization), then
+    # the ordinary key. Absolute keys, for the Rails `t` view helper (needed
+    # for `_html` keys):
+    #
+    #   primary, *fallbacks = Organizations.i18n_keys(:"mailers.invitation.invited_by_html", organization: org)
+    #   t(primary, default: fallbacks, inviter: name, organization: org.name)
+    #
+    # @param key [String, Symbol]
+    # @param organization [Organizations::Organization, nil]
+    # @return [Array<Symbol>]
+    def i18n_keys(key, organization: nil)
+      ordinary = :"organizations.#{key}"
+      vocabulary = vocabulary_for(organization)
+      vocabulary ? [:"organizations.vocabularies.#{vocabulary}.#{key}", ordinary] : [ordinary]
+    end
+
+    # @api private
+    # The vocabulary key to use for this call, or nil for the ordinary call.
+    def vocabulary_key_for(key, record, options)
+      return nil if key.is_a?(Array) || options.key?(:scope)
+
+      vocabulary = vocabulary_for(record)
+      return nil unless vocabulary
+
+      candidate = :"vocabularies.#{vocabulary}.#{key}"
+      I18n.exists?(candidate, scope: :organizations, locale: options[:locale] || I18n.locale) ? candidate : nil
+    end
+
+    # The vocabulary config.vocabulary selects: a Symbol/String for the whole
+    # app, or a callable that receives the organization (never called
+    # without one). nil selects the ordinary translations.
+    # @param organization [Organizations::Organization, nil]
+    # @return [String, nil]
+    # A resolver that raises, or returns a name that is not one plain label
+    # (letters, digits, underscores), selects the ordinary translations and
+    # logs a warning: wording must never break a page or an email.
+    def vocabulary_for(organization)
+      setting = configuration.vocabulary
+      setting = organization ? setting.call(organization) : nil if setting.respond_to?(:call)
+      name = setting.to_s.presence
+      return nil unless name
+      return name if name.match?(/\A[a-z0-9_]+\z/i)
+
+      Callbacks.log_warn("[Organizations] Ignored vocabulary #{name.inspect}: use letters, digits and underscores")
+      nil
+    rescue StandardError => e
+      Callbacks.log_warn("[Organizations] The vocabulary resolver failed: #{e.class}: #{e.message}")
+      nil
+    end
+
     alias t translate
   end
 end

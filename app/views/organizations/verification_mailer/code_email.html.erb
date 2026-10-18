@@ -7,16 +7,16 @@
     <%# _html key via the view `t` helper: html_safe translation, escaped
         interpolations (the org name is user input). Source:
         https://guides.rubyonrails.org/i18n.html#using-safe-html-translations %>
-    <p><%= t("organizations.mailers.verification.lead_html", organization: @organization.name) %></p>
+    <p><% primary, *fallbacks = Organizations.i18n_keys(:"mailers.verification.lead_html", organization: @organization) %><%= t(primary, default: fallbacks, organization: @organization.name) %></p>
 
     <p style="font-size: 32px; font-weight: 700; letter-spacing: 6px; background: #f3f4f6; border-radius: 8px; display: inline-block; padding: 12px 24px;">
       <%= @code %>
     </p>
 
-    <p><%= Organizations.t(:"mailers.verification.expires", minutes: @expires_in_minutes) %></p>
+    <p><%= Organizations.t(:"mailers.verification.expires", organization: @organization, minutes: @expires_in_minutes) %></p>
 
     <p style="color: #6b7280; font-size: 14px;">
-      <%= Organizations.t(:"mailers.verification.ignore", organization: @organization.name) %>
+      <%= Organizations.t(:"mailers.verification.ignore", organization: @organization) %>
     </p>
   </body>
 </html>

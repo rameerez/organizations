@@ -252,7 +252,7 @@ module Organizations
         organization.lock!
         lock!
         if organization.memberships.exists?(user_id: operator.id)
-          raise Organizations::NotAuthorized.new(Organizations.t(:"errors.domain_operator_is_member"),
+          raise Organizations::NotAuthorized.new(Organizations.t(:"errors.domain_operator_is_member", organization: organization),
                                                  organization: organization, user: operator)
         end
 
@@ -342,7 +342,7 @@ module Organizations
     def domain_not_blocked
       return if domain.blank? || !blocked?
 
-      errors.add(:domain, Organizations.t(:"attributes.domain_blocked"))
+      errors.add(:domain, Organizations.t(:"attributes.domain_blocked", organization: organization))
     end
 
     def normalize_domain
@@ -357,7 +357,7 @@ module Organizations
       return if domain.blank? # presence validation covers this
 
       unless domain.match?(/\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/)
-        errors.add(:domain, Organizations.t(:"attributes.domain_invalid"))
+        errors.add(:domain, Organizations.t(:"attributes.domain_invalid", organization: organization))
       end
     end
   end

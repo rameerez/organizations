@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= Organizations.t(:"mailers.invitation.title", organization: @organization.name) %></title>
+  <title><%= Organizations.t(:"mailers.invitation.title", organization: @organization) %></title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -53,11 +53,11 @@
 </head>
 <body>
   <div class="header">
-    <h1><%= Organizations.t(:"mailers.invitation.header") %></h1>
+    <h1><%= Organizations.t(:"mailers.invitation.header", organization: @organization) %></h1>
   </div>
 
   <div class="content">
-    <p><%= Organizations.t(:"mailers.invitation.greeting") %></p>
+    <p><%= Organizations.t(:"mailers.invitation.greeting", organization: @organization) %></p>
 
     <p>
       <%# The *_html keys go through the view `t` helper: its _html-suffix
@@ -65,36 +65,36 @@
           interpolated value (inviter/org names are user input). Source:
           https://guides.rubyonrails.org/i18n.html#using-safe-html-translations %>
       <% if @inviter %>
-        <%= t("organizations.mailers.invitation.invited_by_html", inviter: @inviter_name, organization: @organization.name) %>
+        <% primary, *fallbacks = Organizations.i18n_keys(:"mailers.invitation.invited_by_html", organization: @organization) %><%= t(primary, default: fallbacks, inviter: @inviter_name, organization: @organization.name) %>
       <% else %>
-        <%= t("organizations.mailers.invitation.invited_generic_html", organization: @organization.name) %>
+        <% primary, *fallbacks = Organizations.i18n_keys(:"mailers.invitation.invited_generic_html", organization: @organization) %><%= t(primary, default: fallbacks, organization: @organization.name) %>
       <% end %>
     </p>
 
     <p>
-      <%= Organizations.t(:"mailers.invitation.joining_as_label") %>
-      <span class="role-badge"><%= Organizations.t(:"roles.#{@invitation.role}", default: @invitation.role.to_s.capitalize) %></span>
+      <%= Organizations.t(:"mailers.invitation.joining_as_label", organization: @organization) %>
+      <span class="role-badge"><%= Organizations.t(:"roles.#{@invitation.role}", organization: @organization, default: @invitation.role.to_s.capitalize) %></span>
     </p>
 
     <p style="text-align: center;">
-      <a href="<%= @accept_url %>" class="button"><%= Organizations.t(:"mailers.invitation.accept_button") %></a>
+      <a href="<%= @accept_url %>" class="button"><%= Organizations.t(:"mailers.invitation.accept_button", organization: @organization) %></a>
     </p>
 
     <p>
-      <%= Organizations.t(:"mailers.invitation.copy_link") %><br>
+      <%= Organizations.t(:"mailers.invitation.copy_link", organization: @organization) %><br>
       <a href="<%= @accept_url %>"><%= @accept_url %></a>
     </p>
 
     <% if @expires_on %>
     <p style="color: #666; font-size: 14px;">
-      <%= Organizations.t(:"mailers.invitation.expires_on", date: @expires_on) %>
+      <%= Organizations.t(:"mailers.invitation.expires_on", organization: @organization, date: @expires_on) %>
     </p>
     <% end %>
   </div>
 
   <div class="footer">
     <p>
-      <%= Organizations.t(:"mailers.invitation.ignore") %>
+      <%= Organizations.t(:"mailers.invitation.ignore", organization: @organization) %>
     </p>
   </div>
 </body>

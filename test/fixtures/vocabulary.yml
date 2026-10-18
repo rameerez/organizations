@@ -1,0 +1,31 @@
+# Vocabulary translations for test/vocabulary_test.rb (a host app keeps
+# these in config/locales/*.yml).
+en:
+  organizations:
+    fallback_probe: "scoped default"
+    members_count:
+      one: "%{count} member"
+      other: "%{count} members"
+    vocabularies:
+      classroom:
+        roles:
+          member: "Student"
+          admin: "Teacher"
+        members_count:
+          one: "%{count} student"
+          other: "%{count} students"
+        mailers:
+          invitation:
+            subject: "%{inviter} added you to the class %{organization}"
+            invited_by_html: "<strong>%{inviter}</strong> enrolled you in <strong>%{organization}</strong>"
+        errors:
+          join_request_already_decided: "This enrolment has already been %{status}."
+      library:
+        roles:
+          member: "Patron"
+es:
+  organizations:
+    vocabularies:
+      classroom:
+        roles:
+          member: "Alumno"

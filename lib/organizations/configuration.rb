@@ -107,6 +107,16 @@ module Organizations
 
     ACCOUNT_DELETION_POLICIES = %i[prevent destroy_personal_organization].freeze
 
+    # === Vocabulary (v0.7.0) ===
+    # Organization-specific wording, display text only. nil (default) keeps
+    # the ordinary translations. A Symbol/String selects one vocabulary for
+    # the whole app; a callable receives the organization:
+    #   config.vocabulary = :classroom
+    #   config.vocabulary = ->(organization) { organization.metadata["vocabulary"] }
+    # Translations live under organizations.vocabularies.<name>.* in your
+    # locale files; a missing key falls back to the ordinary one.
+    attr_accessor :vocabulary
+
     # === Invitations ===
     # How long invitations are valid
     attr_accessor :invitation_expiry
@@ -315,6 +325,7 @@ module Organizations
       @always_create_personal_organization_for_each_user = false
       @default_organization_name = "Personal"
       @record_personal_organizations = false
+      @vocabulary = nil
       @account_deletion_policy = :prevent
 
       # Invitation defaults
@@ -590,6 +601,7 @@ module Organizations
     def validate!
       validate_authentication_methods!
       validate_personal_organization_settings!
+      validate_vocabulary!
       validate_invitation_settings!
       validate_verification_settings!
       validate_domain_authority_settings!
@@ -614,6 +626,12 @@ module Organizations
       unless @authenticate_user_method.is_a?(Symbol)
         raise ConfigurationError, "authenticate_user_method must be a Symbol"
       end
+    end
+
+    def validate_vocabulary!
+      return if @vocabulary.nil? || @vocabulary.is_a?(Symbol) || @vocabulary.is_a?(String) || @vocabulary.respond_to?(:call)
+
+      raise ConfigurationError, "vocabulary must be nil, a Symbol, a String, or callable (receives the organization)"
     end
 
     def validate_personal_organization_settings!

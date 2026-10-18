@@ -1553,6 +1553,9 @@ Organizations.configure do |config|
   # Custom mailer for invitations
   config.invitation_mailer = "Organizations::InvitationMailer"
 
+  # === Vocabulary (see "Vocabulary") ===
+  config.vocabulary = nil                             # or :classroom, or ->(organization) { ... }
+
   # === Domain authority (see "Domain authority") ===
   config.require_verified_domains = false             # admit only through verified domains
   config.domain_verification_record_prefix = "_organizations-verification"
@@ -1984,7 +1987,83 @@ en:
       join_code_invalid: "Hmm, that code doesn't work."
 ```
 
-Two deliberate boundaries: developer-facing errors (`ArgumentError`, `ConfigurationError`) stay English, and custom roles defined via `config.roles` fall back to `humanize` unless you add a matching `organizations.roles.<name>` key.
+Two deliberate boundaries: developer-facing errors (`ArgumentError`, `ConfigurationError`) stay English, and custom roles defined via `config.roles` fall back to `humanize` unless you add a matching `organizations.roles.<name>` key. For wording that differs per organization, see "Vocabulary" below.
+
+### Vocabulary: different words for different organizations
+
+A school calls its members students; a library calls them patrons. For one wording everywhere, override the ordinary keys as shown above. For organizations that need different wording, select a vocabulary:
+
+```ruby
+# One vocabulary for the whole app
+config.vocabulary = :classroom
+
+# Or one per organization, from your own data (called only with an organization)
+config.vocabulary = ->(organization) { organization.metadata["vocabulary"] }
+```
+
+Then add only the keys that differ, under `organizations.vocabularies.<name>`:
+
+```yaml
+# config/locales/en.yml
+en:
+  organizations:
+    vocabularies:
+      classroom:
+        roles:
+          member: "Student"
+          admin: "Teacher"
+        mailers:
+          invitation:
+            # A full sentence, not a noun inserted into an English sentence:
+            # other languages need their own word order.
+            subject: "%{inviter} added you to the class %{organization}"
+      library:
+        roles:
+          member: "Patron"
+```
+
+Pass the organization record:
+
+```ruby
+Organizations.t("roles.member", organization: school)    # => "Student"
+Organizations.t("roles.member", organization: library)   # => "Patron"
+Organizations.t("roles.owner", organization: school)     # => "Owner" (missing in the vocabulary: the ordinary key)
+Organizations.t("roles.member")                          # => "Member" (no organization: the resolver is not called)
+organization_role_label(:member, organization: school)   # view helper => "Student"
+```
+
+The rules:
+
+- **Lookup order:** when the vocabulary has the key, in the current locale or one of its I18n fallbacks, it wins. Otherwise the call is exactly the ordinary one: the `organizations.*` key with your overrides, then the caller's `default:` (Symbol defaults keep the `organizations.` scope). A resolver that returns `nil` selects the ordinary keys. Calls with an Array of keys or a custom `scope:` skip the vocabulary.
+- **A vocabulary entry is a complete translation.** Its interpolation variables must be supplied, and a plural entry needs every form your locale uses; I18n raises on a gap there instead of falling back to the ordinary key.
+- **`%{organization}`** interpolates the record's name. Only an `Organizations::Organization` record (or a subclass) selects a vocabulary; a String, a presenter or `nil` stays a plain interpolation value, as before.
+- **A vocabulary name is one label** (letters, digits, underscores). A resolver that raises or returns another name selects the ordinary wording and logs a warning. When the name comes from data that organization admins can edit, check it against your list of vocabularies.
+- **Count, interpolation and locale work as in I18n.** For plurals, give the vocabulary key `one:`/`other:` (and the other forms your locales need):
+
+  ```ruby
+  Organizations.t("members_count", organization: school, count: 3)   # => "3 students"
+  ```
+
+- **The organization is always explicit.** The gem never reads it from the session or a thread-global. Its own controllers, models and mailers pass the organization they act on, so two organizations rendered in one request, or interleaved jobs, never share wording.
+- **Mailers and background jobs:** pass the organization and set the locale, as with any I18n call:
+
+  ```ruby
+  I18n.with_locale(user.locale) do
+    Organizations.t(:"mailers.invitation.subject", organization: invitation.organization, inviter: inviter.name)
+  end
+  ```
+
+- **`_html` keys** in your own views go through the Rails `t` helper (it escapes interpolations). Get the lookup chain from the gem:
+
+  ```erb
+  <% primary, *fallbacks = Organizations.i18n_keys(:"mailers.invitation.invited_by_html", organization: @organization) %>
+  <%= t(primary, default: fallbacks, inviter: @inviter_name, organization: @organization.name) %>
+  ```
+
+- **Display text only.** Calling an admin a teacher changes no stored role name, permission or authorization.
+- **Custom mailers and copied mailer views** that pass `organization: @organization.name` keep working, with the ordinary wording. Pass the record (`organization: @organization`) to get the vocabulary.
+- **Views copied before 0.7.0** print `role.capitalize`. To adopt vocabularies, change those calls to `organization_role_label(role, organization: the_organization)`, as the current `rails g organizations:views` templates do.
+- **Join codes keep one generic message.** The invalid-code and exhausted-code errors ignore the vocabulary, so a code's message never reveals which organization it belongs to.
 
 ## Database schema
 
