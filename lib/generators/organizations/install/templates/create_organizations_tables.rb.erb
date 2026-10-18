@@ -132,6 +132,15 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
       t.string :domain, null: false
       t.send(json_column_type, :membership_metadata, null: json_column_null, default: json_column_default)
       t.send(json_column_type, :metadata, null: json_column_null, default: json_column_default)
+      # Domain authority: the sign-up policy (none|suggest|auto_join) and the
+      # proof of control (DNS TXT challenge or operator approval).
+      t.string :join_policy, null: false, default: "none"
+      t.string :verification_token
+      t.datetime :verification_started_at
+      t.datetime :verified_at
+      t.string :verification_method
+      t.references :verified_by, null: true, type: foreign_key_type, foreign_key: { to_table: :users, on_delete: :nullify }
+      t.datetime :verification_revoked_at
 
       t.timestamps
     end

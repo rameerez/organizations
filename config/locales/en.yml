@@ -97,6 +97,13 @@ en:
       transfer_to_non_member: "Cannot transfer ownership to a non-member"
       transfer_to_non_admin: "Cannot transfer ownership to non-admin. Promote them to admin first."
       transfer_personal_organization: "A personal organization stays with its owner. Convert it to a shared organization first."
+      domain_operator_is_member: "A member of the organization cannot approve its own domain claim."
+      domain_verification:
+        not_started: "Start the domain verification first."
+        expired: "The domain verification expired. Start it again."
+        changed: "The domain claim changed during the check. Start the verification again."
+        record_not_found: "The DNS TXT record was not found. DNS changes can take a while to spread."
+        lookup_failed: "The DNS lookup failed. Try again later."
 
       # — Leaving / user-level —
       cannot_leave_as_last_owner: "Cannot leave organization as the only owner. Transfer ownership first."
@@ -126,6 +133,8 @@ en:
       membership_taken: "is already a member of this organization"
       owner_taken: "owner already exists for this organization"
       personal_owner_not_owner: "must be the owner of the organization"
+      domain_blocked: "is a public email provider and cannot be claimed by an organization"
+      join_policy_invalid: "must be none, suggest or auto_join"
       pending_request_taken: "already has a pending request for this organization"
       invitation_taken: "has already been invited to this organization"
       allowlist_taken: "is already on this organization's allowlist"

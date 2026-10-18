@@ -147,6 +147,7 @@ Metrics/BlockNesting:
 Metrics/ClassLength:
   Exclude:
     - 'lib/organizations/configuration.rb'
+    - 'lib/organizations/models/domain.rb'
     - 'lib/organizations/models/invitation.rb'
     - 'lib/organizations/models/organization.rb'
     - 'test/account_deletion_test.rb'
@@ -155,6 +156,7 @@ Metrics/ClassLength:
     - 'test/configuration_test.rb'
     - 'test/controller_helpers_test.rb'
     - 'test/data_integrity_test.rb'
+    - 'test/domain_authority_test.rb'
     - 'test/models/invitation_test.rb'
     - 'test/models/membership_test.rb'
     - 'test/models/organization_test.rb'

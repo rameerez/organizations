@@ -71,6 +71,20 @@ module Organizations
     end
   end
 
+  # Domain authority: why a DNS verification failed. reason is one of
+  # :not_started, :expired, :changed (the claim changed during the check),
+  # :record_not_found, :lookup_failed.
+  class DomainVerificationFailed < Error
+    REASONS = %i[not_started expired changed record_not_found lookup_failed].freeze
+
+    attr_reader :reason
+
+    def initialize(reason)
+      @reason = reason
+      super(Organizations.t(:"errors.domain_verification.#{reason}"))
+    end
+  end
+
   # Join code errors (verified joining)
   # JoinCodeInvalid covers unknown, revoked, and expired codes — hosts should
   # show the same generic message for all three (don't leak which codes exist).
@@ -106,6 +120,7 @@ module Organizations
   autoload :MetadataFlags, "organizations/metadata_flags"
   autoload :OrganizationScoped, "organizations/organization_scoped"
   autoload :PersonalOwnerBackfill, "organizations/personal_owner_backfill"
+  autoload :PUBLIC_EMAIL_DOMAINS, "organizations/public_email_domains"
   autoload :AccountDeletionPlan, "organizations/account_deletion_plan"
 
   # Alias for README compatibility: `include Organizations::Controller`

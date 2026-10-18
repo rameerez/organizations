@@ -284,6 +284,96 @@ org.import_allowlist!(["ana@gmail.com", "luis@yahoo.es"], source: "csv_2026-07")
 # nothing without inbox access. The entry is claimed on join.
 ```
 
+### Domain authority: prove that the organization controls the domain
+
+An emailed code proves that one person controls one inbox. It does not prove that the organization may claim the whole domain: a student with an `@university.edu` inbox is not the university. Before you let untrusted organizers enroll domains themselves, require a proof of control per organization and turn on `require_verified_domains`:
+
+```ruby
+config.require_verified_domains = true   # default: false (unverified domains work as before)
+```
+
+The proof is a DNS TXT record with an unpredictable token. The token belongs to one claim: one organization and one exact domain.
+
+```ruby
+domain = org.add_domain!("acme.com")
+domain.start_verification!                 # new token; the challenge stays open 7 days
+domain.verification_record_name            # => "_organizations-verification.acme.com"
+domain.verification_record_value           # => "organizations-verification=Qm9…"
+# The organization's admin publishes that TXT record, then:
+domain.verify!                             # => domain
+# On failure it raises Organizations::DomainVerificationFailed, and
+# error.reason is :not_started, :expired, :changed, :record_not_found or :lookup_failed.
+```
+
+Or record an approval by a platform operator who checked the claim another way. A member of the claiming organization cannot approve its own claim (`NotAuthorized`); deciding who is platform staff is your app's job:
+
+```ruby
+domain.verify_by_operator!(operator: staff_user, note: "Registrar record checked, ticket 4411")
+domain.verification_method   # => "operator"; domain.verified_by => staff_user
+```
+
+Later:
+
+```ruby
+domain.verified?                 # proven and not revoked
+domain.revoke_verification!(reason: "domain sold")   # stops new domain-backed admissions; members stay
+domain.recheck_verification!     # re-reads the TXT record and revokes when it is gone (schedule it if you like)
+domain.start_verification!       # a new challenge: rotates the token and clears an earlier verification
+Organizations::Domain.verified   # scope
+```
+
+The rules:
+
+- **A verification does not expire on its own.** The 7-day TTL is for the open challenge only. Domains change hands: schedule `recheck_verification!` (for DNS proofs) or review operator approvals, and revoke what no longer holds.
+- **Authority columns are privileged.** Only the methods above write `verified_at`, `verification_method`, `verified_by_id` and `verification_revoked_at`. Never let request params reach them: permit only `domain` and `join_policy` in your admin forms, and authorize who may call `verify!` and `verify_by_operator!`.
+- **A proof belongs to one claim.** Moving a domain row to another organization, changing its domain, or copying it (`dup`) clears the proof. A revocation stays until a new proof succeeds, also after `start_verification!`.
+- **Exact domains only.** No subdomain or suffix authority, and no global exclusivity: two departments can each prove their own claim of the same domain.
+- **Changing `domain.domain` clears the verification and the token.** Start again.
+- **Every domain path checks the same rule** (`Organizations::Domain.joinable`): the emailed challenge, the confirmed-account-email shortcut, domain-restricted join codes and `JoinFlow`. It checks again at admission: a domain (or allowlist entry) removed, revoked or blocked while a code was in flight admits nobody. An admin can still approve such a pending request by hand.
+- **A revoked domain never admits**, also with `require_verified_domains` off. Existing members stay.
+- **Existing domains start unverified.** Nothing is grandfathered. Verify them before you turn on `require_verified_domains`.
+- **Invitations, plain codes and allowlists stay separate grants.** They do not depend on domain authority.
+- Rate-limit the endpoint that calls `verify!`, and tell joiners which organization will see their address before they submit it.
+
+Configuration:
+
+```ruby
+config.domain_verification_record_prefix = "_myapp-verification"   # your brand in the DNS label
+config.domain_verification_ttl = 7.days        # how long a challenge stays open
+config.domain_verification_timeout = 5         # seconds for the built-in Resolv lookup
+config.domain_txt_resolver = ->(name) { MyDns.txt(name) }           # custom lookup, returns [String]
+```
+
+**Blocking public email providers (opt-in).** A preset ships with the gem:
+
+```ruby
+config.blocked_email_domains = Organizations::PUBLIC_EMAIL_DOMAINS   # default: []
+```
+
+A blocked domain cannot be enrolled, and an existing row for it stops admitting. People with those addresses can still join by invitation, code or allowlist. The list is defence in depth, not proof of authority and not an authorization boundary: an unlisted provider is not trusted because it is unlisted.
+
+### Sign-up domain policies: none, suggest, auto-join
+
+Each domain has a `join_policy` for people who sign up with a confirmed account email at that domain. The policy acts only while the domain is verified, and only when the account email is confirmed (Devise `:confirmable` or similar) and `trust_confirmed_account_email` is on:
+
+| `join_policy` | What happens |
+|---|---|
+| `"none"` (default) | Nothing. The explicit join flows work as before. |
+| `"suggest"` | The organization appears in `user.suggested_organizations`. The user still chooses to join. |
+| `"auto_join"` | The user joins after sign-up, or right after confirming the email, through the membership gate (`on_member_joining` can veto). |
+
+```ruby
+org.add_domain!("acme.com", join_policy: :suggest)
+domain.update!(join_policy: :auto_join)
+domain.effective_join_policy           # => :none until the domain is verified
+
+current_user.suggested_organizations   # verified "suggest" or "auto_join" domains, minus orgs they are in
+org.join_with_account_email!(current_user)   # the "Join" button for a suggestion
+current_user.join_organizations_by_domain!   # what auto-join runs; idempotent, returns memberships
+```
+
+Auto-join runs in an `after_commit` on the user when `confirmed_at` changes, and never breaks a sign-up: a veto or an already-claimed email skips that organization and logs it. Changing the email of an account that stays confirmed does not trigger it, because nothing proved the new address. The trigger reads the changes of the last save in the transaction, so set `confirmed_at` in that save (Devise does). With Devise `:reconfirmable`, confirming the new address updates `confirmed_at` and triggers it.
+
 ### Cohorts without the gem knowing (`membership_metadata`)
 
 Every join instrument (domain, code, allowlist entry, invitation) carries a `membership_metadata` hash that's merged onto memberships it creates. The gem never interprets it — it's your cohort/segmentation channel:
@@ -349,6 +439,7 @@ Layer them per surface: the gem already throttles **per request** (60s resend in
 
 - Codes are stored as **SHA-256 digests only** (peppered by row id), compared in constant time, single-use, expire after `verification_code_ttl` (15 min default), capped at `verification_max_attempts` (5) with resend throttles.
 - Emails are normalized before the uniqueness check (case, whitespace, and `+tag` plus-addressing collapse — override via `config.verification_email_normalizer`).
+- An emailed code proves one inbox, never the whole domain. Domain authority (DNS TXT or operator approval) is a separate proof per organization; turn on `require_verified_domains` before untrusted self-service enrollment (see "Domain authority").
 - Domain matching is **exact** and evasion-hardened: `acme.com.evil.com`, `evilacme.com`, multi-`@` shapes never match; subdomains are separate domains on purpose (they often mean different cohorts).
 - BYO-UI as always: the gem ships models/APIs/mailers and state; **you must rate-limit your join/redemption/verification endpoints** (see above).
 - Hard member caps belong in **`on_member_joining`** (the strict membership gate) — the `on_join_request_*` after-callbacks are error-isolated and cannot veto. Take `ctx.organization.lock!` inside the gate when the cap must hold under concurrent joins (see "Limit seats per plan").
@@ -440,6 +531,10 @@ user.is_viewer_of?(org)                 # "Is user a viewer of this org?"
 user.is_at_least?(:admin, in: org)      # "Is user at least an admin in this org?"
 user.role_in(org)                       # => :admin
 
+# Domain policies (see "Sign-up domain policies")
+user.suggested_organizations            # Organizations to offer, from verified domains
+user.join_organizations_by_domain!      # Join every verified auto_join domain (runs on its own)
+
 # Actions
 user.create_organization!("Acme")            # Positional arg
 user.create_organization!(name: "Acme")      # Keyword arg (both work)
@@ -505,7 +600,7 @@ Organizations::Organization.create_with_owner!(owner: admin, name: "Acme Corp")
 
 # Verified joining
 org.domains / org.join_codes / org.allowlist_entries / org.join_requests
-org.add_domain!("acme.com", membership_metadata: {})
+org.add_domain!("acme.com", membership_metadata: {}, join_policy: :none)
 org.generate_join_code!(label:, requires_verified_domain_email:, auto_approve:, expires_at:, max_uses:)
 org.import_allowlist!(emails, source:, membership_metadata: {})
 org.approve_join_request!(req, approved_by:) / org.reject_join_request!(req, rejected_by:, reason:)
@@ -518,6 +613,13 @@ org.join_codes.active           # SQL twin of code.active?
 # The join kit (controller/view layer — see "Verified joining")
 Organizations::JoinFlow.attempt(user:, organization:, code:, email:, verification_code:, message:)
 Organizations::JoinState.for(user:, organization:, result:)
+
+# Domain authority (see "Domain authority")
+domain.start_verification! / domain.verify! / domain.verify_by_operator!(operator:, note:)
+domain.verification_record_name / domain.verification_record_value
+domain.verified? / domain.revoked? / domain.joinable? / domain.effective_join_policy
+domain.revoke_verification!(reason:) / domain.recheck_verification!
+Organizations::Domain.verified / Organizations::Domain.joinable / Organizations::Domain.with_join_policy(:suggest)
 
 # Housekeeping
 Organizations::JoinRequest.purge_stale!(older_than: 12.months)  # GDPR sweep: old decided/expired requests
@@ -1423,6 +1525,14 @@ Organizations.configure do |config|
   # Custom mailer for invitations
   config.invitation_mailer = "Organizations::InvitationMailer"
 
+  # === Domain authority (see "Domain authority") ===
+  config.require_verified_domains = false             # admit only through verified domains
+  config.domain_verification_record_prefix = "_organizations-verification"
+  config.domain_verification_ttl = 7.days
+  config.domain_verification_timeout = 5              # seconds
+  config.domain_txt_resolver = nil                    # nil = Resolv; or ->(name) { [String] }
+  config.blocked_email_domains = []                   # e.g. Organizations::PUBLIC_EMAIL_DOMAINS
+
   # === Limits ===
   # Maximum organizations a user can own (nil = unlimited)
   config.max_organizations_per_user = nil
@@ -1876,6 +1986,11 @@ organizations_domains
   - id, organization_id (foreign key)
   - domain (string, required — stored lowercased, no leading '@')
   - membership_metadata / metadata (jsonb, default: {})
+  - join_policy (string, default: 'none': none|suggest|auto_join)
+  - verification_token (string, nullable) / verification_started_at (datetime)
+  - verified_at (datetime) / verification_method (string: dns_txt|operator)
+  - verified_by_id (foreign key to users, nullable; ON DELETE SET NULL)
+  - verification_revoked_at (datetime)
   - created_at / updated_at
 
   unique index: [organization_id, domain]; index: [domain] (email → candidate orgs)

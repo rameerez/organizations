@@ -78,6 +78,13 @@ es:
       transfer_to_non_member: "No se puede transferir la propiedad a alguien que no es miembro"
       transfer_to_non_admin: "No se puede transferir la propiedad a alguien que no es administrador. Asciéndele primero."
       transfer_personal_organization: "Una organización personal pertenece a su propietario. Conviértela primero en una organización compartida."
+      domain_operator_is_member: "Un miembro de la organización no puede aprobar su propio dominio."
+      domain_verification:
+        not_started: "Inicia primero la verificación del dominio."
+        expired: "La verificación del dominio ha caducado. Iníciala de nuevo."
+        changed: "El dominio cambió durante la comprobación. Inicia la verificación de nuevo."
+        record_not_found: "No se encontró el registro DNS TXT. Los cambios de DNS pueden tardar en propagarse."
+        lookup_failed: "La consulta DNS ha fallado. Inténtalo más tarde."
 
       cannot_leave_as_last_owner: "No puedes salir de la organización siendo su único propietario. Transfiere la propiedad primero."
       cannot_leave_last_organization: "No puedes salir de tu única organización"
@@ -102,6 +109,8 @@ es:
       membership_taken: "ya es miembro de esta organización"
       owner_taken: "ya existe un propietario para esta organización"
       personal_owner_not_owner: "debe ser el propietario de la organización"
+      domain_blocked: "es un proveedor de correo público y ninguna organización puede reclamarlo"
+      join_policy_invalid: "debe ser none, suggest o auto_join"
       pending_request_taken: "ya tiene una solicitud pendiente para esta organización"
       invitation_taken: "ya ha sido invitado a esta organización"
       allowlist_taken: "ya está en la lista de esta organización"

@@ -115,6 +115,14 @@ ActiveRecord::Schema.define do
     t.string :domain, null: false
     t.json :membership_metadata, default: {}
     t.json :metadata, default: {}
+    # Domain authority (v0.7.0) — same shape as the upgrade migration.
+    t.string :join_policy, null: false, default: "none"
+    t.string :verification_token
+    t.datetime :verification_started_at
+    t.datetime :verified_at
+    t.string :verification_method
+    t.references :verified_by, null: true, foreign_key: { to_table: :users, on_delete: :nullify }
+    t.datetime :verification_revoked_at
     t.timestamps
   end
   add_index :organizations_domains, [:organization_id, :domain], unique: true

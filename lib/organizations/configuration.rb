@@ -144,6 +144,31 @@ module Organizations
     # inbox control, skipping the emailed code when the domain matches.
     attr_accessor :trust_confirmed_account_email
 
+    # === Domain authority (v0.7.0) ===
+    # Admit through a domain only when the organization proved control of it
+    # (DNS TXT record or operator approval). Default false: unverified domains
+    # keep working as before. Turn it on BEFORE you let untrusted organizers
+    # enroll domains themselves.
+    attr_accessor :require_verified_domains
+
+    # The DNS label of the TXT record: "_organizations-verification" makes
+    # the record "_organizations-verification.acme.com". Use your brand.
+    attr_accessor :domain_verification_record_prefix
+
+    # How long a DNS challenge stays open after start_verification!
+    attr_accessor :domain_verification_ttl
+
+    # Seconds the default resolver waits for a DNS answer
+    attr_accessor :domain_verification_timeout
+
+    # Custom TXT lookup: ->(record_name) { ["value", ...] }. nil = Resolv.
+    attr_accessor :domain_txt_resolver
+
+    # Email domains that can never be enrolled or admit through a domain,
+    # such as Organizations::PUBLIC_EMAIL_DOMAINS. Default: none. Invitations
+    # and allowlist joins are not affected.
+    attr_accessor :blocked_email_domains
+
     # How long join requests stay pending before they read as expired
     # (derived status, like invitations). nil = never expire.
     attr_accessor :join_request_expiry
@@ -307,6 +332,14 @@ module Organizations
       @trust_confirmed_account_email = true
       @join_request_expiry = 30.days
       @join_code_generator = nil
+
+      # Domain authority defaults
+      @require_verified_domains = false
+      @domain_verification_record_prefix = "_organizations-verification"
+      @domain_verification_ttl = 7.days
+      @domain_verification_timeout = 5
+      @domain_txt_resolver = nil
+      @blocked_email_domains = []
 
       # Limits
       @max_organizations_per_user = nil
@@ -532,6 +565,12 @@ module Organizations
       EmailNormalizer.normalize(email)
     end
 
+    # The blocked email domains, lowercased.
+    # @return [Array<String>]
+    def normalized_blocked_email_domains
+      Array(@blocked_email_domains).map { |d| d.to_s.strip.downcase.delete_prefix("@") }
+    end
+
     # Resolve the default organization name for a user
     # @param user [Object] The user object
     # @return [String] The organization name
@@ -553,6 +592,7 @@ module Organizations
       validate_personal_organization_settings!
       validate_invitation_settings!
       validate_verification_settings!
+      validate_domain_authority_settings!
       validate_limits!
       validate_invitation_redirects!
       validate_no_organization_messages!
@@ -612,6 +652,24 @@ module Organizations
       return if @join_request_expiry.nil? || duration_like?(@join_request_expiry)
 
       raise ConfigurationError, "join_request_expiry must be a Duration (e.g., 30.days), Numeric, or nil (never expire)"
+    end
+
+    def validate_domain_authority_settings!
+      raise ConfigurationError, "require_verified_domains must be true or false" unless [true, false].include?(@require_verified_domains)
+
+      unless @domain_verification_record_prefix.is_a?(String) && @domain_verification_record_prefix.match?(/\A_[a-z0-9-]+\z/)
+        raise ConfigurationError, "domain_verification_record_prefix must be one DNS label that starts with an underscore"
+      end
+
+      validate_duration_option!(@domain_verification_ttl, "domain_verification_ttl", "7.days")
+      unless @domain_verification_timeout.is_a?(Numeric) && @domain_verification_timeout.positive?
+        raise ConfigurationError, "domain_verification_timeout must be a positive number of seconds"
+      end
+
+      validate_callable_option!(@domain_txt_resolver, "domain_txt_resolver")
+      return if @blocked_email_domains.is_a?(Array) && @blocked_email_domains.all?(String)
+
+      raise ConfigurationError, "blocked_email_domains must be an Array of Strings"
     end
 
     def duration_like?(value)

@@ -119,21 +119,26 @@ module Organizations
 
     attr_reader :user, :organization
 
+    # Verification errors and the reason each one maps to. Subclasses come
+    # before their parents; anything else is :request_closed.
+    VERIFICATION_ERROR_REASONS = {
+      Organizations::VerificationAttemptsExceeded => :verification_attempts_exceeded,
+      Organizations::VerificationCodeExpired => :verification_code_expired,
+      Organizations::VerificationCodeInvalid => :verification_code_invalid,
+      Organizations::VerificationEmailAlreadyClaimed => :email_already_claimed,
+      # The domain or roster entry stopped admitting during the challenge.
+      Organizations::VerificationEmailNotEligible => :email_not_eligible
+    }.freeze
+    private_constant :VERIFICATION_ERROR_REASONS
+
     def verify_emailed_code(typed_code)
       request = user.pending_join_request_for(organization)
       return error(:verification_code_missing, Organizations.t(:"errors.verification_code_missing")) unless request
 
       from_outcome(request.verify_email_code!(typed_code))
-    rescue Organizations::VerificationAttemptsExceeded => e
-      error(:verification_attempts_exceeded, e.message)
-    rescue Organizations::VerificationCodeExpired => e
-      error(:verification_code_expired, e.message)
-    rescue Organizations::VerificationCodeInvalid => e
-      error(:verification_code_invalid, e.message)
-    rescue Organizations::VerificationEmailAlreadyClaimed => e
-      error(:email_already_claimed, e.message)
     rescue Organizations::JoinRequestError => e
-      error(:request_closed, e.message)
+      reason = VERIFICATION_ERROR_REASONS.find { |klass, _| e.is_a?(klass) }&.last || :request_closed
+      error(reason, e.message)
     end
 
     def redeem_code(raw_code)
@@ -194,7 +199,7 @@ module Organizations
       Organizations.configuration.trust_confirmed_account_email &&
         user.respond_to?(:confirmed_at) && user.confirmed_at.present? &&
         user.respond_to?(:email) &&
-        organization.domains.matching_email(user.email).exists?
+        organization.domains.joinable.matching_email(user.email).exists?
     end
 
     def from_outcome(outcome)
