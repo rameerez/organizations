@@ -61,6 +61,27 @@ class JoinGeneratorTest < Rails::Generators::TestCase
     Organizations::Generators::JoinGenerator::ACCESS_FILES.each { |file| assert_file file }
   end
 
+  test "a routes file without the anchor gets the routes printed, not lost" do
+    File.write(File.join(destination_root, "config/routes.rb"), "MyApp::Application.routes.draw { }\n")
+
+    output = run_generator
+
+    assert_match "add these routes yourself", output
+    assert_match "organization_joins#show", output
+  end
+
+  test "a commented-out access route does not count as present" do
+    run_generator %w[--skip-access]
+    routes_path = File.join(destination_root, "config/routes.rb")
+    File.write(routes_path, File.read(routes_path).sub("draw do\n", "draw do\n  # get \"x\", to: \"organization_access#show\"\n"))
+
+    run_generator %w[--force]
+
+    assert_file "config/routes.rb" do |routes|
+      assert_equal 1, routes.scan(/^\s+get\s+"access", to: "organization_access#show"/).size
+    end
+  end
+
   test "--skip-routes leaves config/routes.rb alone" do
     run_generator %w[--skip-routes]
 

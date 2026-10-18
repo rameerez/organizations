@@ -445,7 +445,7 @@ The generated code already follows the safety rules. Keep them when you edit it:
 - **The signed-in user comes from `config.current_user_method`**, the same as the rest of the gem.
 - **A disclosure partial** (`organization_joins/_disclosure.html.erb`) tells joiners who will see their name and email before they submit. Edit its text to match your privacy policy.
 
-The templates are the gem's demo app ([`test/dummy`](test/dummy/)), byte for byte, and its HTTP test suite covers them.
+The templates are the gem's demo app ([`test/dummy`](test/dummy/)), byte for byte, and its HTTP test suite covers them. Two things to know: the join screen shows an organization's name to any signed-in user who has its id (use UUID primary keys or a handle finder for private tenants), and the generator does not check for controllers with the same names in your app (Thor asks before it overwrites a file). When your `routes.rb` has no `routes.draw do` line to insert after, the generator prints the routes for you to add.
 
 ### Rate limiting your join endpoints
 

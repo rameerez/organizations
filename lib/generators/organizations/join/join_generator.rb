@@ -29,6 +29,10 @@ module Organizations
         app/views/organization_joins/_disclosure.html.erb
       ].freeze
 
+      ROUTES_MARKER = "# organizations: join and access screens"
+      DRAW_ANCHOR = /\.routes\.draw do\s*\n/
+      ACCESS_ANCHOR = /as: :withdraw_join\n/
+
       ACCESS_FILES = %w[
         app/controllers/organization_access_controller.rb
         app/views/organization_access/show.html.erb
@@ -57,27 +61,39 @@ module Organizations
         ACCESS_FILES.each { |file| copy_file file } unless options[:skip_access]
       end
 
-      ROUTES_MARKER = "# organizations: join and access screens"
-
       # Adds the routes block once. A second run adds only what is missing:
       # the access routes after an earlier --skip-access run.
       def add_routes
         return if options[:skip_routes]
 
-        routes = File.read(File.join(destination_root, "config/routes.rb"))
+        routes = read_routes
+        access = !options[:skip_access]
         if !routes.include?(ROUTES_MARKER)
-          add_routes_block
-        elsif !options[:skip_access] && !routes.include?("organization_access#")
-          inject_into_file "config/routes.rb", "\n#{self.class.access_routes}", after: /as: :withdraw_join\n/
+          insert_routes(self.class.routes_snippet(access: access), DRAW_ANCHOR, routes)
+        elsif access && !active_code(routes).include?("organization_access#")
+          insert_routes(self.class.access_routes, ACCESS_ANCHOR, routes)
         else
           say_status :identical, "config/routes.rb (the organizations routes are already there)", :blue
         end
       end
 
       no_commands do
-        def add_routes_block
-          snippet = self.class.routes_snippet(access: !options[:skip_access])
-          inject_into_file "config/routes.rb", "\n#{snippet}", after: /\.routes\.draw do\s*\n/
+        # Insert after the anchor, or print the routes when the anchor is not
+        # there (an edited routes file): never a silent no-op.
+        def insert_routes(snippet, anchor, routes)
+          if routes.match?(anchor)
+            inject_into_file "config/routes.rb", "\n#{snippet}", after: anchor
+          else
+            say_status :skip, "config/routes.rb: add these routes yourself", :yellow
+            say snippet
+          end
+        end
+
+        def read_routes = File.read(File.join(destination_root, "config/routes.rb"))
+
+        # The routes file without comment lines.
+        def active_code(routes)
+          routes.lines.reject { |line| line.lstrip.start_with?("#") }.join
         end
       end
 

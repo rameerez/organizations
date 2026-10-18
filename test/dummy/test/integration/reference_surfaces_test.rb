@@ -240,6 +240,16 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
     assert_equal "suggest", domain.reload.join_policy
   end
 
+  test "access: an unknown join policy is refused with a message, never a 500" do
+    domain = @org.add_domain!("acme.test")
+    sign_in_as @owner.email
+
+    patch organization_access_domain_path(@org, domain_id: domain.id), params: { join_policy: "everyone" }
+
+    assert_response :see_other
+    assert_equal "none", domain.reload.join_policy
+  end
+
   test "access: a failed DNS check shows its reason" do
     domain = @org.add_domain!("acme.test")
     domain.start_verification!

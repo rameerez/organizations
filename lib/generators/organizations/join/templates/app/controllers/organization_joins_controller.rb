@@ -20,6 +20,8 @@
 #   - Unknown, revoked, expired and foreign codes get one generic message
 #     (JoinFlow does that). Do not tell users which codes exist.
 #   - The current organization of the session does not change here.
+#   - Any signed-in user who has an organization's id sees its name here.
+#     For private tenants, use UUID primary keys or a handle finder.
 #   - Rate limits (Rails 7.2+) cap guessing across requests. The gem itself
 #     throttles each emailed challenge.
 #     They need Rails 7.2+ and a cache store shared by every server process

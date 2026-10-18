@@ -108,17 +108,17 @@ class OrganizationAccessController < ApplicationController
   # Hard limits (seats) belong in config.on_member_joining: the gate also
   # covers this path, so there is no check to repeat here.
   def approve_request
-    request = organization.join_requests.find(params[:request_id])
-    organization.approve_join_request!(request, approved_by: viewer)
-    back notice: "#{request.user.email} is now a member."
+    join_request = organization.join_requests.find(params[:request_id])
+    organization.approve_join_request!(join_request, approved_by: viewer)
+    back notice: "#{join_request.user.email} is now a member."
   rescue Organizations::MembershipVetoed, Organizations::JoinRequestError => e
     back alert: e.message
   end
 
   def reject_request
-    request = organization.join_requests.find(params[:request_id])
+    join_request = organization.join_requests.find(params[:request_id])
     reason = params[:reason].to_s.first(500).presence
-    organization.reject_join_request!(request, rejected_by: viewer, reason: reason)
+    organization.reject_join_request!(join_request, rejected_by: viewer, reason: reason)
     back notice: "Request rejected."
   rescue Organizations::JoinRequestError => e
     back alert: e.message
