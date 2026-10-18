@@ -411,6 +411,8 @@ result.membership / result.join_request
 @state.status          # :member | :verifying | :pending | :entry
 @state.resend_seconds  # cooldown for the "resend code" button, derived from config
 @state.error_message   # localized message of a just-failed action
+@state.member? / verifying? / pending? / entry?   # the same states as predicates
+@state.challenge       # the join request whose emailed code is in flight
 
 # Which entry forms to show — the org's actual instruments decide:
 org.accepts_domain_joining?  # email form (domains or unclaimed allowlist entries)
@@ -678,7 +680,7 @@ membership.verified?                             # Joined with a proven email (v
 membership.is_at_least?(:member)    # => true (if member, admin, or owner)
 membership.can_assign_role?(:admin) # => true (if admin or owner: roles at or below their own)
 membership.compare_role(other)      # => -1 (higher), 0, 1 (lower)
-membership.authorize_role_change!(:admin, changed_by: current_user)  # Raises NotAuthorized when not allowed
+membership.authorize_role_change!(:admin, changed_by: current_user)  # Raises NotAuthorized when a member actor outranks or lacks the roles' permissions (does not check :edit_member_roles; nil or non-member actors pass: authorize them yourself)
 
 # Role changes
 membership.promote_to!(:admin, changed_by: current_user)  # Change role to admin
@@ -709,6 +711,7 @@ invitation.expired?             # => true (past expires_at)
 invitation.status               # => :pending, :accepted or :expired
 invitation.for_email?(email)    # Case-insensitive match
 invitation.acceptance_url       # Link for your own mailer (honors the engine mount path)
+invitation.acceptance_url(base_url: "https://app.example.com")   # In jobs/mailers without URL defaults
 
 # Grants the membership gets on acceptance
 invitation.grants
@@ -730,9 +733,9 @@ request.effective_status            # => :pending, :approved, :rejected, :withdr
 request.email_verified?
 request.start_email_verification!(email: "j.doe@acme.com")
 request.verify_email_code!("492817")   # => Membership (or the request, when approval is manual)
-request.approve!(decided_by: admin)    # => Membership
+request.approve!(decided_by: admin)    # => Membership. Records the actor; checking that it may decide is your job
 request.reject!(rejected_by: admin, reason: "unknown")
-request.withdraw!                      # The user cancels it
+request.withdraw!                      # The user cancels it. Check that the caller owns the request
 user.pending_join_request_for(org)     # The user's open request, or nil
 
 # Organizations::JoinCode
@@ -752,6 +755,22 @@ entry.claimed? / entry.claim!(user)
 
 # Organizations::Grant (see "Scoped resource grants")
 grant.capabilities / grant.allows?(:read) / grant.resource / grant.grantable
+# grant.allows? reads the stored list only. To authorize, ask membership.can?(capability, record):
+# it also applies the role ceiling and the organization check.
+```
+
+### Roles
+
+```ruby
+Organizations::Roles.hierarchy                  # => [:owner, :admin, :member, :viewer] (custom roles included)
+Organizations::Roles.valid_role?(:admin)        # => true
+Organizations::Roles.permissions_for(:member)   # => [:view_organization, ...]
+Organizations::Roles.has_permission?(:admin, :invite_members)  # => true
+Organizations::Roles.at_least?(:owner, :admin)  # => true
+Organizations::Roles.compare(:admin, :member)   # => -1 (higher), 0, 1 (lower)
+Organizations::Roles.higher_role(:member) / lower_role(:member)  # => :admin / :viewer
+Organizations::Roles.can_assign?(:admin, :member)                # the role rule (see "Customize roles")
+Organizations::Roles.assignment_refusal(:member, :admin)         # => :outranks, :lacks_permissions or nil
 ```
 
 ### User housekeeping
@@ -1752,6 +1771,9 @@ Organizations.configure do |config|
   config.default_invitation_role = :member
 
   # === Verified joining ===
+  # A custom mailer needs code_email(join_request, plaintext_code) returning a
+  # message (the gem calls .deliver_later). The plaintext code exists only in
+  # that call: never store or log it.
   config.verification_mailer = "Organizations::VerificationMailer"
   config.verification_code_ttl = 15.minutes          # emailed codes always expire
   config.verification_max_attempts = 5               # wrong codes per challenge
@@ -2786,7 +2808,11 @@ bundle exec appraisal rails-7.2 rake
 bundle exec appraisal rails-8.1 rake
 
 # The demo app and its HTTP suite (it is also the source of the generator templates)
-cd test/dummy && bin/rails test
+cd test/dummy
+bundle install
+bin/rails tailwindcss:build
+bin/rails db:test:prepare
+bin/rails test
 ```
 
 CI runs the suite on Ruby 3.3, 3.4 and 4.0 against Rails 7.2 and 8.1, once against PostgreSQL, plus RuboCop and the demo app's suite.

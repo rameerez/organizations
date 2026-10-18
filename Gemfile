@@ -29,7 +29,7 @@ group :development, :test do
   # poisoning on unique violations), so CI runs one PG cell too.
   gem "pg"
   gem "ostruct"
-  gem "simplecov", ">= 1.3", require: false # skip/cover and SimpleCov.start in the helper
+  gem "simplecov", require: false # .simplecov supports 0.22 (Ruby 3.2) and 1.x
   # Required explicitly for tests since we don't load the full Rails stack
   gem "activejob", ">= 7.1.0", "< 9.0"
   gem "actionmailer", ">= 7.1.0", "< 9.0"

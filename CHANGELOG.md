@@ -33,7 +33,7 @@
 - The dummy app's reference join and access controllers are now `OrganizationJoinsController` and `OrganizationAccessController`, with `organization_*` route names. They are the generator's templates.
 
 - Engine controllers answer validation failures with status 422 instead of the `:unprocessable_entity` symbol, which Rack 3.2 (Rails 8.1) deprecates. The status code is the same.
-- `organization_members_data` and `organization_invitations_data` pass the organization to the role labels (vocabulary).
+- `organization_members_data`, `organization_invitations_data` and `organization_role_info` pass the organization to the role labels (vocabulary). A host override of `organization_role_label` that takes only the role keeps working.
 
 ### Development
 
@@ -41,7 +41,9 @@
 - SimpleCov uses its 1.x API (`skip`, `cover`, `SimpleCov.start` in the test helper): no deprecation output.
 - The Appraisal gemfiles are regenerated from the Gemfile.
 - New coverage for the permission helpers and the hierarchy with custom roles (`test/custom_role_helpers_test.rb`).
-- README: every public method is documented (verified-joining records, view helpers, every configuration option), and the "Future API" example for bulk invitations, which does not exist, is gone.
+- README: the public API of the models, the helpers, `Roles` and `JoinState` is documented, with the authorization limits of `authorize_role_change!`, the join request decisions and `grant.allows?`; every configuration option is in the configuration block; the "Future API" example for bulk invitations, which does not exist, is gone.
+- `.simplecov` works with SimpleCov 0.22 (Ruby 3.2) and 1.x.
+- The CI step that uploaded a test report directory that nothing writes is gone.
 
 ### Upgrading
 

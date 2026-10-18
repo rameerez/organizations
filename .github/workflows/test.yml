@@ -59,14 +59,6 @@ jobs:
       - name: Run tests
         run: bundle exec rake test
 
-      - name: Upload test results
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-ruby-${{ matrix.ruby_version }}-${{ matrix.gemfile }}
-          path: test/reports/
-          retention-days: 7
-
   # The dummy app is the living 0.5.0 demo AND the reference implementation
   # hosts copy. Its integration suite is the HTTP smoke of the reference
   # surfaces (four-state join screen, Access admin, OrganizationScoped 404

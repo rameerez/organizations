@@ -15,6 +15,17 @@ module Organizations
       "<#{tag}#{class_attr}>#{content}</#{tag}>"
     end
 
+    # === Host overrides written before 0.7.0 ===
+
+    test "a host override of organization_role_label without organization: keeps the data helpers working" do
+      org, = create_org_with_owner!(name: "Override Co")
+      helper = Object.new.extend(Organizations::ViewHelpers)
+      helper.define_singleton_method(:organization_role_label) { |role| "Custom #{role}" }
+
+      assert_equal "Custom owner", helper.organization_members_data(org).first[:role_label]
+      assert_equal "Custom admin", helper.organization_role_info(:admin)[:label]
+    end
+
     # === organization_switcher_data ===
 
     test "organization_switcher_data returns hash with current, others, and switch_path" do

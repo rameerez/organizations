@@ -8,9 +8,16 @@ SimpleCov.configure do
   # Use SimpleFormatter for terminal-only output (no HTML generation)
   formatter SimpleCov::Formatter::SimpleFormatter
 
-  # Report the gem's source (lib/ and app/), unloaded files included
-  skip "/test/"
-  cover "{lib,app}/**/*.rb"
+  # Report the gem's source (lib/ and app/), unloaded files included.
+  # skip/cover are the SimpleCov 1.x names (Ruby 3.3+); 0.22 on Ruby 3.2
+  # knows add_filter/track_files.
+  if respond_to?(:cover)
+    skip "/test/"
+    cover "{lib,app}/**/*.rb"
+  else
+    add_filter "/test/"
+    track_files "{lib,app}/**/*.rb"
+  end
 
   # Enable branch coverage for more detailed metrics
   enable_coverage :branch
