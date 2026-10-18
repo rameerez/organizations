@@ -174,6 +174,18 @@ class VocabularyTest < Organizations::Test
     I18n.instance_variable_set(:@fallbacks, original_fallbacks)
   end
 
+  test "membership role-change errors use the organization's wording" do
+    use_resolver
+    I18n.backend.store_translations(:en, organizations: { vocabularies: { classroom: { errors: {
+                                      cannot_promote_to_owner: "A class has one head teacher."
+                                    } } } })
+    membership = @school.add_member!(create_user!)
+
+    error = assert_raises(Organizations::Membership::CannotPromoteToOwner) { membership.promote_to!(:owner) }
+
+    assert_equal "A class has one head teacher.", error.message
+  end
+
   test "the already-decided sentence uses the organization's wording" do
     use_resolver
     request = create_user!.request_to_join!(@school)

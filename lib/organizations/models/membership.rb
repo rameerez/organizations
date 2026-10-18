@@ -257,11 +257,11 @@ module Organizations
 
       # Owner role is only assignable via transfer_ownership_to!
       if new_role_sym == :owner
-        raise CannotPromoteToOwner, Organizations.t(:"errors.cannot_promote_to_owner")
+        raise CannotPromoteToOwner, Organizations.t(:"errors.cannot_promote_to_owner", organization: organization)
       end
 
       unless Roles.at_least?(new_role_sym, role_sym)
-        raise InvalidRoleChange, Organizations.t(:"errors.promote_not_higher", new_role: new_role, role: role)
+        raise InvalidRoleChange, Organizations.t(:"errors.promote_not_higher", organization: organization, new_role: new_role, role: role)
       end
 
       change_role_to!(new_role_sym, changed_by: changed_by)
@@ -279,11 +279,11 @@ module Organizations
       validate_role!(new_role_sym)
 
       if owner?
-        raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner")
+        raise CannotDemoteOwner, Organizations.t(:"errors.cannot_demote_owner", organization: organization)
       end
 
       unless Roles.at_least?(role_sym, new_role_sym)
-        raise InvalidRoleChange, Organizations.t(:"errors.demote_not_lower", new_role: new_role, role: role)
+        raise InvalidRoleChange, Organizations.t(:"errors.demote_not_lower", organization: organization, new_role: new_role, role: role)
       end
 
       change_role_to!(new_role_sym, changed_by: changed_by)
@@ -299,7 +299,7 @@ module Organizations
 
       return unless existing_owner.exists?
 
-      errors.add(:role, Organizations.t(:"attributes.owner_taken"))
+      errors.add(:role, Organizations.t(:"attributes.owner_taken", organization: organization))
     end
 
     def validate_role!(role)
