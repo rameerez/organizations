@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "active_support/security_utils"
+
 module Organizations
   # An email domain owned/claimed by an organization, used for verified joining.
   #
@@ -69,7 +71,10 @@ module Organizations
 
     before_validation :normalize_domain
     before_validation :normalize_join_policy, if: :authority_columns?
-    before_save :reset_verification, if: -> { persisted? && will_save_change_to_domain? && authority_columns? }
+    # A proof belongs to one claim: one organization and one exact domain.
+    before_save :reset_verification, if: lambda {
+      persisted? && authority_columns? && (will_save_change_to_domain? || will_save_change_to_organization_id?)
+    }
 
     # === Scopes ===
 
@@ -163,15 +168,22 @@ module Organizations
       verified? && !blocked? ? join_policy.to_sym : :none
     end
 
+    # A copy (dup) of a claim carries no proof.
+    def initialize_dup(other)
+      super
+      reset_verification if authority_columns?
+    end
+
     # Start (or restart) the DNS challenge: a new unpredictable token, and
-    # any earlier verification cleared. Publish verification_record_value as
-    # a TXT record at verification_record_name, then call verify!.
+    # any earlier verification cleared. A revocation stays until a new proof
+    # succeeds. Publish verification_record_value as a TXT record at
+    # verification_record_name, then call verify!.
     # @return [self]
     def start_verification!
       update!(
         verification_token: SecureRandom.urlsafe_base64(32),
         verification_started_at: Time.current,
-        verified_at: nil, verification_method: nil, verified_by_id: nil, verification_revoked_at: nil
+        verified_at: nil, verification_method: nil, verified_by_id: nil
       )
       self
     end
@@ -204,12 +216,14 @@ module Organizations
       raise DomainVerificationFailed, :not_started if verification_token.blank?
       raise DomainVerificationFailed, :expired if verification_expired?
 
-      expected = verification_record_value
-      raise DomainVerificationFailed, :record_not_found unless txt_record_present?(expected)
+      snapshot = challenge_snapshot
+      raise DomainVerificationFailed, :record_not_found unless txt_record_present?(verification_record_value)
 
       with_lock do
-        # The token rotated (or the domain changed) during the lookup.
-        raise DomainVerificationFailed, :expired unless verification_record_value == expected
+        # The claim changed during the lookup (new token, other domain or
+        # organization, a revocation) or the challenge expired: the lookup
+        # proves nothing about the claim as it is now.
+        raise DomainVerificationFailed, :expired if challenge_snapshot != snapshot || verification_expired?
 
         update!(verified_at: Time.current, verification_method: "dns_txt",
                 verified_by_id: nil, verification_revoked_at: nil)
@@ -257,16 +271,31 @@ module Organizations
     # @return [self]
     # @raise [DomainVerificationFailed] reason :lookup_failed
     def recheck_verification!
+      reload
       return self unless verified? && verification_method == "dns_txt"
+
+      snapshot = proof_snapshot
       return self if txt_record_present?(verification_record_value)
 
-      revoke_verification!(reason: "dns_record_removed")
+      with_lock do
+        # Revoke only the proof that was checked, never a newer one.
+        revoke_verification!(reason: "dns_record_removed") if proof_snapshot == snapshot
+      end
+      self
     end
 
     private
 
     def authority_columns?
       self.class.authority_columns?
+    end
+
+    def challenge_snapshot
+      [verification_token, verification_started_at, domain, organization_id, verification_revoked_at]
+    end
+
+    def proof_snapshot
+      [verification_token, verified_at, verification_method, domain, organization_id]
     end
 
     def txt_record_present?(expected)

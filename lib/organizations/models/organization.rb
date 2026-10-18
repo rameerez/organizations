@@ -728,7 +728,7 @@ module Organizations
         request.save!
       end
 
-      request.auto_approve!
+      request.send(:auto_approve!)
     end
 
     private

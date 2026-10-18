@@ -324,6 +324,9 @@ Organizations::Domain.verified   # scope
 
 The rules:
 
+- **A verification does not expire on its own.** The 7-day TTL is for the open challenge only. Domains change hands: schedule `recheck_verification!` (for DNS proofs) or review operator approvals, and revoke what no longer holds.
+- **Authority columns are privileged.** Only the methods above write `verified_at`, `verification_method`, `verified_by_id` and `verification_revoked_at`. Never let request params reach them: permit only `domain` and `join_policy` in your admin forms, and authorize who may call `verify!` and `verify_by_operator!`.
+- **A proof belongs to one claim.** Moving a domain row to another organization, changing its domain, or copying it (`dup`) clears the proof. A revocation stays until a new proof succeeds, also after `start_verification!`.
 - **Exact domains only.** No subdomain or suffix authority, and no global exclusivity: two departments can each prove their own claim of the same domain.
 - **Changing `domain.domain` clears the verification and the token.** Start again.
 - **Every domain path checks the same rule** (`Organizations::Domain.joinable`): the emailed challenge, the confirmed-account-email shortcut, domain-restricted join codes and `JoinFlow`. It checks again at admission: a domain (or allowlist entry) removed, revoked or blocked while a code was in flight admits nobody. An admin can still approve such a pending request by hand.
@@ -347,7 +350,7 @@ config.domain_txt_resolver = ->(name) { MyDns.txt(name) }           # custom loo
 config.blocked_email_domains = Organizations::PUBLIC_EMAIL_DOMAINS   # default: []
 ```
 
-A blocked domain cannot be enrolled, and an existing row for it stops admitting. People with those addresses can still join by invitation, code or allowlist. The list is defence in depth, not proof of authority.
+A blocked domain cannot be enrolled, and an existing row for it stops admitting. People with those addresses can still join by invitation, code or allowlist. The list is defence in depth, not proof of authority and not an authorization boundary: an unlisted provider is not trusted because it is unlisted.
 
 ### Sign-up domain policies: none, suggest, auto-join
 
@@ -369,7 +372,7 @@ org.join_with_account_email!(current_user)   # the "Join" button for a suggestio
 current_user.join_organizations_by_domain!   # what auto-join runs; idempotent, returns memberships
 ```
 
-Auto-join runs in an `after_commit` on the user and never breaks a sign-up: a veto or an already-claimed email skips that organization and logs it.
+Auto-join runs in an `after_commit` on the user when `confirmed_at` changes, and never breaks a sign-up: a veto or an already-claimed email skips that organization and logs it. Changing the email of an account that stays confirmed does not trigger it, because nothing proved the new address. With Devise `:reconfirmable`, confirming the new address updates `confirmed_at` and triggers it.
 
 ### Cohorts without the gem knowing (`membership_metadata`)
 

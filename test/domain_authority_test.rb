@@ -132,6 +132,84 @@ class DomainAuthorityTest < Organizations::Test
     refute_equal old_token, @domain.verification_token
   end
 
+  test "restarting a revoked claim keeps it revoked until a new proof" do
+    verify!(@domain)
+    @domain.revoke_verification!
+
+    @domain.start_verification!
+
+    assert_predicate @domain, :revoked?
+    refute_predicate @domain, :joinable?
+    with_txt_records(@domain.verification_record_name => [@domain.verification_record_value]) { @domain.verify! }
+
+    refute_predicate @domain.reload, :revoked?
+    assert_predicate @domain, :verified?
+  end
+
+  test "moving a claim to another organization clears its verification" do
+    verify!(@domain)
+    other, = create_org_with_owner!(name: "Other")
+
+    @domain.update!(organization: other)
+
+    refute_predicate @domain, :verified?
+    assert_nil @domain.verification_token
+  end
+
+  test "a duplicated claim carries no verification" do
+    verify!(@domain)
+
+    copy = @domain.dup
+
+    assert_nil copy.verified_at
+    assert_nil copy.verification_token
+    assert_nil copy.verification_method
+  end
+
+  test "a revocation during the DNS lookup is not undone by that lookup" do
+    @domain.start_verification!
+    domain = @domain
+    resolver = lambda do |_name|
+      Organizations::Domain.find(domain.id).revoke_verification!(reason: "revoked meanwhile")
+      [domain.verification_record_value]
+    end
+    Organizations.configure { |c| c.domain_txt_resolver = resolver }
+
+    assert_raises(Organizations::DomainVerificationFailed) { @domain.verify! }
+    assert_predicate @domain.reload, :revoked?
+  end
+
+  test "a challenge that expires during the lookup fails" do
+    @domain.start_verification!
+    value = @domain.verification_record_value
+    domain_id = @domain.id
+    resolver = lambda do |_name|
+      Organizations::Domain.where(id: domain_id).update_all(verification_started_at: 30.days.ago)
+      [value]
+    end
+    Organizations.configure { |c| c.domain_txt_resolver = resolver }
+
+    error = assert_raises(Organizations::DomainVerificationFailed) { @domain.verify! }
+
+    assert_equal :expired, error.reason
+  end
+
+  test "a stale recheck does not revoke a newer proof" do
+    verify!(@domain)
+    operator = create_user!
+    domain_id = @domain.id
+    resolver = lambda do |_name|
+      Organizations::Domain.find(domain_id).verify_by_operator!(operator: operator)
+      []
+    end
+    Organizations.configure { |c| c.domain_txt_resolver = resolver }
+
+    @domain.recheck_verification!
+
+    assert_predicate @domain.reload, :verified?
+    assert_equal "operator", @domain.verification_method
+  end
+
   # === Operator approval ===
 
   test "a platform operator can record an approval with provenance" do
@@ -300,6 +378,32 @@ class DomainAuthorityTest < Organizations::Test
     entry.destroy!
 
     assert_raises(Organizations::VerificationEmailNotEligible) { request.verify_email_code!(code) }
+  end
+
+  test "auto_approve! refuses a request without a verified email and a matched instrument" do
+    request = create_user!.request_to_join!(@org)
+
+    assert_raises(Organizations::VerificationEmailNotEligible) { request.send(:auto_approve!) }
+    assert_predicate request.reload, :pending?
+  end
+
+  test "the admission locks the matched domain row" do
+    request = create_user!.request_to_join!(@org)
+    request.start_email_verification!(email: "lock@acme.test")
+    code = Organizations::TestHelpers.issue_verification_code(request)
+    locked = []
+    relation_class = ActiveRecord::Relation
+    original = relation_class.instance_method(:lock)
+    relation_class.define_method(:lock) do |*args|
+      locked << model.name
+      original.bind_call(self, *args)
+    end
+
+    request.verify_email_code!(code)
+
+    assert_includes locked, "Organizations::Domain"
+  ensure
+    relation_class.define_method(:lock, original)
   end
 
   test "an admin can still approve a pending domain request by hand after the domain is gone" do

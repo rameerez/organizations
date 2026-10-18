@@ -201,7 +201,7 @@ module Organizations
 
       raise failure if failure
 
-      return auto_approve! if auto_approvable_after_verification?
+      return send(:auto_approve!) if auto_approvable_after_verification?
 
       self
     end
@@ -224,17 +224,19 @@ module Organizations
       perform_approval!(decided_by: decided_by, recheck_instruments: false)
     end
 
-    # @api private
     # The automatic approval behind a verified email (verify_email_code! and
-    # Organization#join_with_account_email!). Like approve!, but it checks
-    # again, under the row lock, that the domain or roster entry the email
-    # matched still admits members. A manual approve! by an admin does not
-    # need that check: the admin decides.
+    # Organization#join_with_account_email!). Like approve!, but it needs a
+    # verified email and a matched domain or roster entry, and checks again,
+    # under row locks, that the instrument still admits members. A manual
+    # approve! by an admin does not need that check: the admin decides.
     # @return [Membership]
     # @raise [VerificationEmailNotEligible] when the instrument is gone, revoked or blocked
     def auto_approve!
       perform_approval!(decided_by: nil, recheck_instruments: true)
     end
+    # Callable from Organization#join_with_account_email! only. Hosts call
+    # approve! (a decision) or verify_email_code! (a proof).
+    private :auto_approve!
 
     # Reject this request.
     # @param rejected_by [User, nil]
@@ -325,7 +327,7 @@ module Organizations
         return approved_membership! if approved? # idempotent re-approval
 
         ensure_open!
-        ensure_instruments_still_eligible! if recheck_instruments
+        ensure_instruments_still_eligible!(require_proof: true) if recheck_instruments
 
         existing = existing_membership
 
@@ -346,25 +348,35 @@ module Organizations
 
     # The domain (or allowlist entry) that made the verification email
     # eligible must still admit: present, matching the email, joinable
-    # (Domain.joinable), and for an entry, unclaimed by anyone else.
-    def ensure_instruments_still_eligible!
-      return if verification_email.blank?
-      return if instruments_still_eligible?
+    # (Domain.joinable), and for an entry, unclaimed by anyone else. The row
+    # is locked until the admission commits, so a revocation or removal
+    # either finishes first (and refuses) or waits.
+    #
+    # Called at the challenge check (verify_email_code!) before the proof
+    # exists, and again by auto_approve! after it, which also needs it.
+    def ensure_instruments_still_eligible!(require_proof: false)
+      return if verification_email.blank? && !require_proof
+      return if instruments_still_eligible?(require_proof)
 
       raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
     end
 
-    def instruments_still_eligible?
+    def instruments_still_eligible?(require_proof)
+      return false if require_proof && (!email_verified? || verification_email.blank?)
+
       domain_id = (metadata || {})["matched_domain_id"]
       entry_id = (metadata || {})["matched_allowlist_entry_id"]
+      return !require_proof unless domain_id || entry_id
 
+      matched_instrument_scope(domain_id, entry_id).lock.pick(:id).present?
+    end
+
+    def matched_instrument_scope(domain_id, entry_id)
       if domain_id
-        organization.domains.joinable.matching_email(verification_email).exists?(id: domain_id)
-      elsif entry_id
-        organization.allowlist_entries.for_email(verification_email).where(id: entry_id)
-          .where("claimed_at IS NULL OR claimed_by_id = ?", user_id).exists?
+        organization.domains.joinable.matching_email(verification_email).where(id: domain_id)
       else
-        true
+        organization.allowlist_entries.for_email(verification_email).where(id: entry_id)
+          .where("claimed_at IS NULL OR claimed_by_id = ?", user_id)
       end
     end
 

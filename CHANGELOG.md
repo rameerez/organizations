@@ -20,7 +20,7 @@
 - The account-deletion guard now locks the user row and the owned organization rows before it checks ownership. A concurrent organization creation for the user can no longer slip past the check and lose its owner membership. The default policy (`:prevent`) and its error message are unchanged, and the guard keeps its method name (`prevent_deletion_while_owning_organizations`), so a host `skip_callback` for it still works.
 
 - A domain-backed admission checks its domain (or allowlist entry) again: `verify_email_code!` refuses with `VerificationEmailNotEligible` when the matched domain was removed, revoked or blocked, or the roster entry was removed, while the code was in flight. The request stays pending, and an admin can still approve it by hand. `JoinFlow` reports this as `:email_not_eligible`. Before, the code still granted membership.
-- A revoked domain never admits, whatever `require_verified_domains` says.
+- A revoked domain never admits, whatever `require_verified_domains` says. The admission locks the matched domain or roster row, so a concurrent revocation or removal either finishes first or waits.
 
 ### Upgrading
 
