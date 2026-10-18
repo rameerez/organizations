@@ -4,7 +4,7 @@ require "test_helper"
 
 module Organizations
   # Comprehensive lifecycle suite — size is the point.
-  # rubocop:disable Metrics/ClassLength
+  # rubocop:disable-next Metrics/ClassLength
   class JoinRequestTest < Organizations::Test
     include ActiveJob::TestHelper
 
@@ -582,5 +582,4 @@ module Organizations
       assert_predicate @org, :accepts_join_requests?
     end
   end
-  # rubocop:enable Metrics/ClassLength
 end

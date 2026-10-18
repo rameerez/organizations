@@ -32,6 +32,17 @@
 - The views of `rails g organizations:views` print role labels through `organization_role_label(role, organization:)` instead of `role.capitalize`. A custom role such as `team_lead` now reads "Team lead", the same as the gem's other labels. Views you copied earlier are not changed.
 - The dummy app's reference join and access controllers are now `OrganizationJoinsController` and `OrganizationAccessController`, with `organization_*` route names. They are the generator's templates.
 
+- Engine controllers answer validation failures with status 422 instead of the `:unprocessable_entity` symbol, which Rack 3.2 (Rails 8.1) deprecates. The status code is the same.
+- `organization_members_data` and `organization_invitations_data` pass the organization to the role labels (vocabulary).
+
+### Development
+
+- RuboCop runs in CI, and the 8 open offenses are fixed (`rubocop:disable-next`, RuboCop 1.92+).
+- SimpleCov uses its 1.x API (`skip`, `cover`, `SimpleCov.start` in the test helper): no deprecation output.
+- The Appraisal gemfiles are regenerated from the Gemfile.
+- New coverage for the permission helpers and the hierarchy with custom roles (`test/custom_role_helpers_test.rb`).
+- README: every public method is documented (verified-joining records, view helpers, every configuration option), and the "Future API" example for bulk invitations, which does not exist, is gone.
+
 ### Upgrading
 
 Run `rails g organizations:upgrade && rails db:migrate`. Existing organizations stay unclassified until you backfill them. Existing domains start unverified with the `"none"` policy: verify them before you turn on `require_verified_domains`.

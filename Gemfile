@@ -12,7 +12,8 @@ gem "rake", "~> 13.0"
 
 group :development do
   gem "irb"
-  gem "rubocop", "~> 1.88"
+  # 1.92+: the `rubocop:disable-next` directive (Style/DirectiveScope)
+  gem "rubocop", "~> 1.92"
   gem "rubocop-minitest", "~> 0.39"
   gem "rubocop-performance", "~> 1.26"
 end
@@ -28,7 +29,7 @@ group :development, :test do
   # poisoning on unique violations), so CI runs one PG cell too.
   gem "pg"
   gem "ostruct"
-  gem "simplecov", require: false
+  gem "simplecov", ">= 1.3", require: false # skip/cover and SimpleCov.start in the helper
   # Required explicitly for tests since we don't load the full Rails stack
   gem "activejob", ">= 7.1.0", "< 9.0"
   gem "actionmailer", ">= 7.1.0", "< 9.0"

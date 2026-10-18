@@ -176,8 +176,8 @@ module Organizations
           name: user.respond_to?(:name) && user.name.present? ? user.name : user.email,
           email: user.email,
           role: membership.role.to_sym,
-          role_label: organization_role_label(membership.role),
-          role_info: organization_role_info(membership.role),
+          role_label: organization_role_label(membership.role, organization: organization),
+          role_info: organization_role_info(membership.role, organization: organization),
           joined_at: membership.created_at,
           is_owner: membership.owner?
         }
@@ -194,7 +194,7 @@ module Organizations
           id: invitation.id,
           email: invitation.email,
           role: invitation.role.to_sym,
-          role_label: organization_role_label(invitation.role),
+          role_label: organization_role_label(invitation.role, organization: organization),
           invited_by: inviter,
           invited_by_name: inviter_display_name(inviter),
           status: organization_invitation_status(invitation),

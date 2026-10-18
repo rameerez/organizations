@@ -587,6 +587,7 @@ org.pending_invitations         # Invitations not yet accepted
 
 # Queries
 org.owner                       # User who owns this org
+org.owner_membership            # The owner's Membership
 org.admins                      # Users with admin role or higher
 org.has_member?(user)           # "Does org have this user as a member?"
 org.has_any_members?            # "Does org have any members?"
@@ -669,10 +670,15 @@ membership.invited_by           # User who invited them (if any)
 # Permission checks
 membership.has_permission_to?(:invite_members)   # => true/false
 membership.permissions                           # => [:view_members, :invite_members, ...]
+membership.role_sym                              # => :admin
+membership.owner? / admin? / member? / viewer?   # Exact role
+membership.verified?                             # Joined with a proven email (verified joining)
 
 # Role hierarchy checks
 membership.is_at_least?(:member)    # => true (if member, admin, or owner)
 membership.can_assign_role?(:admin) # => true (if admin or owner: roles at or below their own)
+membership.compare_role(other)      # => -1 (higher), 0, 1 (lower)
+membership.authorize_role_change!(:admin, changed_by: current_user)  # Raises NotAuthorized when not allowed
 
 # Role changes
 membership.promote_to!(:admin, changed_by: current_user)  # Change role to admin
@@ -700,6 +706,9 @@ invitation.from                 # Alias for invited_by
 invitation.pending?             # => true (not yet accepted)
 invitation.accepted?            # => true (has accepted_at)
 invitation.expired?             # => true (past expires_at)
+invitation.status               # => :pending, :accepted or :expired
+invitation.for_email?(email)    # Case-insensitive match
+invitation.acceptance_url       # Link for your own mailer (honors the engine mount path)
 
 # Grants the membership gets on acceptance
 invitation.grants
@@ -710,6 +719,45 @@ invitation.accept!              # Accept (auto-infers Current.user)
 invitation.accept!(user)        # Accept with explicit user
 invitation.resend!(resent_by: current_user)   # Send invitation email again
 invitation.revoke!(revoked_by: current_user)  # Delete it, so the link stops working
+```
+
+### Verified-joining records
+
+```ruby
+# Organizations::JoinRequest
+request.pending? / approved? / rejected? / withdrawn? / expired? / decided?
+request.effective_status            # => :pending, :approved, :rejected, :withdrawn or :expired
+request.email_verified?
+request.start_email_verification!(email: "j.doe@acme.com")
+request.verify_email_code!("492817")   # => Membership (or the request, when approval is manual)
+request.approve!(decided_by: admin)    # => Membership
+request.reject!(rejected_by: admin, reason: "unknown")
+request.withdraw!                      # The user cancels it
+user.pending_join_request_for(org)     # The user's open request, or nil
+
+# Organizations::JoinCode
+code.code / code.display_code          # "7FHK2MPX" / "7FHK-2MPX"
+code.active? / revoked? / expired? / exhausted? / code.status
+code.redeem!(user: user)               # Same as JoinCode.redeem(code.code, user:)
+code.revoke!
+
+# Organizations::Domain
+domain.matches_email?("j.doe@acme.com")   # Exact domain match
+domain.blocked?                           # Listed in config.blocked_email_domains
+domain.verification_expired?              # The open DNS challenge passed its TTL
+# (verification methods: see "Domain authority")
+
+# Organizations::AllowlistEntry
+entry.claimed? / entry.claim!(user)
+
+# Organizations::Grant (see "Scoped resource grants")
+grant.capabilities / grant.allows?(:read) / grant.resource / grant.grantable
+```
+
+### User housekeeping
+
+```ruby
+user.clear_organization_cache!   # Forget the memoized current organization and membership
 ```
 
 ## Controller helpers
@@ -759,6 +807,7 @@ redirect_to_no_organization!(alert: "...", notice: "...")         # Redirect and
 # Organization creation helper
 create_organization_and_switch!(current_user, name: "Acme")       # Create and set context in one call
 create_organization_with_context!(current_user, name: "Acme")     # Backward-compatible alias
+self.current_organization = org                                  # Set the session's organization (no membership check; prefer switch_to_organization!)
 
 # Authorization
 require_organization!                               # Redirect if no active org
@@ -860,6 +909,32 @@ The helper returns:
   switch_path: ->(org_id) { "/organizations/switch/#{org_id}" }
 }
 ```
+
+### All view helpers
+
+```ruby
+organization_switcher_data                          # See "Organization switcher"
+organization_invitation_badge(user)                 # See "Invitation badge"
+
+organization_role_label(:admin, organization: org)  # => "Admin" (I18n; the organization selects its vocabulary)
+organization_role_info(:admin, organization: org)   # => { role: :admin, label: "Admin", color: :blue }
+organization_invitation_status(invitation)          # => :pending, :accepted or :expired
+organization_invitation_status_label(invitation)    # => "Pending"
+organization_invitation_status_info(invitation)     # => { status:, label:, color: }
+organization_members_data(org)                      # => [{ id:, membership_id:, name:, email:, role:, role_label:, role_info:, joined_at:, is_owner: }]
+organization_invitations_data(org)                  # => [{ id:, email:, role:, role_label:, invited_by:, invited_by_name:, status:, status_info:, expires_at:, created_at: }]
+
+can_manage_organization?(user, org)     # manage_settings
+can_invite_members?(user, org)          # invite_members
+can_view_billing?(user, org)            # view_billing
+can_manage_billing?(user, org)          # manage_billing
+can_remove_member?(user, membership)    # remove_members, and the role rule
+can_change_member_role?(user, membership)  # edit_member_roles, and the role rule
+can_transfer_ownership?(user, org)      # transfer_ownership
+can_delete_organization?(user, org)     # delete_organization
+```
+
+Inside engine views, the host app's route helpers work without `main_app.` (the engine delegates unknown `*_path` and `*_url` helpers to the host).
 
 ### Invitation badge
 
@@ -1641,6 +1716,10 @@ Full configuration options:
 # config/initializers/organizations.rb
 Organizations.configure do |config|
   # === Authentication ===
+  # Class name of your user model (default: "User"). Set it before the gem's
+  # models load (initializers are fine).
+  config.user_class = "User"
+
   # Method that returns the current user (default: :current_user)
   config.current_user_method = :current_user
 
@@ -1668,6 +1747,20 @@ Organizations.configure do |config|
 
   # Custom mailer for invitations
   config.invitation_mailer = "Organizations::InvitationMailer"
+
+  # Role of invited members when the inviter names none (default: :member)
+  config.default_invitation_role = :member
+
+  # === Verified joining ===
+  config.verification_mailer = "Organizations::VerificationMailer"
+  config.verification_code_ttl = 15.minutes          # emailed codes always expire
+  config.verification_max_attempts = 5               # wrong codes per challenge
+  config.verification_resend_interval = 60.seconds   # between code sends
+  config.verification_max_sends = 5                  # code sends per join request
+  config.verification_email_normalizer = nil         # nil = downcase, strip, drop +tag; or ->(email) { ... }
+  config.trust_confirmed_account_email = true        # confirmed account email = proof of inbox (join_with_account_email!)
+  config.join_request_expiry = 30.days               # nil = pending requests never expire
+  config.join_code_generator = nil                   # nil = 8 characters without lookalikes; or -> { ... }
 
   # === Scoped resource grants (see "Scoped resource grants") ===
   config.full_resource_access_role = :admin           # nil = grants limit every role
@@ -1726,12 +1819,19 @@ Organizations.configure do |config|
   config.no_organization_alert = "Please create an organization first."
   config.no_organization_notice = "Please create or join an organization to continue."
 
+  # === Session ===
+  # Session key that stores the current organization id
+  config.session_key = :current_organization_id
+
   # === Organizations Controller ===
   # Additional params to permit when creating/updating organizations
   # Use this to add custom fields like support_email, billing_email, logo
   config.additional_organization_params = [:support_email]
 
   # === Engine Controllers ===
+  # Engine route groups to draw (nil = all). See "Installation".
+  config.engine_routes = { except: [:organizations] }
+
   # Base controller for authenticated routes (default: ::ApplicationController)
   config.parent_controller = "::ApplicationController"
 
@@ -1745,6 +1845,9 @@ Organizations.configure do |config|
   # Resolved at request-time, so runtime config changes are respected.
   config.authenticated_controller_layout = "dashboard"
   config.public_controller_layout = "devise"
+
+  # Host helper modules for the public (invitation) pages
+  config.public_controller_helpers = ["ApplicationHelper"]
 
   # === Handlers ===
   # Called when authorization fails
@@ -1768,7 +1871,12 @@ Organizations.configure do |config|
   end
 
   config.on_member_invited do |ctx|
-    # ctx.organization, ctx.invitation, ctx.invited_by
+    # ctx.organization, ctx.invitation, ctx.invited_by (strict: raise to veto)
+  end
+
+  config.on_member_joining do |ctx|
+    # THE membership gate (strict): raise Organizations::MembershipVetoed to veto
+    # ctx.organization, ctx.user, ctx.role, ctx.joined_via, ctx.invitation / ctx.join_request
   end
 
   config.on_member_joined do |ctx|
@@ -1786,6 +1894,11 @@ Organizations.configure do |config|
   config.on_ownership_transferred do |ctx|
     # ctx.organization, ctx.old_owner, ctx.new_owner
   end
+
+  config.on_join_request_created { |ctx| }    # ctx.organization, ctx.user, ctx.join_request
+  config.on_join_request_approved { |ctx| }   # …, ctx.membership, ctx.decided_by (nil when automatic)
+  config.on_join_request_rejected { |ctx| }   # …, ctx.decided_by
+  config.on_verification_delivery_failed { |ctx| }   # ctx.metadata["error_class"], ["error_message"]
 end
 ```
 
@@ -2464,16 +2577,6 @@ current_organization  # Returns cached (subsequent calls)
 current_organization  # Returns cached
 ```
 
-### Bulk operations
-
-For bulk invitations (coming in roadmap), the gem will support skipping per-record callbacks:
-
-```ruby
-# Future API
-org.bulk_invite!(emails, skip_callbacks: true)
-# Fires on_bulk_invited once instead of on_member_invited N times
-```
-
 ## Data integrity
 
 The gem handles concurrent access and race conditions to ensure data consistency.
@@ -2675,8 +2778,18 @@ Afterwards: `has_organizations` on `User`, move your model code into an extensio
 git clone https://github.com/rameerez/organizations
 cd organizations
 bin/setup
-bundle exec rake test
+bundle exec rake            # the test suite and RuboCop, as CI runs them
+
+# Against each supported Rails version (Appraisal)
+bundle exec appraisal install
+bundle exec appraisal rails-7.2 rake
+bundle exec appraisal rails-8.1 rake
+
+# The demo app and its HTTP suite (it is also the source of the generator templates)
+cd test/dummy && bin/rails test
 ```
+
+CI runs the suite on Ruby 3.3, 3.4 and 4.0 against Rails 7.2 and 8.1, once against PostgreSQL, plus RuboCop and the demo app's suite.
 
 ## Contributing
 

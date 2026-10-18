@@ -21,7 +21,7 @@ require "test_helper"
 #   3. The gate does NOT fire for: owner-at-org-creation, already-a-member
 #      idempotent paths, role changes / ownership transfers.
 #   4. Context carries organization, user, role, joined_via + the instrument.
-# rubocop:disable Metrics/ClassLength -- every join path + every non-path, one contract suite on purpose
+# rubocop:disable-next Metrics/ClassLength -- every join path + every non-path, one contract suite on purpose
 class MemberJoiningGateTest < ActiveSupport::TestCase
   include Organizations::TestHelpers
 
@@ -311,4 +311,3 @@ class MemberJoiningGateTest < ActiveSupport::TestCase
     issue_verification_code(request)
   end
 end
-# rubocop:enable Metrics/ClassLength

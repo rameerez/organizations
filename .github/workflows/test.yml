@@ -13,6 +13,24 @@ on:
       - "LICENSE.txt"
 
 jobs:
+  # Style and lint: the same `bundle exec rubocop` that `bundle exec rake`
+  # runs locally (the default task is test + rubocop).
+  rubocop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop --format github
+
   test:
     runs-on: ubuntu-latest
 

@@ -8,7 +8,7 @@ gem "json", "< 3"
 
 group :development do
   gem "irb"
-  gem "rubocop", "~> 1.88"
+  gem "rubocop", "~> 1.92"
   gem "rubocop-minitest", "~> 0.39"
   gem "rubocop-performance", "~> 1.26"
 end
@@ -19,8 +19,12 @@ group :development, :test do
   gem "minitest-mock"
   gem "rack-test"
   gem "sqlite3", ">= 2.1"
+  gem "pg"
   gem "ostruct"
-  gem "simplecov", require: false
+  gem "simplecov", ">= 1.3", require: false
+  gem "activejob", ">= 7.1.0", "< 9.0"
+  gem "actionmailer", ">= 7.1.0", "< 9.0"
+  gem "globalid", ">= 1.0"
 end
 
 gemspec path: "../"
