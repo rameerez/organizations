@@ -20,6 +20,10 @@ module Organizations
   class Invitation < ActiveRecord::Base
     self.table_name = "organizations_invitations"
 
+    # grant!, revoke_grant!, grant_for, granted?: grants the membership gets
+    # when this invitation is accepted
+    include Organizations::GrantHolder
+
     # === Associations ===
 
     belongs_to :organization,
@@ -33,6 +37,9 @@ module Organizations
 
     # Alias for invited_by (semantic convenience as per README)
     alias_method :from, :invited_by
+
+    # Grants that move to the membership on acceptance (scoped resource grants)
+    has_many :grants, class_name: "Organizations::Grant", inverse_of: :invitation, dependent: :delete_all
 
     # === Validations ===
 
@@ -165,12 +172,14 @@ module Organizations
         # Check if user is already a member (race condition from another invitation)
         existing_membership = organization.memberships.find_by(user_id: accepting_user.id)
         if existing_membership
+          move_grants_to!(existing_membership)
           update!(accepted_at: Time.current)
           return existing_membership
         end
 
         # Create the membership (with verified-joining provenance)
         membership = create_membership_for!(accepting_user, skip_email_validation)
+        move_grants_to!(membership)
 
         # Mark invitation as accepted
         update!(accepted_at: Time.current)
@@ -245,6 +254,24 @@ module Organizations
     end
 
     private
+
+    # The invitation's grants become the membership's (a grant on the same
+    # resource takes the invitation's capabilities). The inviter was
+    # checked when the invitation was sent.
+    def move_grants_to!(membership)
+      return unless grants_table?
+
+      grants.each do |grant|
+        target = membership.grants.find_or_initialize_by(grantable_type: grant.grantable_type,
+                                                         grantable_id: grant.grantable_id)
+        target.update!(capabilities: grant.capabilities, granted_by_id: grant.granted_by_id)
+      end
+      grants.delete_all
+    end
+
+    def grants_table?
+      Organizations::Grant.table_exists?
+    end
 
     # Create the membership for an acceptance.
     # Uses invited_by_id instead of invited_by to avoid Rails class reloading

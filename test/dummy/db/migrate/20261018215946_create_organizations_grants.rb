@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+
+# Scoped resource grants: a membership (or a pending invitation) limited to
+# some records of your app, with a capability list per record.
+class CreateOrganizationsGrants < ActiveRecord::Migration[8.0]
+  def change
+    # ⚠️ If your user model is NOT `User` (config.user_class), change
+    # `to_table: :users` to your user table before migrating.
+    foreign_key_type = primary_key_type_setting || :bigint
+
+    create_table :organizations_grants, id: primary_key_type_setting || :primary_key do |t|
+      # Exactly one holder: the membership, or the invitation until it is accepted.
+      t.references :membership, null: true, type: foreign_key_type,
+                                foreign_key: { to_table: :organizations_memberships, on_delete: :cascade }
+      t.references :invitation, null: true, type: foreign_key_type,
+                                foreign_key: { to_table: :organizations_invitations, on_delete: :cascade }
+
+      # The granted resource. ⚠️ grantable_id must have the type of the ids
+      # you grant: the app's primary key type by default. Use :uuid or
+      # :string if your resources use other ids.
+      t.string :grantable_type, null: false
+      t.column :grantable_id, foreign_key_type, null: false
+
+      t.send(json_column_type, :capabilities, null: json_column_null, default: json_column_default)
+      t.references :granted_by, null: true, type: foreign_key_type,
+                                foreign_key: { to_table: :users, on_delete: :nullify }
+
+      t.timestamps
+
+      t.check_constraint "(membership_id IS NULL) <> (invitation_id IS NULL)", name: "org_grants_one_holder"
+    end
+
+    add_index :organizations_grants, [ :membership_id, :grantable_type, :grantable_id ],
+              unique: true, name: "index_org_grants_on_membership_and_grantable"
+    add_index :organizations_grants, [ :invitation_id, :grantable_type, :grantable_id ],
+              unique: true, name: "index_org_grants_on_invitation_and_grantable"
+    add_index :organizations_grants, [ :grantable_type, :grantable_id ], name: "index_org_grants_on_grantable"
+  end
+
+  private
+
+  def primary_key_type_setting
+    config = Rails.configuration.generators
+    config.options[config.orm][:primary_key_type]
+  end
+
+  def json_column_type
+    connection.adapter_name.downcase.include?("postgresql") ? :jsonb : :json
+  end
+
+  # MySQL 8+ doesn't allow default values on JSON columns.
+  def json_column_default
+    connection.adapter_name.downcase.include?("mysql") ? nil : []
+  end
+
+  def json_column_null
+    connection.adapter_name.downcase.include?("mysql")
+  end
+end

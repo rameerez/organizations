@@ -117,6 +117,19 @@ module Organizations
     # locale files; a missing key falls back to the ordinary one.
     attr_accessor :vocabulary
 
+    # === Scoped resource grants (v0.7.0) ===
+    # Roles at or above this one see every resource; roles below it see only
+    # the resources granted to them. nil = grants limit every role.
+    attr_accessor :full_resource_access_role
+
+    # The capability names a grant may list (nil = any name).
+    #   config.grant_capabilities = %i[read edit approve]
+    attr_accessor :grant_capabilities
+
+    # The permission a member needs to grant or revoke (default
+    # :edit_member_roles). Checked when granted_by:/revoked_by: is a member.
+    attr_accessor :grant_management_permission
+
     # === Invitations ===
     # How long invitations are valid
     attr_accessor :invitation_expiry
@@ -326,6 +339,9 @@ module Organizations
       @default_organization_name = "Personal"
       @record_personal_organizations = false
       @vocabulary = nil
+      @full_resource_access_role = :admin
+      @grant_capabilities = nil
+      @grant_management_permission = :edit_member_roles
       @account_deletion_policy = :prevent
 
       # Invitation defaults
@@ -602,6 +618,7 @@ module Organizations
       validate_authentication_methods!
       validate_personal_organization_settings!
       validate_vocabulary!
+      validate_grant_settings!
       validate_invitation_settings!
       validate_verification_settings!
       validate_domain_authority_settings!
@@ -626,6 +643,28 @@ module Organizations
       unless @authenticate_user_method.is_a?(Symbol)
         raise ConfigurationError, "authenticate_user_method must be a Symbol"
       end
+    end
+
+    def validate_grant_settings!
+      validate_full_resource_access_role!
+      validate_grant_capabilities!
+      return if @grant_management_permission.is_a?(Symbol) || @grant_management_permission.is_a?(String)
+
+      raise ConfigurationError, "grant_management_permission must be a Symbol"
+    end
+
+    def validate_full_resource_access_role!
+      return if @full_resource_access_role.nil?
+      return if Roles.hierarchy_for(@custom_roles_definition).include?(@full_resource_access_role.to_sym)
+
+      raise ConfigurationError, "full_resource_access_role must be nil or a configured role"
+    end
+
+    def validate_grant_capabilities!
+      return if @grant_capabilities.nil?
+      return if @grant_capabilities.is_a?(Array) && @grant_capabilities.all? { |c| c.is_a?(String) || c.is_a?(Symbol) }
+
+      raise ConfigurationError, "grant_capabilities must be nil or an Array of Symbols/Strings"
     end
 
     def validate_vocabulary!

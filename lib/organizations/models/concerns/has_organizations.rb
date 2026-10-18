@@ -562,9 +562,10 @@ module Organizations
           # @param email [String] Email address to invite
           # @param organization [Organizations::Organization] (optional, defaults to current)
           # @param role [Symbol] (optional, defaults to configured default)
+          # @param grants [Hash{resource => Array}, nil] see Organization#send_invite_to!
           # @return [Organizations::Invitation]
           # @raise [Organizations::NotAuthorized] if user doesn't have permission
-          def send_organization_invite_to!(email, organization: nil, role: nil)
+          def send_organization_invite_to!(email, organization: nil, role: nil, grants: nil)
             org = organization || current_organization
 
             unless org
@@ -583,7 +584,7 @@ module Organizations
               )
             end
 
-            org.send_invite_to!(email, invited_by: self, role: role)
+            org.send_invite_to!(email, invited_by: self, role: role, grants: grants)
           end
 
           # === Verified Joining (v0.5.0) ===

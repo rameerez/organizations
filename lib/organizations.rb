@@ -121,6 +121,10 @@ module Organizations
   autoload :OrganizationScoped, "organizations/organization_scoped"
   autoload :PersonalOwnerBackfill, "organizations/personal_owner_backfill"
   autoload :PUBLIC_EMAIL_DOMAINS, "organizations/public_email_domains"
+  autoload :Resource, "organizations/resource"
+  autoload :GrantHolder, "organizations/grant_holder"
+  autoload :GrantAccess, "organizations/grant_access"
+  autoload :Grantable, "organizations/grantable"
   autoload :AccountDeletionPlan, "organizations/account_deletion_plan"
 
   # Alias for README compatibility: `include Organizations::Controller`
@@ -159,6 +163,7 @@ module Organizations
     autoload :JoinCode, "organizations/models/join_code"
     autoload :AllowlistEntry, "organizations/models/allowlist_entry"
     autoload :JoinRequest, "organizations/models/join_request"
+    autoload :Grant, "organizations/models/grant"
 
     # Non-Rails contexts (plain ActiveRecord, the gem's own test suite) don't
     # get the Rails engine's automatic `config/locales` pickup, so register

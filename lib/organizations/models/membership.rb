@@ -32,6 +32,11 @@ module Organizations
     # see Organizations::MetadataFlags.
     extend Organizations::MetadataFlags
 
+    # grant!, revoke_grant!, grant_for, granted? (scoped resource grants)
+    include Organizations::GrantHolder
+    # limited_by_grants?, capabilities_for, can?, visible, granted_ids
+    include Organizations::GrantAccess
+
     # Error raised when trying to demote below current role
     class CannotDemoteOwner < Organizations::Error; end
     class CannotPromoteToOwner < Organizations::Error; end
@@ -50,6 +55,10 @@ module Organizations
     belongs_to :invited_by,
                class_name: Organizations.user_class_name,
                optional: true
+
+    # Scoped resource grants (rails g organizations:grants). Removed with the
+    # membership: a member who leaves keeps no access.
+    has_many :grants, class_name: "Organizations::Grant", inverse_of: :membership, dependent: :delete_all
 
     # === Validations ===
 
@@ -80,6 +89,11 @@ module Organizations
 
     # Memberships with viewer role
     scope :viewers, -> { where(role: "viewer") }
+
+    # Memberships with a grant on a resource
+    scope :with_grant_on, lambda { |resource|
+      where(id: Organizations::Grant.active.for_resource(resource).select(:membership_id))
+    }
 
     # Order by role hierarchy (owners first)
     # (the configured hierarchy, custom roles included; unknown roles last)
