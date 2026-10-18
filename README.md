@@ -363,7 +363,7 @@ config.on_verification_delivery_failed do |ctx|
 end
 ```
 
-Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only).
+Upgrading an existing install: `rails g organizations:upgrade && rails db:migrate` (additive only). The generator adds only the migrations your app does not have yet (it asks the database when it can, and reads `db/migrate` otherwise), so run it after every upgrade of the gem. For a squashed migration history, name the steps: `rails g organizations:upgrade --steps add_personal_organizations`.
 
 ## Why this gem exists
 
@@ -409,6 +409,7 @@ When you add `has_organizations` to your User model, you get:
 user.organizations                      # All organizations user belongs to
 user.memberships                        # All memberships (with roles)
 user.owned_organizations                # Organizations where user is owner
+user.personal_organization              # Their personal organization, or nil (never creates one)
 user.pending_organization_invitations   # Invitations waiting to be accepted
 
 # Current organization context
@@ -446,6 +447,10 @@ user.leave_organization!(org)
 user.leave_current_organization!             # Leave the active org
 user.send_organization_invite_to!(email)                     # Invite to current org
 user.send_organization_invite_to!(email, organization: org)  # Invite to specific org
+user.create_personal_organization!           # Create it, or return the existing one
+
+# Account deletion
+user.account_deletion_plan                   # What user.destroy would do (changes nothing)
 ```
 
 ### Organization methods
@@ -467,6 +472,14 @@ org.member_count                # Number of members
 
 # Class methods / Scopes
 Organizations::Organization.with_member(user)  # Find all orgs where user is a member
+Organizations::Organization.personal           # Personal organizations
+Organizations::Organization.not_personal       # Every other organization
+Organizations::Organization.backfill_personal_owners!(mapping, dry_run: true)
+
+# Personal organizations
+org.personal?                   # "Is this someone's personal organization?"
+org.personal_owner              # The user it belongs to
+org.convert_to_shared!          # Stop being personal (needed before a transfer)
 
 # Actions
 # Pass the acting user (removed_by:, changed_by:) so the role rule is checked;
@@ -1128,6 +1141,93 @@ Organizations.configure do |config|
 end
 ```
 
+### Personal organizations
+
+An auto-created organization is an ordinary organization: nothing in the database says that it is the user's own workspace. `user.organizations.first` is not a personal-workspace lookup. Turn on `record_personal_organizations` to keep a persistent link from the user to the one organization that is theirs:
+
+```ruby
+Organizations.configure do |config|
+  config.always_create_personal_organization_for_each_user = true
+  config.record_personal_organizations = true   # default: false
+end
+```
+
+```ruby
+user.personal_organization               # => the organization, or nil. Never creates anything.
+user.create_personal_organization!       # creates it, or returns the existing one
+user.create_personal_organization!("Ana's space")
+
+org.personal?                            # => true
+org.personal_owner                       # => the user
+Organizations::Organization.personal     # every personal organization
+Organizations::Organization.not_personal # every other organization
+```
+
+The rules:
+
+- The link is `organizations.personal_owner_id`, with a unique index. A user has at most one personal organization.
+- The personal owner is also the owner membership. The gem writes both together, and `create_with_owner!` and `create_organization!` refuse a `personal_owner` who is not the new owner. `org.transfer_ownership_to!` raises `CannotTransferPersonalOrganization` for a personal organization: call `org.convert_to_shared!` first.
+- A personal organization can have other members. To keep it owner-only, veto joins in the membership gate, which covers every join path:
+
+  ```ruby
+  config.on_member_joining do |ctx|
+    raise Organizations::MembershipVetoed, "This is a personal workspace." if ctx.organization.personal?
+  end
+  ```
+
+- Sign-up provisioning logs a failure and keeps the user, as before. `user.create_personal_organization!` is the repair path: it is idempotent, and concurrent calls converge on one organization.
+- An invited sign-up that skips auto-creation (see "Pattern 4: Hybrid Onboarding") gets no personal organization.
+- Existing organizations stay unclassified after the upgrade. The gem never guesses from a name, a member count or the oldest organization. To link organizations that you have reviewed, pass the mapping:
+
+  ```ruby
+  report = Organizations::Organization.backfill_personal_owners!({ user => org, other_user.id => other_org.id }, dry_run: true)
+  report.assignments  # => [[user_id, organization_id], ...]
+  report.unchanged    # pairs that are already linked
+  report.conflicts    # => [{ user_id:, organization_id:, reason: :not_the_owner }, ...]
+  Organizations::Organization.backfill_personal_owners!(mapping)  # writes nothing when any pair conflicts
+  ```
+
+  Conflict reasons: `:organization_not_found`, `:not_the_owner`, `:organization_personal_for_another_user`, `:user_has_another_personal_organization`, `:organization_mapped_twice`, `:user_mapped_twice`. The write runs in its own savepoint: a conflict found at write time (a concurrent provisioning) rolls back every assignment and comes back in the report.
+
+A personal organization tells you who probably pays. Billing and entitlements stay with your app.
+
+## Deleting user accounts
+
+By default a user who owns an organization cannot be deleted: `user.destroy` returns false with an error, and `user.destroy!` raises `ActiveRecord::RecordNotDestroyed`. Transfer ownership or delete those organizations first. The gem cannot cancel subscriptions or call external services for you, so run those steps in your own account-closure workflow, after the deletion commits.
+
+Preview what a deletion would do. Nothing changes, and nothing is locked: the plan is a preview for a confirmation screen, and only `user.destroy` decides.
+
+```ruby
+plan = user.account_deletion_plan
+plan.allowed?                  # => false
+plan.blockers                  # => [#<struct organization=#<Organization "Acme">, reason=:owns_organization_with_members>]
+plan.organizations_to_destroy  # organizations deleted with the account
+plan.memberships_to_remove     # the user's other memberships, removed with the account
+plan.to_h                      # ids and symbols, for an audit log or a confirmation screen
+user.account_deletion_plan(policy: :destroy_personal_organization)  # preview another policy
+```
+
+Apps with personal organizations can let a user delete their account together with their personal organization:
+
+```ruby
+config.account_deletion_policy = :destroy_personal_organization   # default: :prevent
+```
+
+| The user owns… | `:prevent` | `:destroy_personal_organization` |
+|---|---|---|
+| nothing | deleted | deleted |
+| their personal organization, as its only member | blocked (`:personal_organization`) | deleted with the organization |
+| their personal organization, with other members | blocked (`:personal_organization_with_members`) | blocked |
+| another organization, as its only member | blocked (`:owns_organization`) | blocked |
+| another organization, with other members | blocked (`:owns_organization_with_members`) | blocked |
+
+What the gem guarantees:
+
+- It checks the complete owned set before it deletes anything. One blocker blocks the whole deletion.
+- The organization deletion and the user deletion are one transaction, with its own savepoint, also inside a transaction of yours. A host `before_destroy` veto on the organization, or any later failure, rolls back everything, and the veto message is on `user.errors`.
+- The guard locks the user row and then the owned organization rows. A concurrent join or organization creation for that user, a join or transfer in an owned organization, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it.
+- The user's other memberships are deleted (`dependent: :destroy`), as before. Invitations they sent, join requests they decided, join codes they created and allowlist entries they claimed keep the record and lose the user reference.
+
 ## User Onboarding Patterns
 
 The `always_create_personal_organization_for_each_user` setting controls how new users get their first organization. This is one of the most important decisions when integrating the gem.
@@ -1307,6 +1407,14 @@ Organizations.configure do |config|
 
   # Name for auto-created organizations
   config.default_organization_name = ->(user) { "Personal" }
+
+  # Record the auto-created organization as user.personal_organization (default: false)
+  config.record_personal_organizations = false
+
+  # What deleting a user who owns organizations does (default: :prevent).
+  # :destroy_personal_organization also deletes their personal organization
+  # when they are its only member. See "Deleting user accounts".
+  config.account_deletion_policy = :prevent
 
   # === Invitations ===
   # How long invitations are valid
@@ -1717,6 +1825,7 @@ organizations_organizations
   - name (string, required)
   - memberships_count (integer, counter cache, default: 0)
   - metadata (jsonb, default: {})
+  - personal_owner_id (foreign key to users, nullable, unique; ON DELETE SET NULL)
   - created_at / updated_at
 ```
 

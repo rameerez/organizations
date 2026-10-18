@@ -12,6 +12,7 @@ AllCops:
   Exclude:
     - 'bin/**/*'
     - 'vendor/**/*'
+    - 'tmp/**/*'  # generator test output
     - 'test/dummy/**/*'
     - 'db/migrate/**/*'  # Generated migrations
     - 'lib/generators/**/templates/**/*'  # Generator templates

@@ -62,6 +62,10 @@ ActiveRecord::Schema.define do
     # json (matches the real installs jsonb/json column) so Hash values
     # round-trip - metadata_flag and the copy-through channel depend on it
     t.json :metadata, default: {}
+    # Personal organizations (v0.7.0): the user whose personal workspace
+    # this is. Same shape as the upgrade migration.
+    t.references :personal_owner, null: true, index: { unique: true },
+                                  foreign_key: { to_table: :users, on_delete: :nullify }
     t.timestamps
   end
 

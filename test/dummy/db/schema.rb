@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_17_015540) do
+ActiveRecord::Schema[8.0].define(version: 2026_10_18_204609) do
   create_table "organizations_allowlist_entries", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.string "email", null: false
@@ -134,6 +134,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_17_015540) do
     t.json "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "personal_owner_id"
+    t.index ["personal_owner_id"], name: "index_organizations_organizations_on_personal_owner_id", unique: true
   end
 
   create_table "users", force: :cascade do |t|
@@ -157,4 +159,5 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_17_015540) do
   add_foreign_key "organizations_memberships", "organizations_organizations", column: "organization_id"
   add_foreign_key "organizations_memberships", "users"
   add_foreign_key "organizations_memberships", "users", column: "invited_by_id"
+  add_foreign_key "organizations_organizations", "users", column: "personal_owner_id", on_delete: :nullify
 end

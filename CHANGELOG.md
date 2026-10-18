@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### Added
+
+- **Personal organizations** (issue #21). `config.record_personal_organizations = true` records the auto-created organization as the user's personal organization. New API: `user.personal_organization` (a lookup, never creates), `user.create_personal_organization!` (idempotent, the repair path after a failed sign-up provisioning, converges under concurrency), `org.personal?`, `org.personal_owner`, `org.convert_to_shared!`, and the scopes `Organization.personal` and `Organization.not_personal`. The link is `organizations.personal_owner_id`: unique per user, `ON DELETE SET NULL`.
+- `Organization.backfill_personal_owners!(mapping, dry_run:)` links reviewed users to existing organizations. It never guesses. It reports conflicts (`:organization_not_found`, `:not_the_owner`, `:organization_personal_for_another_user`, `:user_has_another_personal_organization`, `:organization_mapped_twice`, `:user_mapped_twice`) and writes nothing when any pair conflicts. It writes in its own savepoint, also inside a host transaction.
+- **Safe account deletion.** `user.account_deletion_plan` lists what `user.destroy` would do, with each blocking organization and its reason, and changes nothing. `config.account_deletion_policy = :destroy_personal_organization` deletes the user's personal organization with the account when the user is its only member. Any other owned organization still blocks. The check covers the complete owned set first, and one transaction holds the organization and the user deletion, so a veto or a failure rolls back everything.
+- `rails g organizations:upgrade` now adds only the migrations an install lacks: the 0.5.0 verified-joining migration and the 0.7.0 personal-organizations migration. It asks the database when it can and reads `db/migrate` otherwise. `--steps NAME…` generates exactly the named steps, for squashed histories. Before, it always generated the 0.5.0 migration, which broke installs made on 0.5.0 or later.
+
+### Changed
+
+- `transfer_ownership_to!` raises `Organization::CannotTransferPersonalOrganization` for a personal organization. Call `convert_to_shared!` first. Organizations that are not personal are not affected.
+- `User#destroy` (from `has_organizations`, prepended so a host override cannot drop it) runs in its own savepoint, so an aborted destroy inside a host transaction rolls back what the deletion guard did.
+- `transfer_ownership_to!` locks the new owner's user row before the organization row (the same order as the deletion guard, so the two cannot deadlock), so a transfer cannot race the deletion of that user. `create_with_owner!` and `create_organization!` raise `ArgumentError` for a `personal_owner` who is not the new owner.
+- The account-deletion guard now locks the user row and the owned organization rows before it checks ownership. A concurrent organization creation for the user can no longer slip past the check and lose its owner membership. The default policy (`:prevent`) and its error message are unchanged, and the guard keeps its method name (`prevent_deletion_while_owning_organizations`), so a host `skip_callback` for it still works.
+
+### Upgrading
+
+Run `rails g organizations:upgrade && rails db:migrate`. Existing organizations stay unclassified until you backfill them.
+
 ## [0.6.1] - 2026-10-18
 
 **Upgrade note.** Before this release, a custom role with `invite_members` or `edit_member_roles` could invite to, or promote to, a role above its own. An admin invitation crafted that way on 0.6.0 still grants admin when it is accepted after the upgrade. If your app has custom roles with those permissions, audit pending invitations and recent role changes made by members of those roles.

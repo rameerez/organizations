@@ -105,6 +105,8 @@ module Organizations
   autoload :JoinState, "organizations/join_state"
   autoload :MetadataFlags, "organizations/metadata_flags"
   autoload :OrganizationScoped, "organizations/organization_scoped"
+  autoload :PersonalOwnerBackfill, "organizations/personal_owner_backfill"
+  autoload :AccountDeletionPlan, "organizations/account_deletion_plan"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers
