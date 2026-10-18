@@ -183,6 +183,20 @@ class PersonalOrganizationsTest < Organizations::Test
     assert_equal 1, user.organizations.count
   end
 
+  test "with the flag on but no column yet, sign-up keeps creating an ordinary organization" do
+    Organizations.configure do |c|
+      c.always_create_personal_organization_for_each_user = true
+      c.record_personal_organizations = true
+    end
+    reload_user_settings!
+    columns = Organizations::Organization.column_names - ["personal_owner_id"]
+
+    user = Organizations::Organization.stub(:column_names, columns) { create_user! }
+
+    assert_equal 1, user.organizations.count
+    assert_nil user.organizations.first.personal_owner_id
+  end
+
   test "an invited sign-up that skips auto-creation gets no personal organization" do
     Organizations.configure do |c|
       c.always_create_personal_organization_for_each_user = true

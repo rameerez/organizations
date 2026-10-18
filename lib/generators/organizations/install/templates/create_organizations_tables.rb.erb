@@ -16,6 +16,7 @@ class CreateOrganizationsTables < ActiveRecord::Migration<%= migration_version %
       # The user whose personal organization this is (nil for every other
       # organization). Unique: one personal organization per user. The row
       # clears itself if the user row is deleted outside the gem.
+      # (`to_table: :users`: see the note at the top of this migration.)
       t.references :personal_owner, null: true, type: foreign_key_type, index: { unique: true },
                                     foreign_key: { to_table: :users, on_delete: :nullify }
 

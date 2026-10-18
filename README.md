@@ -1195,7 +1195,7 @@ A personal organization tells you who probably pays. Billing and entitlements st
 
 By default a user who owns an organization cannot be deleted: `user.destroy` returns false with an error, and `user.destroy!` raises `ActiveRecord::RecordNotDestroyed`. Transfer ownership or delete those organizations first. The gem cannot cancel subscriptions or call external services for you, so run those steps in your own account-closure workflow, after the deletion commits.
 
-Preview what a deletion would do. Nothing changes:
+Preview what a deletion would do. Nothing changes, and nothing is locked: the plan is a preview for a confirmation screen, and only `user.destroy` decides.
 
 ```ruby
 plan = user.account_deletion_plan

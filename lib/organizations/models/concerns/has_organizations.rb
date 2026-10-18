@@ -664,7 +664,9 @@ module Organizations
             remember_personal_organization(organization)
           rescue ActiveRecord::RecordNotUnique, Organizations::OrganizationLimitReached
             # A concurrent call created it first: the unique index fired, or
-            # the winner's organization now counts against the limit.
+            # the winner's organization now counts against the limit. Any
+            # other failure re-raises, because then no personal organization
+            # exists. (When one exists, the call is idempotent by contract.)
             winner = Organizations::Organization.find_by(personal_owner_id: id)
             raise unless winner
 
@@ -715,7 +717,7 @@ module Organizations
             return unless should_create_personal_organization?
 
             org_name = Organizations.configuration.resolve_default_organization_name(self)
-            if Organizations.configuration.record_personal_organizations
+            if record_personal_organization?
               create_personal_organization!(org_name)
             else
               create_organization!(org_name)
@@ -755,6 +757,18 @@ module Organizations
             reasons = e.record.errors.full_messages.presence || [e.message]
             reasons.each { |reason| errors.add(:base, reason) }
             throw(:abort)
+          end
+
+          # The flag is on. Before the upgrade migration ran, keep the old
+          # behaviour (an ordinary organization) and warn, so a sign-up never
+          # loses its organization.
+          def record_personal_organization?
+            return false unless Organizations.configuration.record_personal_organizations
+            return true if Organizations::Organization.column_names.include?("personal_owner_id")
+
+            Callbacks.log_warn("[Organizations] record_personal_organizations is on but the personal_owner_id " \
+                               "column is missing. Run `rails g organizations:upgrade && rails db:migrate`.")
+            false
           end
 
           def remember_personal_organization(organization)
