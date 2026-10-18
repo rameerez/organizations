@@ -58,7 +58,7 @@ class I18nTest < ActiveSupport::TestCase
 
   # Key families addressed with interpolated key paths (roles.#{role} etc.)
   # rather than static literals — exempt from the dead-key sweep below.
-  DYNAMIC_KEY_FAMILIES = %w[roles. invitation_status. join_request_status.].freeze
+  DYNAMIC_KEY_FAMILIES = %w[roles. invitation_status. join_request_status. errors.domain_verification.].freeze
 
   test "every en.yml key is referenced from lib/ or app/ (no dead catalog keys)" do
     en = flatten_keys(load_locale("en"))

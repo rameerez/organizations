@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_10_18_204609) do
+ActiveRecord::Schema[8.0].define(version: 2026_10_18_210934) do
   create_table "organizations_allowlist_entries", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.string "email", null: false
@@ -34,9 +34,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_18_204609) do
     t.json "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "join_policy", default: "none", null: false
+    t.string "verification_token"
+    t.datetime "verification_started_at"
+    t.datetime "verified_at"
+    t.string "verification_method"
+    t.bigint "verified_by_id"
+    t.datetime "verification_revoked_at"
     t.index ["domain"], name: "index_organizations_domains_on_domain"
     t.index ["organization_id", "domain"], name: "index_organizations_domains_on_organization_id_and_domain", unique: true
     t.index ["organization_id"], name: "index_organizations_domains_on_organization_id"
+    t.index ["verified_by_id"], name: "index_organizations_domains_on_verified_by_id"
   end
 
   create_table "organizations_invitations", force: :cascade do |t|
@@ -130,11 +138,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_18_204609) do
 
   create_table "organizations_organizations", force: :cascade do |t|
     t.string "name", null: false
-    t.integer "memberships_count", default: 0, null: false
     t.json "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "personal_owner_id"
+    t.integer "memberships_count", default: 0, null: false
     t.index ["personal_owner_id"], name: "index_organizations_organizations_on_personal_owner_id", unique: true
   end
 
@@ -148,6 +156,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_18_204609) do
   add_foreign_key "organizations_allowlist_entries", "organizations_organizations", column: "organization_id"
   add_foreign_key "organizations_allowlist_entries", "users", column: "claimed_by_id"
   add_foreign_key "organizations_domains", "organizations_organizations", column: "organization_id"
+  add_foreign_key "organizations_domains", "users", column: "verified_by_id", on_delete: :nullify
   add_foreign_key "organizations_invitations", "organizations_organizations", column: "organization_id"
   add_foreign_key "organizations_invitations", "users", column: "invited_by_id"
   add_foreign_key "organizations_join_codes", "organizations_organizations", column: "organization_id"

@@ -11,6 +11,7 @@ module Organizations
     #   0.5.0 - verified joining: domains, join codes, allowlist entries,
     #           join requests, membership provenance, invitation metadata
     #   0.7.0 - personal organizations (organizations.personal_owner_id)
+    #   0.7.0 - domain authority (verification and join policy on domains)
     #
     # A step counts as present when the database already has its table or
     # column (when the generator can connect), when its upgrade migration is
@@ -35,7 +36,8 @@ module Organizations
       # this step, [table, column] that exist once it ran (column nil = table only)]
       STEPS = {
         "add_verified_joining_to_organizations" => ["organizations_domains", ["organizations_domains", nil]],
-        "add_personal_organizations" => ["personal_owner", %w[organizations_organizations personal_owner_id]]
+        "add_personal_organizations" => ["personal_owner", %w[organizations_organizations personal_owner_id]],
+        "add_domain_verification" => ["verification_token", %w[organizations_domains verification_token]]
       }.freeze
 
       class_option :steps, type: :array, default: nil,

@@ -23,6 +23,10 @@ class UpgradeGeneratorTest < Rails::Generators::TestCase
       assert_match "unique: true", content
       assert_match "on_delete: :nullify", content
     end
+    assert_migration "db/migrate/add_domain_verification.rb" do |content|
+      assert_match "t.string :join_policy, null: false, default: \"none\"", content
+      assert_match "t.datetime :verification_revoked_at", content
+    end
   end
 
   test "an install that already ran the 0.5 upgrade gets only the 0.7 step" do
@@ -46,7 +50,7 @@ class UpgradeGeneratorTest < Rails::Generators::TestCase
 
   test "an up-to-date install gets nothing" do
     write_migration("20250101000000_create_organizations_tables.rb",
-                    "create_table :organizations_domains\nt.references :personal_owner")
+                    "create_table :organizations_domains\nt.references :personal_owner\nt.string :verification_token")
 
     output = without_database { run_generator }
 
@@ -81,6 +85,7 @@ class UpgradeGeneratorTest < Rails::Generators::TestCase
 
     assert_match "t.references :personal_owner", template
     assert_match "on_delete: :nullify", template
+    assert_match "t.string :verification_token", template
   end
 
   private

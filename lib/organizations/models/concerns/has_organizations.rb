@@ -62,6 +62,9 @@ module Organizations
 
             # Preserve owner integrity on user deletion
             setup_owner_deletion_guard
+
+            # Join auto_join domains once the account email is confirmed
+            after_commit :join_organizations_by_domain_after_confirmation, on: %i[create update]
           end
 
           private
@@ -673,6 +676,36 @@ module Organizations
             remember_personal_organization(winner)
           end
 
+          # === Domain policies (v0.7.0) ===
+
+          # Organizations to offer this user: a verified domain of theirs
+          # matches the user's confirmed account email, with join_policy
+          # "suggest" or "auto_join", and the user is not a member yet. Empty
+          # while the email is unconfirmed (it proves nothing yet) or
+          # config.trust_confirmed_account_email is off. Joining still goes
+          # through Organization#join_with_account_email! or JoinFlow.
+          # @return [ActiveRecord::Relation<Organizations::Organization>]
+          def suggested_organizations
+            organizations_with_domain_policy(%w[suggest auto_join])
+              .where.not(id: memberships.select(:organization_id))
+          end
+
+          # Join every organization whose verified domain has join_policy
+          # "auto_join" and matches the confirmed account email, through the
+          # membership gate (Organization#join_with_account_email!). Runs on
+          # its own after sign-up and after the email confirmation. A refusal
+          # (a veto, an email already claimed) skips that organization.
+          # Idempotent: it returns existing memberships too.
+          # @return [Array<Organizations::Membership>]
+          def join_organizations_by_domain!
+            organizations_with_domain_policy(%w[auto_join]).order(:id).filter_map do |organization|
+              memberships.find_by(organization_id: organization.id) || organization.join_with_account_email!(self)
+            rescue Organizations::Error, ActiveRecord::RecordInvalid => e
+              Callbacks.log_warn("[Organizations] Domain auto-join to organization #{organization.id} skipped: #{e.message}")
+              nil
+            end
+          end
+
           # What deleting this user would do to their organizations. Changes
           # nothing. See Organizations::AccountDeletionPlan.
           # @param policy [Symbol] defaults to config.account_deletion_policy
@@ -769,6 +802,31 @@ module Organizations
             Callbacks.log_warn("[Organizations] record_personal_organizations is on but the personal_owner_id " \
                                "column is missing. Run `rails g organizations:upgrade && rails db:migrate`.")
             false
+          end
+
+          # The account email counts as proof of inbox control: it is
+          # confirmed, and config.trust_confirmed_account_email is on.
+          def proven_account_email?
+            Organizations.configuration.trust_confirmed_account_email &&
+              respond_to?(:confirmed_at) && confirmed_at.present? &&
+              respond_to?(:email) && email.present?
+          end
+
+          def organizations_with_domain_policy(policies)
+            return Organizations::Organization.none unless proven_account_email? && Organizations::Domain.authority_columns?
+
+            domains = Organizations::Domain.verified.joinable.with_join_policy(policies).matching_email(email)
+            Organizations::Organization.where(id: domains.select(:organization_id))
+          end
+
+          def join_organizations_by_domain_after_confirmation
+            return unless respond_to?(:confirmed_at) && saved_change_to_attribute?(:confirmed_at) && confirmed_at.present?
+            return unless Organizations::Domain.authority_columns?
+
+            join_organizations_by_domain!
+          rescue StandardError => e
+            # Never let a domain policy break a sign-up or a confirmation.
+            Callbacks.log_error("[Organizations] Domain auto-join failed: #{e.message}")
           end
 
           def remember_personal_organization(organization)

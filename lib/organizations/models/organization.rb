@@ -569,9 +569,12 @@ module Organizations
     # Enroll an email domain for domain-verified joining.
     # @param domain [String] e.g. "inizio.com" (exact match — subdomains must be enrolled separately)
     # @param membership_metadata [Hash] copied onto memberships created through this domain
+    # @param join_policy [Symbol, String, nil] :none, :suggest or :auto_join (acts once the domain is verified)
     # @return [Domain]
-    def add_domain!(domain, membership_metadata: {})
-      domains.create!(domain: domain, membership_metadata: membership_metadata)
+    def add_domain!(domain, membership_metadata: {}, join_policy: nil)
+      attributes = { domain: domain, membership_metadata: membership_metadata }
+      attributes[:join_policy] = join_policy.to_s unless join_policy.nil?
+      domains.create!(attributes)
     end
 
     # Generate a shareable join code (PIN).
@@ -639,7 +642,7 @@ module Organizations
     # challenge). Drives whether a join screen shows the email form.
     # @return [Boolean]
     def accepts_domain_joining?
-      domains.exists? || allowlist_entries.unclaimed.exists?
+      domains.joinable.exists? || allowlist_entries.unclaimed.exists?
     end
 
     # Whether this organization has at least one code that can actually be
@@ -699,7 +702,7 @@ module Organizations
         raise VerificationEmailNotEligible, Organizations.t(:"errors.account_email_unconfirmed")
       end
 
-      matched_domain = domains.matching_email(email).first
+      matched_domain = domains.joinable.matching_email(email).first
       unless matched_domain
         raise VerificationEmailNotEligible, Organizations.t(:"errors.verification_email_not_eligible")
       end
@@ -725,7 +728,7 @@ module Organizations
         request.save!
       end
 
-      request.approve!(decided_by: nil)
+      request.auto_approve!
     end
 
     private
