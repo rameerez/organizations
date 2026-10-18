@@ -130,6 +130,60 @@ class VocabularyTest < Organizations::Test
     assert_match "Student", mail.text_part.body.to_s
   end
 
+  test "the HTML invitation email uses the vocabulary for _html keys and falls back, escaping interpolations" do
+    use_resolver
+    @teacher.update!(name: "<script>x</script>")
+    school_mail = Organizations::InvitationMailer.invitation_email(
+      @school.send_invite_to!("a@example.com", invited_by: @teacher)
+    )
+    library_mail = Organizations::InvitationMailer.invitation_email(
+      @library.send_invite_to!("b@example.com", invited_by: @library.owner)
+    )
+
+    assert_match "enrolled you in <strong>Riverside School</strong>", school_mail.html_part.body.to_s
+    assert_match "&lt;script&gt;", school_mail.html_part.body.to_s
+    refute_match "<script>x</script>", school_mail.html_part.body.to_s
+    refute_match "enrolled you in", library_mail.html_part.body.to_s
+    assert_match "City Library", library_mail.html_part.body.to_s
+  end
+
+  test "the ordinary call is untouched when the vocabulary lacks the key" do
+    use_resolver
+
+    assert_equal "scoped default", Organizations.t("absent", organization: @school, default: :fallback_probe)
+    assert_equal "Many things", Organizations.t("absent", organization: @school, count: 2,
+                                                          default: { one: "One thing", other: "Many things" })
+    assert_nil Organizations.t("absent", organization: @school, default: nil)
+    assert_equal %w[Member Owner], Organizations.t(%w[roles.member roles.owner], organization: @school)
+  end
+
+  test "a vocabulary key in a fallback locale wins over the ordinary key" do
+    use_resolver
+    original_backend = I18n.backend
+    original_fallbacks = I18n.instance_variable_get(:@fallbacks)
+    # A separate backend with fallbacks, so no other test sees them.
+    I18n.backend = Class.new(I18n::Backend::Simple) { include I18n::Backend::Fallbacks }.new
+    I18n.fallbacks = I18n::Locale::Fallbacks.new(es: :en)
+    YAML.load_file(File.expand_path("fixtures/vocabulary.yml", __dir__)).each do |locale, tree|
+      I18n.backend.store_translations(locale, tree)
+    end
+
+    assert_equal "Teacher", Organizations.t("roles.admin", organization: @school, locale: :es)
+  ensure
+    I18n.backend = original_backend
+    I18n.instance_variable_set(:@fallbacks, original_fallbacks)
+  end
+
+  test "the already-decided sentence uses the organization's wording" do
+    use_resolver
+    request = create_user!.request_to_join!(@school)
+    request.withdraw!
+
+    error = assert_raises(Organizations::JoinRequestAlreadyDecided) { request.withdraw! }
+
+    assert_match "This enrolment", error.message
+  end
+
   test "the role refusal message uses the organization's wording" do
     use_resolver
     student = create_user!

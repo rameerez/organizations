@@ -132,14 +132,14 @@ module Organizations
       role = current_user.role_in(@organization)
       return if role && Roles.has_permission?(role, :manage_settings)
 
-      handle_unauthorized(permission: :manage_settings)
+      handle_unauthorized(permission: :manage_settings, organization: @organization)
     end
 
     def authorize_delete_organization!
       role = current_user.role_in(@organization)
       return if role && Roles.has_permission?(role, :delete_organization)
 
-      handle_unauthorized(permission: :delete_organization)
+      handle_unauthorized(permission: :delete_organization, organization: @organization)
     end
 
     # JSON serialization helpers

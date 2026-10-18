@@ -398,8 +398,10 @@ module Organizations
     # (organizations.join_request_status.*, lowercase for mid-sentence use)
     # so the whole sentence localizes as one unit.
     def already_decided_message
-      Organizations.t(:"errors.join_request_already_decided",
-                      status: Organizations.t(:"join_request_status.#{status}", organization: organization, default: status))
+      Organizations.t(:"errors.join_request_already_decided", organization: organization,
+                                                              status: Organizations.t(:"join_request_status.#{status}",
+                                                                                      organization: organization,
+                                                                                      default: status))
     end
 
     def auto_approvable_after_verification?

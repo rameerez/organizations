@@ -606,7 +606,10 @@ module Organizations
     end
 
     # Handle unauthorized access
-    def handle_unauthorized(permission: nil, required_role: nil)
+    # @param organization [Organizations::Organization, nil] the organization
+    #   the check ran against, for the message's vocabulary (default: the
+    #   current organization)
+    def handle_unauthorized(permission: nil, required_role: nil, organization: current_organization)
       config = Organizations.configuration
       user = organizations_current_user
 
@@ -625,7 +628,7 @@ module Organizations
 
       # Default behavior
       error = Organizations::NotAuthorized.new(
-        build_unauthorized_message(permission, required_role, current_organization),
+        build_unauthorized_message(permission, required_role, organization),
         permission: permission,
         organization: current_organization,
         user: user

@@ -2,6 +2,7 @@
 # these in config/locales/*.yml).
 en:
   organizations:
+    fallback_probe: "scoped default"
     members_count:
       one: "%{count} member"
       other: "%{count} members"
@@ -16,6 +17,9 @@ en:
         mailers:
           invitation:
             subject: "%{inviter} added you to the class %{organization}"
+            invited_by_html: "<strong>%{inviter}</strong> enrolled you in <strong>%{organization}</strong>"
+        errors:
+          join_request_already_decided: "This enrolment has already been %{status}."
       library:
         roles:
           member: "Patron"

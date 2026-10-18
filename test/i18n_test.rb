@@ -49,6 +49,7 @@ class I18nTest < ActiveSupport::TestCase
     Dir[File.expand_path("../{lib,app}/**/*.{rb,erb}", __dir__)].each do |file|
       File.read(file).scan(/Organizations\.t\(:"([^"#]+)"/) { |match| called_keys << match.first }
       File.read(file).scan(/t\("organizations\.([^"#]+)"/) { |match| called_keys << match.first }
+      File.read(file).scan(/Organizations\.i18n_keys\(:"([^"#]+)"/) { |match| called_keys << match.first }
     end
 
     missing = called_keys.uniq - en
