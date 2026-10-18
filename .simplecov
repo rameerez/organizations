@@ -22,8 +22,9 @@ SimpleCov.configure do
   # Enable branch coverage for more detailed metrics
   enable_coverage :branch
 
-  # No minimum: running one test file must not fail on coverage. The full
-  # suite reports its numbers at exit.
+  # A floor for the full suite in CI only: running one test file locally
+  # must not fail on coverage.
+  minimum_coverage line: 78, branch: 72 if ENV["CI"]
 
   # Disambiguate parallel test runs
   command_name "Job #{ENV['TEST_ENV_NUMBER']}" if ENV['TEST_ENV_NUMBER']

@@ -364,10 +364,18 @@ module Organizations
     # organization_role_label with the organization, unless a host override
     # of it takes only the role (written before 0.7.0).
     def role_label_for(role, organization)
-      if method(:organization_role_label).parameters.any? { |_, name| name == :organization }
+      if role_label_takes_organization?
         organization_role_label(role, organization: organization)
       else
         organization_role_label(role)
+      end
+    end
+
+    def role_label_takes_organization?
+      return @_role_label_takes_organization if defined?(@_role_label_takes_organization)
+
+      @_role_label_takes_organization = method(:organization_role_label).parameters.any? do |kind, name|
+        kind == :keyrest || name == :organization
       end
     end
 
