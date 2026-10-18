@@ -56,7 +56,8 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
     assert_match 'name="email"', response.body
 
     post organization_join_path(@org), params: { email: "j.doe@acme.test" }
-    assert_response :ok
+    assert_response :see_other
+    follow_redirect!
     assert_match "Check your inbox", response.body
     assert_match "j.doe@acme.test", response.body
     assert_match(/You can request another code in \d+s/, response.body,
@@ -80,7 +81,8 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
     sign_in_as "patient@example.com"
 
     post organization_join_path(@org), params: { code: code.code }
-    assert_response :ok
+    assert_response :see_other
+    follow_redirect!
     assert_match "Request pending", response.body
 
     delete organization_withdraw_join_path(@org)
@@ -97,12 +99,14 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
     sign_in_as "persistent@example.com"
 
     post organization_join_path(@org), params: { code: code.code }
-    assert_response :ok
+    assert_response :see_other
+    follow_redirect!
 
     @org.reject_join_request!(@org.join_requests.pending.last, rejected_by: @owner)
 
     post organization_join_path(@org), params: { code: code.code }
-    assert_response :ok
+    assert_response :see_other
+    follow_redirect!
     assert_match "Request pending", response.body
     assert_equal 1, @org.join_requests.pending.count
     assert_equal 1, @org.join_requests.rejected.count
@@ -181,7 +185,31 @@ class ReferenceSurfacesTest < ActionDispatch::IntegrationTest
 
     get organization_join_path(@org)
 
-    assert_match "will see your name and the email address", response.body
+    assert_match "will see your name, your account email, and the email address", response.body
+  end
+
+  test "a plain request carries its note and lands in the pending state" do
+    @org.generate_join_code!(auto_approve: false, created_by: @owner)
+    sign_in_as "asker@example.com"
+
+    get organization_join_path(@org)
+    assert_match "Ask to join", response.body
+
+    post organization_join_path(@org), params: { message: "I run the Madrid office" }
+    follow_redirect!
+
+    assert_match "Request pending", response.body
+    assert_equal "I run the Madrid office", @org.join_requests.pending.last.message
+  end
+
+  test "access: invalid allowlist addresses are skipped and counted, never a 500" do
+    sign_in_as @owner.email
+
+    post organization_access_allowlist_path(@org), params: { emails: "ok@example.com, not-an-email, #{'a' * 300}@x.com" }
+    follow_redirect!
+
+    assert_equal ["ok@example.com"], @org.allowlist_entries.pluck(:email)
+    assert_match "2 skipped", response.body
   end
 
   test "overlong inputs are cut before they reach the gem" do

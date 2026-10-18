@@ -39,6 +39,28 @@ class JoinGeneratorTest < Rails::Generators::TestCase
     end
   end
 
+  test "a second run adds no second routes block" do
+    run_generator
+    run_generator %w[--force]
+
+    assert_file "config/routes.rb" do |routes|
+      assert_equal 1, routes.scan("# organizations: join and access screens").size
+      assert_equal 1, routes.scan("organization_joins#show").size
+    end
+  end
+
+  test "running again without --skip-access adds only the access routes" do
+    run_generator %w[--skip-access]
+    run_generator %w[--force]
+
+    assert_file "config/routes.rb" do |routes|
+      assert_equal 1, routes.scan("organization_joins#show").size
+      assert_equal 1, routes.scan("organization_access#show").size
+      assert_match(/as: :withdraw_join\n\n    get    "access"/, routes)
+    end
+    Organizations::Generators::JoinGenerator::ACCESS_FILES.each { |file| assert_file file }
+  end
+
   test "--skip-routes leaves config/routes.rb alone" do
     run_generator %w[--skip-routes]
 

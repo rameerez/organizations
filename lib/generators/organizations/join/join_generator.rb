@@ -43,6 +43,12 @@ module Organizations
         snippet.lines.reject { |line| line.include?("organization_access#") }.join.gsub(/\n\n+(\s*end)/, "\n\\1")
       end
 
+      # Only the access routes of the block.
+      # @return [String]
+      def self.access_routes
+        File.read(File.join(source_root, "routes.rb")).lines.select { |line| line.include?("organization_access#") }.join
+      end
+
       def copy_join_screen
         JOIN_FILES.each { |file| copy_file file }
       end
@@ -51,11 +57,28 @@ module Organizations
         ACCESS_FILES.each { |file| copy_file file } unless options[:skip_access]
       end
 
+      ROUTES_MARKER = "# organizations: join and access screens"
+
+      # Adds the routes block once. A second run adds only what is missing:
+      # the access routes after an earlier --skip-access run.
       def add_routes
         return if options[:skip_routes]
 
-        inject_into_file "config/routes.rb", "\n#{self.class.routes_snippet(access: !options[:skip_access])}",
-                         after: /\.routes\.draw do\s*\n/
+        routes = File.read(File.join(destination_root, "config/routes.rb"))
+        if !routes.include?(ROUTES_MARKER)
+          add_routes_block
+        elsif !options[:skip_access] && !routes.include?("organization_access#")
+          inject_into_file "config/routes.rb", "\n#{self.class.access_routes}", after: /as: :withdraw_join\n/
+        else
+          say_status :identical, "config/routes.rb (the organizations routes are already there)", :blue
+        end
+      end
+
+      no_commands do
+        def add_routes_block
+          snippet = self.class.routes_snippet(access: !options[:skip_access])
+          inject_into_file "config/routes.rb", "\n#{snippet}", after: /\.routes\.draw do\s*\n/
+        end
       end
 
       def show_readme

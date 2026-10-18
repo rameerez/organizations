@@ -23,6 +23,7 @@ class OrganizationAccessController < ApplicationController
   include Organizations::OrganizationScoped
 
   MAX_ALLOWLIST_IMPORT = 1_000
+  MAX_ALLOWLIST_INPUT = 300_000 # characters, about 1,000 long addresses
   MAX_LABEL_LENGTH = 100
 
   before_action -> { send(Organizations.configuration.authenticate_user_method) }
@@ -31,7 +32,8 @@ class OrganizationAccessController < ApplicationController
   require_organization_permission :manage_settings, only: %i[add_domain update_domain remove_domain
                                                              start_domain_verification verify_domain]
 
-  rate_limit to: 10, within: 10.minutes, by: -> { current_user.id }, only: :verify_domain if respond_to?(:rate_limit)
+  # Rails 7.2+, with a shared cache store (see OrganizationJoinsController).
+  rate_limit to: 10, within: 10.minutes, by: -> { viewer.id }, only: :verify_domain if respond_to?(:rate_limit)
 
   helper_method :organization
 
@@ -77,7 +79,7 @@ class OrganizationAccessController < ApplicationController
     code = organization.generate_join_code!(
       label: params[:label].to_s.first(MAX_LABEL_LENGTH).presence,
       auto_approve: params[:auto_approve] == "1",
-      created_by: current_user
+      created_by: viewer
     )
     back notice: "Code #{code.display_code} created."
   end
@@ -87,10 +89,15 @@ class OrganizationAccessController < ApplicationController
     back notice: "Code revoked. To rotate a code, revoke it and create a new one."
   end
 
+  # Valid addresses are imported; the rest are counted and skipped.
   def import_allowlist
-    emails = params[:emails].to_s.split(/[\s,;]+/).compact_blank.first(MAX_ALLOWLIST_IMPORT)
-    imported = organization.import_allowlist!(emails, source: "manual")
-    back notice: "#{imported.size} address(es) added to the allowlist."
+    tokens = params[:emails].to_s.first(MAX_ALLOWLIST_INPUT).split(/[\s,;]+/, MAX_ALLOWLIST_IMPORT + 1)
+    tokens = tokens.compact_blank.first(MAX_ALLOWLIST_IMPORT)
+    valid, invalid = tokens.partition { |email| email.length <= 254 && email.match?(URI::MailTo::EMAIL_REGEXP) }
+    imported = organization.import_allowlist!(valid, source: "manual")
+    message = "#{imported.size} address(es) added to the allowlist."
+    message += " #{invalid.size} skipped: not an email address." if invalid.any?
+    back notice: message
   end
 
   def remove_allowlist_entry
@@ -102,7 +109,7 @@ class OrganizationAccessController < ApplicationController
   # covers this path, so there is no check to repeat here.
   def approve_request
     request = organization.join_requests.find(params[:request_id])
-    organization.approve_join_request!(request, approved_by: current_user)
+    organization.approve_join_request!(request, approved_by: viewer)
     back notice: "#{request.user.email} is now a member."
   rescue Organizations::MembershipVetoed, Organizations::JoinRequestError => e
     back alert: e.message
@@ -111,7 +118,7 @@ class OrganizationAccessController < ApplicationController
   def reject_request
     request = organization.join_requests.find(params[:request_id])
     reason = params[:reason].to_s.first(500).presence
-    organization.reject_join_request!(request, rejected_by: current_user, reason: reason)
+    organization.reject_join_request!(request, rejected_by: viewer, reason: reason)
     back notice: "Request rejected."
   rescue Organizations::JoinRequestError => e
     back alert: e.message
@@ -121,6 +128,11 @@ class OrganizationAccessController < ApplicationController
 
   def organization
     current_scoped_organization
+  end
+
+  # The signed-in user, through config.current_user_method.
+  def viewer
+    send(Organizations.configuration.current_user_method)
   end
 
   def domain

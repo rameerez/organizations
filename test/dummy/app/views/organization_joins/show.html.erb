@@ -90,6 +90,20 @@
         </div>
       <% end %>
 
+      <%# A request with no code and no email. JoinFlow joins right away when
+          the account email is confirmed at a domain of this organization;
+          otherwise the admins decide. %>
+      <% if @organization.accepts_join_requests? %>
+        <div class="mt-4 border-t border-gray-100 pt-4">
+          <%= form_with url: organization_join_path(@organization), method: :post, class: "space-y-3" do |form| %>
+            <label class="block text-sm font-medium text-gray-700">Or ask to join</label>
+            <%= form.text_area :message, rows: 2, maxlength: 500, placeholder: "A note for the admins (optional)",
+                  class: "block w-full rounded-lg border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
+            <%= form.submit "Ask to join", class: "w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer" %>
+          <% end %>
+        </div>
+      <% end %>
+
       <% unless @organization.accepts_join_requests? %>
         <p class="mt-2 text-sm text-gray-500">This organization is not accepting join requests right now.</p>
       <% end %>

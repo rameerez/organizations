@@ -426,7 +426,7 @@ rails g organizations:join --skip-access   # the join screen only
 rails g organizations:join --skip-routes   # add the routes yourself
 ```
 
-The generator copies host-owned controllers and views (Tailwind, like `organizations:views`) and adds one routes block. The engine itself adds no join route, so nothing changes in your app until you run it.
+The generator copies host-owned controllers and views (Tailwind, like `organizations:views`) and adds one routes block. Run it again later without `--skip-access` and it adds only the access routes. The engine itself adds no join route, so nothing changes in your app until you run it.
 
 | Screen | URL | What it does |
 |---|---|---|
@@ -437,10 +437,12 @@ The generated code already follows the safety rules. Keep them when you edit it:
 
 - **A signed-in user is required** (`config.authenticate_user_method`). The join screen takes the organization from the URL and never changes the session's current organization.
 - **Only POST and DELETE change data**, under Rails' CSRF protection. A `?code=…` link fills in the form; it never joins and never spends a use, also after a sign-in redirect.
-- **Inputs are cut to a fixed length**, and allowlist imports to 1,000 addresses.
+- **Inputs are cut to a fixed length**, and allowlist imports to 1,000 addresses; invalid addresses are skipped and counted.
 - **Unknown, revoked, expired and foreign codes share one message** (`JoinFlow` does that).
 - **The access screen is URL-scoped** with `OrganizationScoped`: it needs `invite_members`, domain changes also need `manage_settings`, and every lookup is scoped to the URL's organization. Unknown organizations, strangers and members without the permission all get the same 404.
-- **Rate limits** (Rails 7.2+) on joining, on the screen, and on DNS checks.
+- **Rate limits** on joining, on the screen, and on DNS checks. They need Rails 7.2+ and a cache store that every server process shares (Redis, Solid Cache): the null and memory stores do not enforce them across processes. On Rails 7.1, use Rack::Attack.
+- **A sent code or a pending request redirects** (303), as Turbo expects. Failures render with 422.
+- **The signed-in user comes from `config.current_user_method`**, the same as the rest of the gem.
 - **A disclosure partial** (`organization_joins/_disclosure.html.erb`) tells joiners who will see their name and email before they submit. Edit its text to match your privacy policy.
 
 The templates are the gem's demo app ([`test/dummy`](test/dummy/)), byte for byte, and its HTTP test suite covers them.

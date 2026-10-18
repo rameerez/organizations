@@ -22,8 +22,13 @@
 #   - The current organization of the session does not change here.
 #   - Rate limits (Rails 7.2+) cap guessing across requests. The gem itself
 #     throttles each emailed challenge.
+#     They need Rails 7.2+ and a cache store shared by every server process
+#     (Redis, Solid Cache): the null and memory stores do not enforce them
+#     across processes. On Rails 7.1, use Rack::Attack.
 #   - The disclosure partial tells joiners who will see their data. Keep it
 #     visible before any submit.
+#   - A sent code or a pending request redirects (303), as Turbo expects.
+#     Failures render with 422.
 class OrganizationJoinsController < ApplicationController
   MAX_CODE_LENGTH = 32
   MAX_EMAIL_LENGTH = 254
@@ -34,18 +39,18 @@ class OrganizationJoinsController < ApplicationController
   before_action :set_organization
 
   if respond_to?(:rate_limit)
-    rate_limit to: 10, within: 1.hour, by: -> { current_user.id }, only: :create
+    rate_limit to: 10, within: 1.hour, by: -> { viewer.id }, only: :create
     rate_limit to: 60, within: 1.minute, by: -> { request.remote_ip }, only: :show
   end
 
   def show
-    @state = Organizations::JoinState.for(user: current_user, organization: @organization)
+    @state = Organizations::JoinState.for(user: viewer, organization: @organization)
     @staged_code = bounded(params[:code], MAX_CODE_LENGTH)
   end
 
   def create
     result = Organizations::JoinFlow.attempt(
-      user: current_user,
+      user: viewer,
       organization: @organization,
       code: bounded(params[:code], MAX_CODE_LENGTH),
       email: bounded(params[:email], MAX_EMAIL_LENGTH),
@@ -53,17 +58,19 @@ class OrganizationJoinsController < ApplicationController
       message: bounded(params[:message], MAX_MESSAGE_LENGTH)
     )
 
-    if result.member?
-      redirect_to organization_join_path(@organization), status: :see_other, notice: "Welcome to #{@organization.name}!"
+    if result.failed?
+      @state = Organizations::JoinState.for(user: viewer, organization: @organization, result: result)
+      flash.now[:alert] = @state.error_message
+      render :show, status: 422
     else
-      @state = Organizations::JoinState.for(user: current_user, organization: @organization, result: result)
-      flash.now[:alert] = @state.error_message if @state.error_message
-      render :show, status: (result.failed? ? 422 : 200)
+      # The screen reads the new state (member, verifying, pending) on the GET.
+      notice = result.member? ? "Welcome to #{@organization.name}!" : nil
+      redirect_to organization_join_path(@organization), status: :see_other, notice: notice
     end
   end
 
   def withdraw
-    current_user.pending_join_request_for(@organization)&.withdraw!
+    viewer.pending_join_request_for(@organization)&.withdraw!
     redirect_to organization_join_path(@organization), status: :see_other, notice: "Request withdrawn."
   end
 
@@ -71,6 +78,11 @@ class OrganizationJoinsController < ApplicationController
 
   def set_organization
     @organization = Organizations::Organization.find(params[:organization_id])
+  end
+
+  # The signed-in user, through config.current_user_method.
+  def viewer
+    send(Organizations.configuration.current_user_method)
   end
 
   def bounded(value, limit)
