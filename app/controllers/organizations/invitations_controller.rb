@@ -35,29 +35,28 @@ module Organizations
       email = invitation_params[:email]
       role = invitation_params[:role] || ::Organizations.configuration.default_invitation_role
 
-      begin
-        @invitation = current_user.send_organization_invite_to!(
-          email,
-          organization: current_organization,
-          role: role
-        )
+      @invitation = current_user.send_organization_invite_to!(
+        email,
+        organization: current_organization,
+        role: role
+      )
 
-        respond_to do |format|
-          return_to = params[:return_to].presence || organization_invitations_path
-          format.html { redirect_to return_to, notice: "Invitation sent to #{email}" }
-          format.json { render json: invitation_json(@invitation), status: :created }
+      respond_to do |format|
+        return_to = params[:return_to].presence || organization_invitations_path
+        format.html { redirect_to return_to, notice: "Invitation sent to #{email}" }
+        format.json { render json: invitation_json(@invitation), status: :created }
+      end
+    rescue ::Organizations::NotAuthorized => e # e.g. a role the inviter may not act on
+      handle_not_authorized(e)
+    rescue ::Organizations::InvitationError, ::Organizations::Organization::CannotInviteAsOwner,
+           ActiveRecord::RecordInvalid, ArgumentError => e
+      respond_to do |format|
+        format.html do
+          @invitation = current_organization.invitations.build(invitation_params)
+          flash.now[:alert] = e.message
+          render :new, status: :unprocessable_entity
         end
-      # NotAuthorized covers an invitation to a role that ranks above the inviter's own.
-      rescue ::Organizations::InvitationError, ::Organizations::NotAuthorized,
-             ::Organizations::Organization::CannotInviteAsOwner, ActiveRecord::RecordInvalid, ArgumentError => e
-        respond_to do |format|
-          format.html do
-            @invitation = current_organization.invitations.build(invitation_params)
-            flash.now[:alert] = e.message
-            render :new, status: :unprocessable_entity
-          end
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
-        end
+        format.json { render json: { error: e.message }, status: :unprocessable_entity }
       end
     end
 
@@ -70,11 +69,8 @@ module Organizations
         format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation revoked" }
         format.json { head :no_content }
       end
-    rescue ::Organizations::NotAuthorized => e # an invitation for a role above the requester's own
-      respond_to do |format|
-        format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }
-        format.json { render json: { error: e.message }, status: :unprocessable_entity }
-      end
+    rescue ::Organizations::NotAuthorized => e # an invitation for a role the requester may not act on
+      handle_not_authorized(e)
     end
 
     # POST /invitations/:id/resend
@@ -87,7 +83,9 @@ module Organizations
           format.html { redirect_back fallback_location: organization_invitations_path, notice: "Invitation resent to #{@invitation.email}" }
           format.json { render json: invitation_json(@invitation) }
         end
-      rescue ::Organizations::InvitationAlreadyAccepted, ::Organizations::NotAuthorized => e
+      rescue ::Organizations::NotAuthorized => e # an invitation for a role the requester may not act on
+        handle_not_authorized(e)
+      rescue ::Organizations::InvitationAlreadyAccepted => e
         respond_to do |format|
           format.html { redirect_back fallback_location: organization_invitations_path, alert: e.message }
           format.json { render json: { error: e.message }, status: :unprocessable_entity }

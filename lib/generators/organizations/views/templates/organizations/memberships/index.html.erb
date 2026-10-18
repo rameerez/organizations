@@ -55,28 +55,34 @@
               <%= time_ago_in_words(membership.created_at) %> ago
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
+              <% can_change_role = can_change_member_role?(current_user, membership) %>
+              <% can_remove = can_remove_member?(current_user, membership) %>
               <% if is_current_user %>
                 <span class="text-sm text-gray-400 italic">Current user</span>
               <% elsif membership.role == 'owner' %>
                 <span class="text-sm text-gray-400 italic">Organization owner</span>
-              <% elsif !current_membership&.can_assign_role?(membership.role) %>
+              <% elsif !can_change_role && !can_remove %>
                 <span class="text-sm text-gray-400 italic">No actions</span>
               <% else %>
                 <div class="flex items-center justify-end gap-2">
-                  <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
-                    <%= form.select :role,
-                      Organizations::Roles.hierarchy.select { |r| r != :owner && current_membership.can_assign_role?(r) }.map { |role| [role.to_s.capitalize, role] },
-                      { selected: membership.role },
-                      class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
-                    <%= form.submit "Update",
-                      class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+                  <% if can_change_role %>
+                    <%= form_with(model: membership, url: membership_path(membership), method: :patch, local: true, class: "flex items-center gap-2") do |form| %>
+                      <%= form.select :role,
+                        Organizations::Roles.hierarchy.select { |r| r != :owner && current_membership.can_assign_role?(r) }.map { |role| [role.to_s.capitalize, role] },
+                        { selected: membership.role },
+                        class: "rounded-md border-gray-300 text-sm focus:border-slate-500 focus:ring-slate-500" %>
+                      <%= form.submit "Update",
+                        class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+                    <% end %>
                   <% end %>
 
-                  <%= button_to membership_path(membership),
-                    method: :delete,
-                    data: { turbo_confirm: "Remove #{membership.user.email} from the organization?" },
-                    class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" do %>
-                    <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
+                  <% if can_remove %>
+                    <%= button_to membership_path(membership),
+                      method: :delete,
+                      data: { turbo_confirm: "Remove #{membership.user.email} from the organization?" },
+                      class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" do %>
+                      <%= heroicon "trash", variant: :mini, options: { class: "h-4 w-4" } %>
+                    <% end %>
                   <% end %>
                 </div>
               <% end %>

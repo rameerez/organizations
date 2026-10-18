@@ -92,6 +92,7 @@ en:
       promote_not_higher: "Cannot promote to %{new_role} - it's not a higher role than %{role}"
       demote_not_lower: "Cannot demote to %{new_role} - it's not a lower role than %{role}"
       role_change_outranks_actor: "You can't give or take away the %{role} role because it ranks above yours"
+      role_has_permissions_actor_lacks: "You can't act on the %{role} role because it has permissions you do not have"
       transfer_no_owner: "Cannot transfer ownership because organization has no owner membership"
       transfer_to_non_member: "Cannot transfer ownership to a non-member"
       transfer_to_non_admin: "Cannot transfer ownership to non-admin. Promote them to admin first."

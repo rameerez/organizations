@@ -28,36 +28,35 @@ module Organizations
     def update
       # Validate the requester can make this change
       validate_role_change!
-
       new_role = membership_params[:role].to_sym
 
-      begin
-        # Use the invariant-safe domain method that enforces owner rules
-        current_organization.change_role_of!(
-          @membership.user,
-          to: new_role,
-          changed_by: current_user
-        )
+      # Use the invariant-safe domain method that enforces owner rules
+      current_organization.change_role_of!(
+        @membership.user,
+        to: new_role,
+        changed_by: current_user
+      )
 
-        # Reload to get updated role
-        @membership.reload
+      # Reload to get updated role
+      @membership.reload
 
-        respond_to do |format|
-          format.html { redirect_back fallback_location: memberships_path, notice: "Role updated successfully." }
-          format.json { render json: membership_json(@membership) }
-        end
-      rescue Organizations::Organization::CannotHaveMultipleOwners,
-             Organizations::Organization::CannotDemoteOwner,
-             Organizations::Error => e
-        respond_to do |format|
-          format.html { redirect_back fallback_location: memberships_path, alert: e.message }
-          format.json { render json: { error: e.message }, status: :unprocessable_entity }
-        end
-      rescue ActiveRecord::RecordInvalid => e
-        respond_to do |format|
-          format.html { redirect_back fallback_location: memberships_path, alert: e.record.errors.full_messages.join(", ") }
-          format.json { render json: { errors: e.record.errors }, status: :unprocessable_entity }
-        end
+      respond_to do |format|
+        format.html { redirect_back fallback_location: memberships_path, notice: "Role updated successfully." }
+        format.json { render json: membership_json(@membership) }
+      end
+    rescue Organizations::NotAuthorized => e # own role, or a role above the requester's
+      handle_not_authorized(e)
+    rescue Organizations::Organization::CannotHaveMultipleOwners,
+           Organizations::Organization::CannotDemoteOwner,
+           Organizations::Error => e
+      respond_to do |format|
+        format.html { redirect_back fallback_location: memberships_path, alert: e.message }
+        format.json { render json: { error: e.message }, status: :unprocessable_entity }
+      end
+    rescue ActiveRecord::RecordInvalid => e
+      respond_to do |format|
+        format.html { redirect_back fallback_location: memberships_path, alert: e.record.errors.full_messages.join(", ") }
+        format.json { render json: { errors: e.record.errors }, status: :unprocessable_entity }
       end
     end
 
@@ -72,6 +71,8 @@ module Organizations
         format.html { redirect_back fallback_location: memberships_path, notice: "Member removed successfully." }
         format.json { head :no_content }
       end
+    rescue Organizations::NotAuthorized => e # self, the owner, or a role above the requester's
+      handle_not_authorized(e)
     rescue Organizations::Organization::CannotRemoveOwner, Organizations::Error => e
       respond_to do |format|
         format.html { redirect_back fallback_location: memberships_path, alert: e.message }
@@ -156,8 +157,8 @@ module Organizations
 
       # Note: Owner promotion/demotion rules are enforced by Organization#change_role_of!
       # which will raise CannotHaveMultipleOwners or CannotDemoteOwner as appropriate.
-      # It also raises NotAuthorized when the member's current role or the new role
-      # ranks above the requester's own; #update turns that into an alert.
+      # It also raises NotAuthorized when the requester may not act on the member's
+      # current role or the new role; #update answers that like a failed permission guard.
     end
 
     def validate_removal!
@@ -181,8 +182,9 @@ module Organizations
         )
       end
 
-      # Note: Organization#remove_member! raises NotAuthorized when the member's
-      # role ranks above the requester's own; #destroy turns that into an alert.
+      # Note: Organization#remove_member! raises NotAuthorized when the requester
+      # may not act on the member's role; #destroy answers that like a failed
+      # permission guard.
     end
 
     # JSON serialization helpers

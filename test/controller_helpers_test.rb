@@ -434,6 +434,59 @@ module Organizations
       assert_equal fallback.id, @controller.current_membership&.organization_id
     end
 
+    test "current_organization and current_membership memoize nothing while no user is resolved" do
+      org, owner = create_org_with_owner!
+      @controller.session[:current_organization_id] = org.id
+
+      assert_nil @controller.current_organization
+      assert_nil @controller.current_membership
+
+      @controller.test_current_user = owner # the user resolves later in the same request
+
+      assert_equal org, @controller.current_organization
+      assert_equal owner.id, @controller.current_membership&.user_id
+    end
+
+    # A NotAuthorized raised by the models (for example a role the requester
+    # may not act on) is answered like a failed permission guard.
+    test "handle_not_authorized answers with the error's message as an alert by default" do
+      org, owner = create_org_with_owner!
+      @controller.test_current_user = owner
+      @controller.session[:current_organization_id] = org.id
+      error = Organizations::NotAuthorized.new("Nope", permission: :remove_members)
+
+      @controller.send(:handle_not_authorized, error)
+
+      assert_equal "Nope", @controller.redirect_alert
+    end
+
+    test "handle_not_authorized answers JSON with a 403 by default" do
+      @controller.set_format(:json)
+      error = Organizations::NotAuthorized.new("Nope", permission: :remove_members)
+
+      @controller.send(:handle_not_authorized, error)
+
+      assert_equal :forbidden, @controller.rendered_status
+      assert_equal({ error: "Nope" }, @controller.rendered_json)
+    end
+
+    test "handle_not_authorized goes through the configured unauthorized handler" do
+      org, owner = create_org_with_owner!
+      @controller.test_current_user = owner
+      @controller.session[:current_organization_id] = org.id
+      seen = nil
+      Organizations.configure { |config| config.on_unauthorized { |context| seen = context } }
+
+      @controller.send(:handle_not_authorized, Organizations::NotAuthorized.new("Nope", permission: :invite_members))
+
+      assert_equal :unauthorized, seen.event
+      assert_equal :invite_members, seen.permission
+      assert_equal org, seen.organization
+      assert_equal owner, seen.user
+      assert_equal "Nope", seen.metadata[:message]
+      assert_nil @controller.redirect_alert
+    end
+
     test "current_organization= with nil clears session" do
       org, owner = create_org_with_owner!
       @controller.test_current_user = owner

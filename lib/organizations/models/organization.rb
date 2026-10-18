@@ -273,8 +273,20 @@ module Organizations
       ActiveRecord::Base.transaction do
         # Lock organization to prevent race conditions
         lock!
-        # Only members whose role ranks at or below removed_by's own may be removed
-        membership.authorize_removal!(removed_by: removed_by)
+
+        # Re-read the role under a row lock, without reloading the record (a
+        # reload would drop the live counter cache and fail on a row that is
+        # already gone). A member promoted, or made owner, since the lookup
+        # above is judged by the role they hold now.
+        locked_role = Membership.where(id: membership.id).lock.pick(:role)
+        if locked_role == "owner"
+          raise CannotRemoveOwner, Organizations.t(:"errors.cannot_remove_owner")
+        end
+
+        # Only roles removed_by may act on (see Roles.assignment_refusal)
+        Membership.authorize_rank!(self, removed_by, [locked_role || membership.role],
+                                   permission: :remove_members,
+                                   message_key: :"errors.member_removal_outranks_actor")
         membership.destroy!
       end
 

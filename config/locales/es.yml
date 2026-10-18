@@ -73,6 +73,7 @@ es:
       promote_not_higher: "No se puede ascender a %{new_role}: no es un rol superior a %{role}"
       demote_not_lower: "No se puede degradar a %{new_role}: no es un rol inferior a %{role}"
       role_change_outranks_actor: "No puedes asignar ni retirar el rol %{role} porque está por encima del tuyo"
+      role_has_permissions_actor_lacks: "No puedes actuar sobre el rol %{role} porque tiene permisos que tú no tienes"
       transfer_no_owner: "No se puede transferir la propiedad porque la organización no tiene propietario"
       transfer_to_non_member: "No se puede transferir la propiedad a alguien que no es miembro"
       transfer_to_non_admin: "No se puede transferir la propiedad a alguien que no es administrador. Asciéndele primero."

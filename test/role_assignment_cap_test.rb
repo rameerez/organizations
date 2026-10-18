@@ -17,6 +17,12 @@ module Organizations
             can :invite_members
             can :edit_member_roles
           end
+          # Same parent, defined after lead: ranks below lead by definition
+          # order, but holds permissions lead lacks.
+          role :finance, inherits: :member do
+            can :view_billing
+            can :manage_settings
+          end
         end
       end
 
@@ -34,8 +40,8 @@ module Organizations
 
     # === The rule itself ===
 
-    test "the lead role sits between admin and member" do
-      assert_equal %i[owner admin lead member viewer], Roles.hierarchy
+    test "lead and finance sit between admin and member, lead first" do
+      assert_equal %i[owner admin lead finance member viewer], Roles.hierarchy
     end
 
     test "Roles.can_assign? allows roles at or below the actor's own and nothing above" do
@@ -50,6 +56,19 @@ module Organizations
       refute Roles.can_assign?(:admin, :owner)
 
       Roles.hierarchy.each { |role| assert Roles.can_assign?(:owner, role) }
+    end
+
+    test "rank alone is not enough below admin: a sibling with permissions the actor lacks is refused" do
+      refute Roles.can_assign?(:lead, :finance)
+      assert_equal :lacks_permissions, Roles.assignment_refusal(:lead, :finance)
+      assert_equal :outranks, Roles.assignment_refusal(:finance, :lead)
+      assert_equal :outranks, Roles.assignment_refusal(:lead, :admin)
+      assert_nil Roles.assignment_refusal(:lead, :member)
+    end
+
+    test "admins and the owner keep the rank rule alone" do
+      assert Roles.can_assign?(:admin, :finance)
+      assert Roles.can_assign?(:owner, :finance)
     end
 
     test "Roles.can_assign? accepts strings" do
@@ -125,6 +144,16 @@ module Organizations
       end
     end
 
+    test "a lead cannot invite to a sibling role with permissions it lacks" do
+      error = assert_raises(Organizations::NotAuthorized) do
+        @org.send_invite_to!("new@example.com", invited_by: @lead, role: :finance)
+      end
+
+      assert_equal :invite_members, error.permission
+      assert_equal "You can't act on the Finance role because it has permissions you do not have", error.message
+      assert_equal 0, @org.invitations.count
+    end
+
     test "a lead can invite to its own role and the roles below it" do
       %i[lead member viewer].each do |role|
         invitation = @lead.send_organization_invite_to!("#{role}@example.com", organization: @org, role: role)
@@ -167,6 +196,45 @@ module Organizations
       end
 
       assert_equal "admin", membership_of(@admin).role
+    end
+
+    test "a lead cannot promote a member to a sibling role with permissions it lacks" do
+      member = add!(:member)
+
+      error = assert_raises(Organizations::NotAuthorized) do
+        @org.change_role_of!(member, to: :finance, changed_by: @lead)
+      end
+      assert_raises(Organizations::NotAuthorized) do
+        membership_of(member).promote_to!(:finance, changed_by: @lead)
+      end
+
+      assert_equal :edit_member_roles, error.permission
+      assert_equal "member", membership_of(member).role
+    end
+
+    test "a lead cannot demote or remove a member of a sibling role with permissions it lacks" do
+      finance = add!(:finance)
+
+      assert_raises(Organizations::NotAuthorized) do
+        @org.change_role_of!(finance, to: :member, changed_by: @lead)
+      end
+      assert_raises(Organizations::NotAuthorized) do
+        @org.remove_member!(finance, removed_by: @lead)
+      end
+
+      assert_equal "finance", membership_of(finance).role
+    end
+
+    test "an admin can give and take away the finance role" do
+      member = add!(:member)
+
+      @org.change_role_of!(member, to: :finance, changed_by: @admin)
+
+      assert_equal "finance", membership_of(member).role
+
+      @org.change_role_of!(member, to: :member, changed_by: @admin)
+
+      assert_equal "member", membership_of(member).role
     end
 
     test "a lead cannot promote itself to admin" do
@@ -371,6 +439,37 @@ module Organizations
       refute @org.has_member?(@admin)
     end
 
+    test "a removal judges the role held under the lock, not the one read before it" do
+      target = @viewer
+      org = @org
+      # Promote the target between remove_member!'s lookup and its lock.
+      org.define_singleton_method(:lock!) do |*args|
+        Membership.where(organization_id: id, user_id: target.id).update_all(role: "admin")
+        super(*args)
+      end
+
+      error = assert_raises(Organizations::NotAuthorized) { org.remove_member!(target, removed_by: @lead) }
+
+      assert_match "Admin", error.message
+      assert @org.has_member?(target) # the simulated promotion rolls back with the refusal
+    end
+
+    test "a removal refuses a member who became the owner after the lookup" do
+      target = @admin
+      owner = @owner
+      org = @org
+      # Transfer ownership to the target between the lookup and the lock.
+      org.define_singleton_method(:lock!) do |*args|
+        Membership.where(organization_id: id, user_id: owner.id).update_all(role: "admin")
+        Membership.where(organization_id: id, user_id: target.id).update_all(role: "owner")
+        super(*args)
+      end
+
+      assert_raises(Organizations::Organization::CannotRemoveOwner) { org.remove_member!(target, removed_by: owner) }
+
+      assert_equal 1, @org.memberships.where(role: "owner").count
+    end
+
     test "a removal without removed_by, or by a non-member, is not capped, as before" do
       other_admin = add!(:admin)
 
@@ -438,6 +537,68 @@ module Organizations
       refute Organizations::Invitation.exists?(invitation.id)
     end
 
+    # === View helpers ===
+
+    test "can_remove_member? and can_change_member_role? follow the same rule" do
+      Organizations.configure do |config|
+        config.roles do
+          role :lead, inherits: :member do
+            can :invite_members
+            can :edit_member_roles
+            can :remove_members
+          end
+          role :finance, inherits: :member do
+            can :view_billing
+          end
+        end
+      end
+      helper = Object.new.extend(Organizations::ViewHelpers)
+      finance = add!(:finance)
+
+      refute helper.can_remove_member?(@lead, membership_of(@admin))
+      refute helper.can_change_member_role?(@lead, membership_of(@admin))
+      refute helper.can_remove_member?(@lead, membership_of(finance))
+      refute helper.can_change_member_role?(@lead, membership_of(finance))
+      assert helper.can_remove_member?(@lead, membership_of(@viewer))
+      assert helper.can_change_member_role?(@lead, membership_of(@viewer))
+      assert helper.can_remove_member?(@admin, membership_of(finance))
+      assert helper.can_change_member_role?(@admin, membership_of(finance))
+    end
+
+    # === Custom roles without a parent ===
+
+    test "a custom role without inherits: sits at the bottom and can only invite to roles it covers" do
+      Organizations.configure do |config|
+        config.roles do
+          role :recruiter do
+            can :view_members
+            can :invite_members
+          end
+        end
+      end
+      recruiter = add!(:recruiter)
+
+      assert_equal :recruiter, Roles.hierarchy.last
+      assert_raises(Organizations::NotAuthorized) do
+        recruiter.send_organization_invite_to!("new@example.com", organization: @org)
+      end
+      assert_equal "recruiter",
+                   recruiter.send_organization_invite_to!("peer@example.com", organization: @org, role: :recruiter).role
+    end
+
+    test "the recommended fix for such a role is to inherit the role it should invite to" do
+      Organizations.configure do |config|
+        config.roles do
+          role :recruiter, inherits: :member do
+            can :invite_members
+          end
+        end
+      end
+      recruiter = add!(:recruiter)
+
+      assert_equal "member", recruiter.send_organization_invite_to!("new@example.com", organization: @org).role
+    end
+
     # === Messages ===
 
     test "the refusals are localized" do
@@ -464,6 +625,11 @@ module Organizations
         management = assert_raises(Organizations::NotAuthorized) { invitation.revoke!(revoked_by: @lead) }
         assert_equal "No puedes revocar ni reenviar una invitación para el rol Administrador " \
                      "porque está por encima del tuyo", management.message
+
+        sibling = assert_raises(Organizations::NotAuthorized) do
+          @org.send_invite_to!("finance@example.com", invited_by: @lead, role: :finance)
+        end
+        assert_equal "No puedes actuar sobre el rol Finance porque tiene permisos que tú no tienes", sibling.message
       end
     end
 

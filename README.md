@@ -469,9 +469,11 @@ org.member_count                # Number of members
 Organizations::Organization.with_member(user)  # Find all orgs where user is a member
 
 # Actions
-org.add_member!(user, role: :member)
-org.remove_member!(user)
-org.change_role_of!(user, to: :admin)
+# Pass the acting user (removed_by:, changed_by:) so the role rule is checked;
+# without one, or with a user who is not a member, nothing is checked.
+org.add_member!(user, role: :member)            # no actor: never checked, authorize it yourself
+org.remove_member!(user, removed_by: current_user)
+org.change_role_of!(user, to: :admin, changed_by: current_user)
 org.transfer_ownership_to!(other_user)
 
 # Invitations (inviter must be a member with :invite_members permission)
@@ -528,8 +530,8 @@ membership.is_at_least?(:member)    # => true (if member, admin, or owner)
 membership.can_assign_role?(:admin) # => true (if admin or owner: roles at or below their own)
 
 # Role changes
-membership.promote_to!(:admin)      # Change role to admin
-membership.demote_to!(:member)      # Change role to member
+membership.promote_to!(:admin, changed_by: current_user)  # Change role to admin
+membership.demote_to!(:member, changed_by: current_user)  # Change role to member
 ```
 
 ### Invitation methods
@@ -547,8 +549,7 @@ invitation.expired?             # => true (past expires_at)
 # Actions
 invitation.accept!              # Accept (auto-infers Current.user)
 invitation.accept!(user)        # Accept with explicit user
-invitation.resend!              # Send invitation email again
-invitation.resend!(resent_by: current_user)   # Same, checking the role against the sender's
+invitation.resend!(resent_by: current_user)   # Send invitation email again
 invitation.revoke!(revoked_by: current_user)  # Delete it, so the link stops working
 ```
 
@@ -754,7 +755,9 @@ owner > admin > member > viewer
 
 Each role inherits all permissions from roles below it.
 
-A role acts only on roles at or below its own in `Roles.hierarchy`. That covers invitations (the invited role), role changes (both the old and the new role), removals (the removed member's role) and invitation management (revoking or resending an invitation for a role), so a custom role with `invite_members`, `edit_member_roles` and `remove_members` still cannot invite, promote, demote or remove an admin, or touch an admin's invitation. The check applies to the member passed as `invited_by:`, `changed_by:`, `removed_by:`, `revoked_by:` or `resent_by:` (the engine controllers always pass it); a refusal raises `Organizations::NotAuthorized`, the owner keeps its own rules, and `membership.can_assign_role?(role)` tells you which roles to offer in a role picker, as the generated views do.
+A role acts only on roles at or below its own in `Roles.hierarchy`. That covers invitations (the invited role), role changes (both the old and the new role), removals (the removed member's role) and invitation management (revoking or resending an invitation for a role). Below admin, a role must also hold every permission of the role it acts on, because two custom roles with the same parent are ranked only by definition order. So a custom role with `invite_members`, `edit_member_roles` and `remove_members` cannot invite, promote, demote or remove an admin, cannot hand out a sibling role with powers it lacks, and cannot touch an admin's invitation. Admins and the owner keep the rank rule alone, and the owner keeps its own rules.
+
+The check applies to the member passed as `invited_by:`, `changed_by:`, `removed_by:`, `revoked_by:` or `resent_by:`. The engine controllers always pass the current user. A nil actor, or one who is not a member of the organization, is not checked, so pass the acting user whenever you call these methods from your own code. A few paths take no actor and are never checked: `add_member!`, `approve_join_request!`, `Invitation#accept!` (the invitation was checked when it was sent) and direct `Membership` writes. A refusal raises `Organizations::NotAuthorized`, which the engine controllers answer through `config.unauthorized_handler` like any failed permission guard (an alert, or a 403 over JSON, by default). `membership.can_assign_role?(role)` tells you which roles to offer in a role picker, as the generated views do.
 
 ### Default permissions
 
@@ -831,7 +834,8 @@ require_organization_role!(:client)        # clients and everyone above them
 ```
 
 - A custom role gets its own permissions plus its parent's (the parent's defaults when the block does not redefine a built-in parent).
-- A custom role without `inherits:` sits at the bottom of the hierarchy. Two custom roles with the same parent stack in the order you define them, the first one highest.
+- A custom role without `inherits:` sits at the bottom of the hierarchy, below viewer. Two custom roles with the same parent stack in the order you define them, the first one highest.
+- Because a role acts only on roles at or below its own, a custom role without `inherits:` that can `invite_members` can invite only to its own role: inviting with the default `member` role raises `NotAuthorized`. Give such a role the parent it should invite to, for example `role :recruiter, inherits: :member do can :invite_members end`.
 - A block that only adds custom roles keeps the built-in roles' default permissions; a block that redefines a built-in role defines the built-in roles it lists, as before.
 - A custom role ranks below admin: it inherits from `member`, `viewer` or another custom role, never from `admin` or `owner`, so it never outranks the people who can assign it. A custom role also cannot grant a permission that the owner role has and the admin role lacks (`manage_billing`, `transfer_ownership`, `delete_organization` by default), because admins can assign it. A role name is lowercase letters, digits and underscores; a parent must be a built-in role or a custom role defined above it. Both are checked when the configuration loads.
 - Memberships, invitations, `default_invitation_role`, `add_member!`, promotions and demotions, `by_role_hierarchy` and every permission helper accept custom roles. The generated views list them in the role pickers.
@@ -997,7 +1001,7 @@ Expired invitations can be resent:
 
 ```ruby
 invitation.expired?   # => true
-invitation.resend!    # Generates new token, resets expiry, sends email
+invitation.resend!(resent_by: current_user)  # Generates new token, resets expiry, sends email
 ```
 
 ### Accepted invitations
@@ -2028,7 +2032,7 @@ user.leave_organization!(org)
 
 **Role changes:**
 ```ruby
-membership.promote_to!(:admin)
+membership.promote_to!(:admin, changed_by: current_user)
 
 # Internally:
 # 1. Lock membership row
