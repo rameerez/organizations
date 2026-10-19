@@ -105,6 +105,13 @@ module Organizations
                      inverse_of: :invited_by,
                      dependent: :nullify
 
+            # Memberships those invitations became. Nullified on deletion like
+            # the invitations: the install migration gives invited_by_id a
+            # foreign key with no ON DELETE rule, so without this the database
+            # refuses to delete anyone whose invitation was accepted.
+            has_many :invited_organization_memberships, class_name: "Organizations::Membership",
+                                                        foreign_key: :invited_by_id, inverse_of: :invited_by, dependent: :nullify
+
             define_verified_joining_associations
           end
 
