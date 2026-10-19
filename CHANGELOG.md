@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-19
+
+**A user whose invitation was accepted can now be deleted.** A patch release with one fix and one README correction. No migration is needed.
+
 ### Fixed
 
 - **A user whose invitation was accepted could not be deleted.** Accepting an invitation copies the inviter into `organizations_memberships.invited_by_id`, whose foreign key has no `ON DELETE` rule, and nothing cleared it. `user.destroy` raised `ActiveRecord::InvalidForeignKey` and rolled back, whatever `account_deletion_policy` said. `has_organizations` now declares `invited_organization_memberships` with `dependent: :nullify`, as it does for sent invitations. No migration is needed. A deletion path that skips callbacks (`delete`, raw SQL) still meets the foreign key: give it `ON DELETE SET NULL` in your own migration if you have one.
