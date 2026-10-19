@@ -24,6 +24,22 @@ class AccountDeletionTest < Organizations::Test
     assert_equal 1, org.reload.member_count
   end
 
+  test "a user whose invitation was accepted is deleted, and the membership keeps no inviter" do
+    org, owner = create_org_with_owner!
+    invitee = create_user!
+    org.send_invite_to!(invitee.email, invited_by: owner, role: :admin).accept!(invitee)
+    org.transfer_ownership_to!(invitee)
+    membership = org.memberships.find_by!(user: invitee)
+
+    assert_equal owner.id, membership.invited_by_id
+
+    owner.destroy!
+
+    refute User.exists?(owner.id)
+    assert_nil membership.reload.invited_by_id
+    assert_equal invitee, org.reload.owner
+  end
+
   test ":prevent blocks a sole-member personal organization and keeps everything" do
     user = create_user!
     org = user.create_personal_organization!

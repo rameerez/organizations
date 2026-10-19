@@ -1012,19 +1012,36 @@ rails db:migrate
 Capabilities are checked against the role's permissions, so give your roles the capabilities they may use on granted records (custom roles work too):
 
 ```ruby
+# A block that redefines a built-in role defines only the built-in roles it
+# lists, so list all four: these are the defaults plus the capabilities.
 config.roles do
   role :viewer do
     can :view_organization
+    can :view_members
     can :read
   end
   role :client, inherits: :viewer do   # a narrow custom role
     can :comment
   end
   role :member, inherits: :viewer do
+    can :create_resources
+    can :edit_own_resources
+    can :delete_own_resources
     can :comment
     can :edit
   end
-  # admin and owner as usual (they inherit member)
+  role :admin, inherits: :member do
+    can :invite_members
+    can :remove_members
+    can :edit_member_roles
+    can :manage_settings
+    can :view_billing
+  end
+  role :owner, inherits: :admin do
+    can :manage_billing
+    can :transfer_ownership
+    can :delete_organization
+  end
 end
 ```
 
