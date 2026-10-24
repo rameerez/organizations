@@ -12,7 +12,8 @@
 ### Changed
 
 - `AccountDeletionPlan#to_h` has an `organizations_to_retain` key. It is an empty list when nothing is retained.
-- The account-deletion guard locks every organization the user belongs to, in id order, before any membership goes. Before, it locked only the organizations the user owned. A member's account deletion and a destroy of their organization could deadlock on PostgreSQL: one deleted the membership and waited for the organization row, the other held that row and waited for the membership.
+- `user.destroy` takes its locks before its first write. It locks the user row, then the row of every organization in which it writes, in id order: its memberships, the invitations it sent and their grants, the memberships it invited, its join requests, the requests it decided, its join codes, the allowlist entries it claimed, the domains it verified and the grants it gave. Before, it locked only the owned organizations, after it deleted the grants of its sent invitations. **The callback order changes:** a new first `before_destroy` callback, `lock_rows_for_deletion`, takes the locks. It runs before `drop_grants_of_sent_invitations` and the guard, which keep their order and their names.
+- Every organization destroy locks its row before its `dependent: :destroy` cascades, with or without `retain_organization`. With the account deletion above, both paths take the organization row first. Before, a member's account deletion and a destroy of their organization could deadlock on PostgreSQL.
 - The account-deletion guard reads its plan with the query cache off. Before, a plan built earlier in the same request (a confirmation screen's preview) could answer from the cache, and miss a member that another connection had added.
 
 ### Upgrading

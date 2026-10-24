@@ -543,6 +543,51 @@ class AccountDeletionTest < Organizations::Test
     refute Organizations::Organization.exists?(org.id)
   end
 
+  test "without retention, a member deletes their account while the cascades of a destroy run, and neither deadlocks" do
+    skip "Row locks across connections need PostgreSQL (ORGS_TEST_DATABASE_URL)" unless postgresql?
+
+    org, = create_org_with_owner!
+    member = create_user!
+    org.add_member!(member)
+    # The destroy has deleted the memberships and waits a moment before it
+    # deletes the organization row. The member's deletion starts then.
+    destroyer = lambda do |ready|
+      pausing_after_the_cascades(ready) { Organizations::Organization.find(org.id).destroy! }
+    end
+
+    concurrently(destroyer) do
+      assert member.destroy
+    end
+    refute User.exists?(member.id)
+    refute Organizations::Organization.exists?(org.id)
+  end
+
+  test "a member whose pending invitation has a grant deletes their account while the organization is destroyed" do
+    skip "Row locks across connections need PostgreSQL (ORGS_TEST_DATABASE_URL)" unless postgresql?
+
+    org, = create_org_with_owner!
+    member = create_user!
+    org.add_member!(member, role: :admin)
+    invitation = org.send_invite_to!("guest@example.com", invited_by: member,
+                                                          grants: { Document.create!(organization: org) => %w[read] })
+
+    assert_equal 1, invitation.grants.count
+    # The destroy has locked the organization row and waits a moment before
+    # its cascades delete the invitation and its grant.
+    destroyer = lambda do |ready|
+      hold_the_lock = ->(_organization) { (ready << true) && sleep(0.5) && false }
+      Organizations.configure { |c| c.retain_organization = hold_the_lock }
+      Organizations::Organization.find(org.id).destroy!
+    end
+
+    concurrently(destroyer) do
+      assert member.destroy
+    end
+    refute User.exists?(member.id)
+    refute Organizations::Organization.exists?(org.id)
+    refute Organizations::Grant.exists?(invitation_id: invitation.id)
+  end
+
   test "an organization without retained records is destroyed as before" do
     retain_organizations_with_documents
     org, = create_org_with_owner!
@@ -587,6 +632,18 @@ class AccountDeletionTest < Organizations::Test
     thread.value
   ensure
     thread.join if thread&.alive?
+  end
+
+  # A host before_destroy callback, which runs after the gem's
+  # dependent: :destroy cascades and before the organization row goes.
+  def pausing_after_the_cascades(ready)
+    organization_class = Organizations::Organization
+    organization_class.define_method(:pause_after_the_cascades_for_test) { (ready << true) && sleep(0.5) }
+    organization_class.before_destroy(:pause_after_the_cascades_for_test)
+    yield
+  ensure
+    organization_class.skip_callback(:destroy, :before, :pause_after_the_cascades_for_test)
+    organization_class.remove_method(:pause_after_the_cascades_for_test)
   end
 
   # A write that this connection's query cache does not see. On PostgreSQL

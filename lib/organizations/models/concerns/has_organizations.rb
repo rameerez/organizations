@@ -185,6 +185,8 @@ module Organizations
             # this user attached to pending invitations die with the account,
             # so an orphaned invitation never hands out unchecked access.
             before_destroy :drop_grants_of_sent_invitations, prepend: true
+            # First of all, before any write of this destroy: the locks.
+            before_destroy :lock_rows_for_deletion, prepend: true
           end
         end
 
@@ -774,16 +776,12 @@ module Organizations
 
           # The account-deletion guard (config.account_deletion_policy). Runs
           # inside the destroy transaction, before the dependent memberships
-          # are destroyed. It locks this user's row first, so a concurrent
-          # join or organization creation for this user waits, then locks
-          # every organization of the user, so a concurrent join, transfer or
-          # organization destroy in them waits too. It checks the complete owned set before it deletes
-          # anything; a blocker, a retained organization, or any failure,
-          # aborts the whole destroy and rolls back every organization deleted
-          # so far.
+          # are destroyed, and after lock_rows_for_deletion took the user row
+          # and the organization rows. It checks the complete owned set
+          # before it deletes anything; a blocker, a retained organization,
+          # or any failure, aborts the whole destroy and rolls back every
+          # organization deleted so far.
           def prevent_deletion_while_owning_organizations
-            lock_own_row_for_deletion
-            lock_organizations_for_deletion
             plan = Organizations::AccountDeletionPlan.for(self, lock: true)
             unless plan.allowed?
               errors.add(:base, Organizations.t(:"errors.cannot_delete_user_owns_organizations"))
@@ -813,21 +811,38 @@ module Organizations
             Organizations::Grant.where(invitation_id: sent_organization_invitations.select(:id)).delete_all
           end
 
-          def lock_own_row_for_deletion
+          # The user row, then the row of every organization in which this
+          # destroy writes, in id order, before its first write. The user row
+          # keeps a concurrent join, organization creation or transfer to
+          # this user out. An organization's destroy locks its row before its
+          # cascades write the child rows, so with the organization rows
+          # first both paths take one order and cannot deadlock. The id order
+          # keeps two account deletions apart.
+          def lock_rows_for_deletion
             self.class.unscoped.where(self.class.primary_key => id).lock.pick(self.class.primary_key)
-          end
-
-          # Every organization of this user, owned or not, locked in id order
-          # before any membership row goes. A membership delete updates its
-          # organization's counter cache, and an organization's destroy locks
-          # its row before it deletes memberships. So both paths take the
-          # organization row first and cannot deadlock. The id order keeps two
-          # account deletions apart too.
-          def lock_organizations_for_deletion
             organizations = Organizations::Organization
-            scope = organizations.where(id: Organizations::Membership.where(user_id: id).select(:organization_id))
+            scope = organization_ids_written_by_deletion.map { |ids| organizations.where(id: ids) }.reduce(:or)
             scope = scope.or(organizations.where(personal_owner_id: id)) if organizations.column_names.include?("personal_owner_id")
             scope.order(:id).lock.pluck(:id)
+          end
+
+          # The organizations of the rows this destroy deletes or nullifies:
+          # the dependent: options of has_organizations, the grant cleanup,
+          # and the ON DELETE rules of the install migrations.
+          def organization_ids_written_by_deletion
+            relations = [
+              Organizations::Membership.where(user_id: id), Organizations::Membership.where(invited_by_id: id),
+              Organizations::Invitation.where(invited_by_id: id),
+              Organizations::JoinRequest.where(user_id: id), Organizations::JoinRequest.where(decided_by_id: id),
+              Organizations::JoinCode.where(created_by_id: id), Organizations::AllowlistEntry.where(claimed_by_id: id)
+            ]
+            relations << Organizations::Domain.where(verified_by_id: id) if Organizations::Domain.authority_columns?
+            if Organizations::GrantHolder.grants_table?
+              granted = Organizations::Grant.where(granted_by_id: id)
+              relations << Organizations::Membership.where(id: granted.select(:membership_id))
+              relations << Organizations::Invitation.where(id: granted.select(:invitation_id))
+            end
+            relations.map { |relation| relation.select(:organization_id) }
           end
 
           def destroy_personal_organization_for_deletion(organization)

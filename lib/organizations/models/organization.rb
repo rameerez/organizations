@@ -88,9 +88,10 @@ module Organizations
                class_name: Organizations.user_class_name,
                optional: true
 
-    # Before the dependent: :destroy cascades, so a retained organization
-    # loses none of its rows (config.retain_organization).
-    before_destroy :refuse_destroy_while_retained, prepend: true
+    # Before the dependent: :destroy cascades: lock the row, so that every
+    # path takes the organization row before its memberships and
+    # invitations, and keep a retained organization (config.retain_organization).
+    before_destroy :lock_row_and_refuse_if_retained, prepend: true
 
     # === Validations ===
 
@@ -798,15 +799,18 @@ module Organizations
       [old_owner_membership, new_owner_membership]
     end
 
+    # Every destroy locks the organization row before the cascades delete
+    # its memberships and invitations. The account-deletion guard also locks
+    # organization rows before it writes their child rows, so the two paths
+    # take the same order and cannot deadlock.
+    #
     # A record with a retention period must outlive every destroy path, not
     # only the account deletion: an admin screen, a console, a cascade.
     # This copy can be stale (attributes, cached associations), so the rule
-    # gets the row read again under its lock. The lock holds until the
+    # gets the row read again under the lock. The lock holds until the
     # destroy and its cascades commit, so a writer that locks the row, or
     # inserts a row with a foreign key to it, waits or is seen.
-    def refuse_destroy_while_retained
-      return unless Organizations.configuration.retain_organization
-
+    def lock_row_and_refuse_if_retained
       current = self.class.unscoped.lock.find_by(self.class.primary_key => id)
       return unless current && Organizations.configuration.retain_organization?(current)
 
