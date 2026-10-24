@@ -114,6 +114,7 @@ en:
       organization_limit_reached: "Maximum number of organizations (%{max}) reached"
       no_current_organization_to_leave: "No current organization to leave"
       cannot_delete_user_owns_organizations: "Cannot delete a user who still owns organizations. Transfer ownership or delete those organizations first."
+      organization_retained: "%{organization} holds records that must be kept, so it cannot be deleted."
 
       # — Controller guards (default unauthorized copy) —
       unauthorized_role: "You need %{role} access to perform this action"

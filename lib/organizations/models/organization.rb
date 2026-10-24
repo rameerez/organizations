@@ -32,6 +32,7 @@ module Organizations
     class NoOwnerPresent < Organizations::Error; end
     class MemberAlreadyExists < Organizations::Error; end
     class CannotTransferPersonalOrganization < Organizations::Error; end
+    class CannotDestroyRetainedOrganization < Organizations::Error; end
 
     # === Associations ===
 
@@ -86,6 +87,10 @@ module Organizations
     belongs_to :personal_owner,
                class_name: Organizations.user_class_name,
                optional: true
+
+    # Before the dependent: :destroy cascades, so a retained organization
+    # loses none of its rows (config.retain_organization).
+    before_destroy :refuse_destroy_while_retained, prepend: true
 
     # === Validations ===
 
@@ -186,7 +191,9 @@ module Organizations
     end
 
     # Stop treating this organization as the owner's personal organization.
-    # Do this before you transfer its ownership. Members, roles and data stay.
+    # Members, roles and data stay. To hand it over to another member, use
+    # transfer_ownership_to!(member, convert_to_shared: true), which does
+    # both in one step.
     # @return [self]
     def convert_to_shared!
       update!(personal_owner_id: nil)
@@ -426,14 +433,26 @@ module Organizations
     # The new owner must be an admin of the organization
     # Old owner becomes admin
     # @param new_owner [User] The user to become owner
+    # @param convert_to_shared [Boolean] for a personal organization: make it
+    #   shared and transfer it in one step (default:
+    #   config.convert_personal_organizations_on_transfer). A refused transfer
+    #   leaves it personal. A transfer to the personal owner itself is still
+    #   refused.
     # @raise [CannotTransferToNonMember] if user is not a member
     # @raise [CannotTransferToNonAdmin] if user is not an admin
-    def transfer_ownership_to!(new_owner)
-      ActiveRecord::Base.transaction do
+    # @raise [CannotTransferPersonalOrganization] for a personal organization
+    #   without convert_to_shared
+    def transfer_ownership_to!(
+      new_owner, convert_to_shared: Organizations.configuration.convert_personal_organizations_on_transfer
+    )
+      # A conversion gets its own savepoint: a refusal after it (the new owner
+      # is not an admin, say) undoes it, also when the caller rescues the
+      # error inside a transaction of its own.
+      ActiveRecord::Base.transaction(requires_new: convert_to_shared) do
         lock_new_owner_row!(new_owner)
         lock! # then the organization row, to prevent concurrent operations
 
-        ensure_not_personal_for_transfer!
+        ensure_not_personal_for_transfer!(new_owner, convert_to_shared: convert_to_shared)
 
         # Always perform a fresh read in this write path, even if memberships
         # are preloaded on this instance, to avoid stale-owner selection.
@@ -474,6 +493,9 @@ module Organizations
           new_owner: new_owner
         )
       end
+    rescue StandardError
+      forget_refused_conversion if convert_to_shared
+      raise
     end
 
     # === Invitation Methods ===
@@ -753,9 +775,29 @@ module Organizations
       raise CannotTransferToNonMember, Organizations.t(:"errors.transfer_to_non_member", organization: self)
     end
 
-    # A personal organization belongs to its owner. Call convert_to_shared!
-    # first to move it to someone else.
-    def ensure_not_personal_for_transfer!
+    # The savepoint undid the conversion, but this copy can still say shared.
+    # Read it again. A reload that fails must not hide why the transfer was
+    # refused.
+    def forget_refused_conversion
+      reload if persisted?
+    rescue ActiveRecord::ActiveRecordError
+      nil
+    end
+
+    # A record with a retention period must outlive every destroy path, not
+    # only the account deletion: an admin screen, a console, a cascade.
+    def refuse_destroy_while_retained
+      return unless Organizations.configuration.retain_organization?(self)
+
+      raise CannotDestroyRetainedOrganization, Organizations.t(:"errors.organization_retained", organization: self)
+    end
+
+    # A personal organization belongs to its owner. With convert_to_shared it
+    # becomes shared first, in the transfer's savepoint. A transfer to the
+    # personal owner itself converts nothing, so it is still refused. Runs
+    # under the organization's row lock: lock! read the personal link again.
+    def ensure_not_personal_for_transfer!(new_owner, convert_to_shared:)
+      convert_to_shared! if convert_to_shared && personal? && personal_owner_id != new_owner.id
       return unless personal?
 
       raise CannotTransferPersonalOrganization, Organizations.t(:"errors.transfer_personal_organization", organization: self)

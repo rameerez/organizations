@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-24
+
+**Hand a personal organization over, and keep organizations that hold records with a retention period.** An invoicing app on the fleet built both by hand and runs them in production. This release moves them into the gem, with their tests. Both are opt-in, and no migration is needed.
+
+### Added
+
+- **Hand a personal organization over.** The need: the owner confirms that a member takes over their personal workspace, which then becomes shared, and a refused handover must leave nothing half done. `org.transfer_ownership_to!(admin, convert_to_shared: true)` makes a personal organization shared and transfers it in one step, in its own savepoint. A refused transfer leaves it personal, also when the caller rescues the error inside its own transaction, and the record in memory is read again. The transfer locks the new owner's row before the organization row, as the deletion guard does. A transfer to the personal owner itself is still refused. `config.convert_personal_organizations_on_transfer = true` makes the conversion the default, also for the engine's transfer action. The default (`false`) keeps the refusal of 0.7.0.
+- **Keep organizations that hold records with a retention period.** The need: an organization that holds records the law makes you keep, such as issued invoices or the books, must never be destroyed when its owner deletes their account. `config.retain_organization = ->(organization) { ... }` (default `nil`) names those organizations. `user.account_deletion_plan.organizations_to_retain` lists them apart from `organizations_to_destroy`. They do not block, so `allowed?` is unchanged. `user.destroy` returns false while the user owns one, with a message that names it, and the app closes the account instead. Any other destroy of a retained organization raises `Organizations::Organization::CannotDestroyRetainedOrganization` before any row goes.
+
+### Changed
+
+- `AccountDeletionPlan#to_h` has an `organizations_to_retain` key. It is an empty list when nothing is retained.
+
+### Upgrading
+
+No migration is needed, and nothing changes until you set one of the two options. An app that prepends its own `transfer_ownership_to!` to convert personal organizations can remove it and set `config.convert_personal_organizations_on_transfer = true`. An app that refuses the destroy of such organizations in its own `before_destroy` can remove it and set `config.retain_organization`.
+
 ## [0.7.1] - 2026-10-19
 
 **A user whose invitation was accepted can now be deleted.** A patch release with one fix and one README correction. No migration is needed.

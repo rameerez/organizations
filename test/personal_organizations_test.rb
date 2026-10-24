@@ -262,6 +262,120 @@ class PersonalOrganizationsTest < Organizations::Test
     assert_nil user.reload.personal_organization
   end
 
+  # === Handing a personal organization over (convert_to_shared:) ===
+  #
+  # The owner confirmed the handover, and the screen said that the workspace
+  # becomes shared: the conversion and the transfer are one step.
+
+  test "convert_to_shared hands a personal organization to an admin and makes it shared" do
+    owner = create_user!
+    admin = create_user!
+    org = owner.create_personal_organization!
+    org.add_member!(admin, role: :admin)
+
+    org.transfer_ownership_to!(admin, convert_to_shared: true)
+
+    assert_equal admin, org.reload.owner
+    refute_predicate org, :personal?
+    assert_nil owner.reload.personal_organization
+    assert owner.is_admin_of?(org)
+  end
+
+  test "a refused handover leaves the organization personal" do
+    owner = create_user!
+    member = create_user!
+    org = owner.create_personal_organization!
+    org.add_member!(member, role: :member)
+
+    assert_raises(Organizations::Organization::CannotTransferToNonAdmin) do
+      org.transfer_ownership_to!(member, convert_to_shared: true)
+    end
+
+    assert_predicate org, :personal?
+    assert_predicate org.reload, :personal?
+    assert_equal owner, org.owner
+  end
+
+  test "a refused handover inside a caller's transaction still leaves the organization personal" do
+    owner = create_user!
+    member = create_user!
+    org = owner.create_personal_organization!
+    org.add_member!(member, role: :member)
+
+    Organizations::Organization.transaction do
+      org.transfer_ownership_to!(member, convert_to_shared: true)
+    rescue Organizations::Organization::CannotTransferToNonAdmin
+      assert_predicate org, :personal?, "the in-memory copy is not left converted"
+    end
+
+    assert_predicate org.reload, :personal?
+    assert_equal owner, org.owner
+  end
+
+  test "a handover to the personal owner itself changes nothing" do
+    owner = create_user!
+    org = owner.create_personal_organization!
+
+    assert_raises(Organizations::Organization::CannotTransferPersonalOrganization) do
+      org.transfer_ownership_to!(owner, convert_to_shared: true)
+    end
+    assert_predicate org.reload, :personal?
+  end
+
+  test "convert_to_shared transfers a shared organization exactly as before" do
+    org, owner = create_org_with_owner!
+    admin = create_user!
+    org.add_member!(admin, role: :admin)
+
+    org.transfer_ownership_to!(admin, convert_to_shared: true)
+
+    assert_equal admin, org.reload.owner
+    assert owner.is_admin_of?(org)
+  end
+
+  test "a handover locks the new owner's row before the organization row" do
+    owner = create_user!
+    admin = create_user!
+    org = owner.create_personal_organization!
+    org.add_member!(admin, role: :admin)
+    locked = []
+    relation_class = ActiveRecord::Relation
+    original = relation_class.instance_method(:lock)
+    relation_class.define_method(:lock) do |*args|
+      locked << model.table_name
+      original.bind_call(self, *args)
+    end
+
+    org.transfer_ownership_to!(admin, convert_to_shared: true)
+
+    assert_operator locked.index("users"), :<, locked.index("organizations_organizations")
+  ensure
+    relation_class.define_method(:lock, original)
+  end
+
+  test "convert_personal_organizations_on_transfer makes the handover the default" do
+    Organizations.configure { |c| c.convert_personal_organizations_on_transfer = true }
+    owner = create_user!
+    admin = create_user!
+    org = owner.create_personal_organization!
+    org.add_member!(admin, role: :admin)
+
+    assert_raises(Organizations::Organization::CannotTransferPersonalOrganization) do
+      org.transfer_ownership_to!(admin, convert_to_shared: false)
+    end
+    org.transfer_ownership_to!(admin)
+
+    assert_equal admin, org.reload.owner
+    refute_predicate org, :personal?
+  end
+
+  test "convert_personal_organizations_on_transfer is false by default and must be true or false" do
+    refute Organizations.configuration.convert_personal_organizations_on_transfer
+    assert_raises(Organizations::ConfigurationError) do
+      Organizations.configure { |c| c.convert_personal_organizations_on_transfer = :yes }
+    end
+  end
+
   test "linking a personal owner locks the organization row first" do
     org, owner = create_org_with_owner!
     locked = []

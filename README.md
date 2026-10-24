@@ -575,6 +575,7 @@ user.create_personal_organization!           # Create it, or return the existing
 
 # Account deletion
 user.account_deletion_plan                   # What user.destroy would do (changes nothing)
+Organizations::AccountDeletionPlan.for(user, lock: true)  # The same plan under the guard's locks
 ```
 
 ### Organization methods
@@ -604,7 +605,7 @@ Organizations::Organization.backfill_personal_owners!(mapping, dry_run: true)
 # Personal organizations
 org.personal?                   # "Is this someone's personal organization?"
 org.personal_owner              # The user it belongs to
-org.convert_to_shared!          # Stop being personal (needed before a transfer)
+org.convert_to_shared!          # Stop being personal
 
 # Actions
 # Pass the acting user (removed_by:, changed_by:) so the role rule is checked;
@@ -613,6 +614,7 @@ org.add_member!(user, role: :member)            # no actor: never checked, autho
 org.remove_member!(user, removed_by: current_user)
 org.change_role_of!(user, to: :admin, changed_by: current_user)
 org.transfer_ownership_to!(other_user)
+org.transfer_ownership_to!(other_user, convert_to_shared: true)  # Hand over a personal org: it becomes shared
 
 # Invitations (inviter must be a member with :invite_members permission)
 org.send_invite_to!(email)                  # Auto-infers invited_by from Current.user
@@ -1523,7 +1525,7 @@ Organizations::Organization.not_personal # every other organization
 The rules:
 
 - The link is `organizations.personal_owner_id`, with a unique index. A user has at most one personal organization.
-- The personal owner is also the owner membership. The gem writes both together, and `create_with_owner!` and `create_organization!` refuse a `personal_owner` who is not the new owner. `org.transfer_ownership_to!` raises `CannotTransferPersonalOrganization` for a personal organization: call `org.convert_to_shared!` first.
+- The personal owner is also the owner membership. The gem writes both together, and `create_with_owner!` and `create_organization!` refuse a `personal_owner` who is not the new owner. `org.transfer_ownership_to!` raises `CannotTransferPersonalOrganization` for a personal organization, so that nobody's own workspace moves by accident. To hand it over, see below.
 - A personal organization can have other members. To keep it owner-only, veto joins in the membership gate, which covers every join path:
 
   ```ruby
@@ -1546,6 +1548,25 @@ The rules:
 
   Conflict reasons: `:organization_not_found`, `:not_the_owner`, `:organization_personal_for_another_user`, `:user_has_another_personal_organization`, `:organization_mapped_twice`, `:user_mapped_twice`. The write runs in its own savepoint: a conflict found at write time (a concurrent provisioning) rolls back every assignment and comes back in the report.
 
+**Hand a personal organization over.** When your transfer screen tells the owner that the workspace becomes shared, and the owner confirms, convert and transfer in one step:
+
+```ruby
+org.transfer_ownership_to!(admin, convert_to_shared: true)
+org.personal?   # => false
+org.owner       # => admin
+```
+
+To make this the default, also for the engine's transfer action:
+
+```ruby
+config.convert_personal_organizations_on_transfer = true   # default: false
+```
+
+- The conversion and the transfer run in one savepoint. A refused transfer (the new owner is not an admin, say) leaves the organization personal, also when you rescue the error inside a transaction of yours. The record in memory is read again, so it does not say shared either.
+- A transfer to the personal owner itself still raises `CannotTransferPersonalOrganization`: there is nothing to hand over.
+- The transfer locks the new owner's row before the organization row, the order of the deletion guard, so it cannot deadlock with a deletion of the new owner.
+- `convert_to_shared: false` refuses again for one call.
+
 A personal organization tells you who probably pays. Billing and entitlements stay with your app.
 
 ## Deleting user accounts
@@ -1559,6 +1580,7 @@ plan = user.account_deletion_plan
 plan.allowed?                  # => false
 plan.blockers                  # => [#<struct organization=#<Organization "Acme">, reason=:owns_organization_with_members>]
 plan.organizations_to_destroy  # organizations deleted with the account
+plan.organizations_to_retain   # organizations kept, see "Organizations that must be kept"
 plan.memberships_to_remove     # the user's other memberships, removed with the account
 plan.to_h                      # ids and symbols, for an audit log or a confirmation screen
 user.account_deletion_plan(policy: :destroy_personal_organization)  # preview another policy
@@ -1584,6 +1606,44 @@ What the gem guarantees:
 - The organization deletion and the user deletion are one transaction, with its own savepoint, also inside a transaction of yours. A host `before_destroy` veto on the organization, or any later failure, rolls back everything, and the veto message is on `user.errors`.
 - The guard locks the user row and then the owned organization rows. A concurrent join or organization creation for that user, a join or transfer in an owned organization, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it.
 - The user's other memberships are deleted (`dependent: :destroy`), as before. Invitations they sent, join requests they decided, join codes they created and allowlist entries they claimed keep the record and lose the user reference.
+
+### Organizations that must be kept
+
+Some organizations hold records that the law makes you keep for years, such as issued invoices or the books. Deleting the user must never destroy such an organization. Tell the gem which ones they are:
+
+```ruby
+config.account_deletion_policy = :destroy_personal_organization
+config.retain_organization = ->(organization) { organization.invoices.exists? }   # default: nil
+```
+
+The plan lists them apart. They do not block, so `allowed?` still answers the ownership question:
+
+```ruby
+plan = user.account_deletion_plan
+plan.allowed?                  # => true
+plan.organizations_to_retain   # => [#<Organization "Ana's books">]
+plan.organizations_to_destroy  # => []
+```
+
+- `user.destroy` returns false while the user owns a retained organization, because the organization would lose its owner. `user.errors` names each one: "Ana's books holds records that must be kept, so it cannot be deleted." Reword it with the `organizations.errors.organization_retained` key.
+- Close the account in your app instead. Lock the user row, then build the plan under locks (the guard's order). Keep the retained organizations, delete the rest, and anonymize the user row:
+
+  ```ruby
+  User.transaction do
+    user.lock!
+    plan = Organizations::AccountDeletionPlan.for(user, lock: true)
+    raise "Transfer or delete the blocking organizations first" unless plan.allowed?
+
+    plan.organizations_to_retain.each { |organization| organization.close! }  # your app's closure
+    plan.organizations_to_destroy.each(&:destroy!)
+    plan.memberships_to_remove.each(&:destroy!)
+    user.anonymize!                                                          # your app's anonymization
+  end
+  ```
+
+- Every other destroy of a retained organization raises `Organizations::Organization::CannotDestroyRetainedOrganization` before any row goes: an admin screen, a console, a cascade. `delete` and `delete_all` skip callbacks, so they skip this check too.
+- The deletion guard asks the rule again under its locks. A record added after the preview still keeps the organization.
+- An organization that blocks (shared, or with other members) stays a blocker. Under `:prevent` nothing is listed as retained, because nothing would be deleted.
 
 ## User Onboarding Patterns
 
@@ -1776,6 +1836,14 @@ Organizations.configure do |config|
   # :destroy_personal_organization also deletes their personal organization
   # when they are its only member. See "Deleting user accounts".
   config.account_deletion_policy = :prevent
+
+  # Organizations that hold records with a retention period: never destroyed
+  # (default: nil). See "Organizations that must be kept".
+  config.retain_organization = nil
+
+  # transfer_ownership_to! makes a personal organization shared and transfers
+  # it, instead of refusing (default: false). See "Personal organizations".
+  config.convert_personal_organizations_on_transfer = false
 
   # === Invitations ===
   # How long invitations are valid

@@ -778,8 +778,9 @@ module Organizations
           # join or organization creation for this user waits, then locks the
           # owned organizations, so a concurrent join or transfer in them
           # waits too. It checks the complete owned set before it deletes
-          # anything; a blocker, or any failure, aborts the whole destroy and
-          # rolls back every organization deleted so far.
+          # anything; a blocker, a retained organization, or any failure,
+          # aborts the whole destroy and rolls back every organization deleted
+          # so far.
           def prevent_deletion_while_owning_organizations
             lock_own_row_for_deletion
             plan = Organizations::AccountDeletionPlan.for(self, lock: true)
@@ -788,8 +789,21 @@ module Organizations
               throw(:abort)
             end
 
+            refuse_deletion_while_retaining(plan.organizations_to_retain)
             plan.organizations_to_destroy.each { |organization| destroy_personal_organization_for_deletion(organization) }
             memberships.reset if plan.organizations_to_destroy.any?
+          end
+
+          # A retained organization must keep its records and its owner, so
+          # the user row stays: the app closes the account instead. The
+          # message names each organization, as a veto on its destroy would.
+          def refuse_deletion_while_retaining(organizations)
+            return if organizations.empty?
+
+            organizations.each do |organization|
+              errors.add(:base, Organizations.t(:"errors.organization_retained", organization: organization))
+            end
+            throw(:abort)
           end
 
           def drop_grants_of_sent_invitations

@@ -284,7 +284,148 @@ class AccountDeletionTest < Organizations::Test
     hash = user.account_deletion_plan.to_h
 
     assert_equal({ allowed: true, policy: :prevent, blockers: [], organizations_to_destroy: [],
-                   memberships_to_remove: [] }, hash)
+                   organizations_to_retain: [], memberships_to_remove: [] }, hash)
+  end
+
+  # === Retained organizations (config.retain_organization) ===
+  #
+  # An organization that holds records with a retention period (issued
+  # invoices, the books) is never destroyed with the account. The plan lists
+  # it apart, user.destroy refuses, and the app closes the account instead.
+
+  test "a user whose personal organization holds retained records is not deleted, and the refusal names it" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!("Ana's books")
+    Document.create!(organization: org, title: "Invoice 1")
+
+    refute user.destroy
+    assert_includes user.errors.full_messages, "Ana's books holds records that must be kept, so it cannot be deleted."
+    assert User.exists?(user.id)
+    assert Organizations::Organization.exists?(org.id)
+    assert_equal user, org.reload.owner
+    assert_equal user, org.personal_owner
+  end
+
+  test "destroy! of such a user raises and keeps everything" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!
+    Document.create!(organization: org)
+
+    assert_raises(ActiveRecord::RecordNotDestroyed) { user.destroy! }
+    assert User.exists?(user.id)
+    assert_equal user, org.reload.owner
+  end
+
+  test "an account with no retained records is still deleted with its personal organization" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!
+
+    assert user.destroy
+    refute User.exists?(user.id)
+    refute Organizations::Organization.exists?(org.id)
+  end
+
+  test "the plan lists a retained organization apart and does not block on it" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!
+    Document.create!(organization: org)
+    team, = create_org_with_owner!(name: "Team")
+    team.add_member!(user)
+
+    plan = user.account_deletion_plan
+
+    assert_predicate plan, :allowed?
+    assert_empty plan.blockers
+    assert_equal [org], plan.organizations_to_retain
+    assert_empty plan.organizations_to_destroy
+    assert_equal [team.memberships.find_by(user_id: user.id)], plan.memberships_to_remove
+    assert_equal [org.id], plan.to_h[:organizations_to_retain]
+  end
+
+  test "an organization with other members still blocks, retained or not" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!
+    org.add_member!(create_user!)
+    Document.create!(organization: org)
+
+    plan = user.account_deletion_plan
+
+    refute_predicate plan, :allowed?
+    assert_equal([[org, :personal_organization_with_members]], plan.blockers.map { |b| [b.organization, b.reason] })
+    assert_empty plan.organizations_to_retain
+  end
+
+  test "under :prevent the personal organization blocks and nothing is listed as retained" do
+    Organizations.configure { |c| c.retain_organization = ->(_organization) { true } }
+    user = create_user!
+    org = user.create_personal_organization!
+
+    plan = user.account_deletion_plan
+
+    assert_equal([[org, :personal_organization]], plan.blockers.map { |b| [b.organization, b.reason] })
+    assert_empty plan.organizations_to_retain
+  end
+
+  test "the deletion asks again under its locks: a record added after the preview keeps the organization" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!
+
+    assert_equal [org], user.account_deletion_plan.organizations_to_destroy
+
+    Document.create!(organization: org)
+
+    refute user.destroy
+    assert Organizations::Organization.exists?(org.id)
+  end
+
+  test "the closure an app runs instead keeps the retained organization with its owner" do
+    retain_organizations_with_documents
+    user = create_user!
+    org = user.create_personal_organization!
+    Document.create!(organization: org)
+    team, = create_org_with_owner!(name: "Team")
+    team.add_member!(user)
+
+    # What the app does instead of user.destroy, under the guard's lock order.
+    User.transaction do
+      user.lock!
+      plan = Organizations::AccountDeletionPlan.for(user, lock: true)
+      plan.organizations_to_destroy.each(&:destroy!)
+      plan.memberships_to_remove.each(&:destroy!)
+    end
+
+    assert_equal user, org.reload.owner
+    refute team.reload.has_member?(user)
+    assert Document.exists?(organization_id: org.id)
+  end
+
+  test "destroying a retained organization raises and keeps every row" do
+    retain_organizations_with_documents
+    org, owner = create_org_with_owner!(name: "Books")
+    invitation = org.send_invite_to!("someone@example.com", invited_by: owner)
+    Document.create!(organization: org)
+
+    error = assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { org.destroy }
+    assert_equal "Books holds records that must be kept, so it cannot be deleted.", error.message
+    assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { org.destroy! }
+    assert Organizations::Organization.exists?(org.id)
+    assert_equal owner, org.reload.owner
+    assert Organizations::Invitation.exists?(invitation.id)
+  end
+
+  test "an organization without retained records is destroyed as before" do
+    retain_organizations_with_documents
+    org, = create_org_with_owner!
+
+    org.destroy!
+
+    refute Organizations::Organization.exists?(org.id)
   end
 
   # === Configuration ===
@@ -295,9 +436,25 @@ class AccountDeletionTest < Organizations::Test
     end
   end
 
+  test "retain_organization is nil by default and must be callable" do
+    assert_nil Organizations.configuration.retain_organization
+    assert_raises(Organizations::ConfigurationError) do
+      Organizations.configure { |c| c.retain_organization = true }
+    end
+  end
+
   private
 
   def use_policy(policy)
     Organizations.configure { |c| c.account_deletion_policy = policy }
+  end
+
+  # The fictional rule of these tests: an organization that holds documents
+  # is kept.
+  def retain_organizations_with_documents
+    Organizations.configure do |c|
+      c.account_deletion_policy = :destroy_personal_organization
+      c.retain_organization = ->(organization) { Document.exists?(organization_id: organization.id) }
+    end
   end
 end
