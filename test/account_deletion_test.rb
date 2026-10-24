@@ -468,12 +468,79 @@ class AccountDeletionTest < Organizations::Test
     org, = create_org_with_owner!
     stale = Organizations::Organization.find(org.id)
 
-    while_a_writer_adds_a_document(org) do
+    # The app's writer locks the organization row, creates the retained
+    # record, and commits a moment later.
+    writer = lambda do |ready|
+      Organizations::Organization.transaction do
+        Organizations::Organization.lock.find(org.id)
+        Document.create!(organization_id: org.id)
+        ready << true
+        sleep 0.5 # the destroy starts now and waits for this lock
+      end
+    end
+
+    concurrently(writer) do
       assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { stale.destroy! }
     end
 
     assert Organizations::Organization.exists?(org.id)
     assert Document.exists?(organization_id: org.id)
+  end
+
+  test "a query cache filled earlier cannot let a retained organization go" do
+    retain_organizations_with_documents
+    org, = create_org_with_owner!
+
+    ActiveRecord::Base.cache do
+      refute Document.exists?(organization_id: org.id) # the request caches "none"
+      insert_document_elsewhere(org)
+
+      assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { org.destroy! }
+    end
+    assert Organizations::Organization.exists?(org.id)
+    assert Document.exists?(organization_id: org.id)
+  end
+
+  test "a query cache filled by the preview cannot hide a new member from the deletion guard" do
+    use_policy :destroy_personal_organization
+    user = create_user!
+    org = user.create_personal_organization!
+    friend = create_user!
+
+    # No grants table: no write clears the cache before the guard runs.
+    Organizations::GrantHolder.stub(:grants_table?, false) do
+      ActiveRecord::Base.cache do
+        assert_equal [org], user.account_deletion_plan.organizations_to_destroy # cached: no other member
+        add_member_elsewhere(org, friend)
+
+        refute user.destroy
+      end
+    end
+
+    assert Organizations::Organization.exists?(org.id)
+    assert Organizations::Membership.exists?(organization_id: org.id, user_id: friend.id)
+  end
+
+  test "a member deletes their account while the organization is destroyed, and neither deadlocks" do
+    skip "Row locks across connections need PostgreSQL (ORGS_TEST_DATABASE_URL)" unless postgresql?
+
+    org, = create_org_with_owner!
+    member = create_user!
+    org.add_member!(member)
+    # The rule runs just after the destroy locked the organization row. It
+    # holds the lock a moment, so the member's deletion starts inside it.
+    destroyer = lambda do |ready|
+      hold_the_lock = ->(_organization) { (ready << true) && sleep(0.5) && false }
+      Organizations.configure { |c| c.retain_organization = hold_the_lock }
+      Organizations::Organization.find(org.id).destroy!
+    end
+
+    concurrently(destroyer) do
+      assert member.destroy
+    end
+
+    refute User.exists?(member.id)
+    refute Organizations::Organization.exists?(org.id)
   end
 
   test "an organization without retained records is destroyed as before" do
@@ -506,25 +573,43 @@ class AccountDeletionTest < Organizations::Test
     Organizations.configure { |c| c.account_deletion_policy = policy }
   end
 
-  # The app's writer, in another connection: it locks the organization row,
-  # creates the retained record, and commits a moment later. The block runs
-  # while the writer holds the lock.
-  def while_a_writer_adds_a_document(org)
-    locked = Queue.new
-    writer = Thread.new do
-      ActiveRecord::Base.connection_pool.with_connection do
-        Organizations::Organization.transaction do
-          Organizations::Organization.lock.find(org.id)
-          Document.create!(organization_id: org.id)
-          locked << true
-          sleep 0.5 # the block starts now and waits for this lock
-        end
-      end
+  # Runs work in another connection, and the block once work pushes to
+  # `ready`. Errors of the work are raised here.
+  def concurrently(work)
+    ready = Queue.new
+    thread = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection { work.call(ready) }
+    ensure
+      ready << :done
     end
-    locked.pop
+    ready.pop
     yield
+    thread.value
   ensure
-    writer&.join
+    thread.join if thread&.alive?
+  end
+
+  # A write that this connection's query cache does not see. On PostgreSQL
+  # it is another connection. An in-memory SQLite database has only one
+  # connection, so there the raw driver writes, past the query cache.
+  def insert_document_elsewhere(org)
+    return in_another_connection { Document.create!(organization_id: org.id) } if postgresql?
+
+    ActiveRecord::Base.connection.raw_connection.execute("INSERT INTO documents (organization_id) VALUES (?)", [org.id])
+  end
+
+  def add_member_elsewhere(org, user)
+    return in_another_connection { Organizations::Organization.find(org.id).add_member!(user) } if postgresql?
+
+    now = Time.current.utc.strftime("%Y-%m-%d %H:%M:%S")
+    ActiveRecord::Base.connection.raw_connection.execute(
+      "INSERT INTO organizations_memberships (user_id, organization_id, role, created_at, updated_at) " \
+      "VALUES (?, ?, 'member', ?, ?)", [user.id, org.id, now, now]
+    )
+  end
+
+  def in_another_connection(&block)
+    Thread.new { ActiveRecord::Base.connection_pool.with_connection(&block) }.value
   end
 
   def postgresql?

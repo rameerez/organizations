@@ -775,14 +775,15 @@ module Organizations
           # The account-deletion guard (config.account_deletion_policy). Runs
           # inside the destroy transaction, before the dependent memberships
           # are destroyed. It locks this user's row first, so a concurrent
-          # join or organization creation for this user waits, then locks the
-          # owned organizations, so a concurrent join or transfer in them
-          # waits too. It checks the complete owned set before it deletes
+          # join or organization creation for this user waits, then locks
+          # every organization of the user, so a concurrent join, transfer or
+          # organization destroy in them waits too. It checks the complete owned set before it deletes
           # anything; a blocker, a retained organization, or any failure,
           # aborts the whole destroy and rolls back every organization deleted
           # so far.
           def prevent_deletion_while_owning_organizations
             lock_own_row_for_deletion
+            lock_organizations_for_deletion
             plan = Organizations::AccountDeletionPlan.for(self, lock: true)
             unless plan.allowed?
               errors.add(:base, Organizations.t(:"errors.cannot_delete_user_owns_organizations"))
@@ -814,6 +815,19 @@ module Organizations
 
           def lock_own_row_for_deletion
             self.class.unscoped.where(self.class.primary_key => id).lock.pick(self.class.primary_key)
+          end
+
+          # Every organization of this user, owned or not, locked in id order
+          # before any membership row goes. A membership delete updates its
+          # organization's counter cache, and an organization's destroy locks
+          # its row before it deletes memberships. So both paths take the
+          # organization row first and cannot deadlock. The id order keeps two
+          # account deletions apart too.
+          def lock_organizations_for_deletion
+            organizations = Organizations::Organization
+            scope = organizations.where(id: Organizations::Membership.where(user_id: id).select(:organization_id))
+            scope = scope.or(organizations.where(personal_owner_id: id)) if organizations.column_names.include?("personal_owner_id")
+            scope.order(:id).lock.pluck(:id)
           end
 
           def destroy_personal_organization_for_deletion(organization)

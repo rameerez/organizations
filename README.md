@@ -1604,7 +1604,7 @@ What the gem guarantees:
 
 - It checks the complete owned set before it deletes anything. One blocker blocks the whole deletion.
 - The organization deletion and the user deletion are one transaction, with its own savepoint, also inside a transaction of yours. A host `before_destroy` veto on the organization, or any later failure, rolls back everything, and the veto message is on `user.errors`.
-- The guard locks the user row and then the owned organization rows. A concurrent join or organization creation for that user, a join or transfer in an owned organization, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it.
+- The guard locks the user row, and then the row of every organization the user belongs to, in id order, before any membership goes. A concurrent join or organization creation for that user, a join, transfer or destroy in one of those organizations, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it. The guard reads the database under its locks, not the query cache.
 - The user's other memberships are deleted (`dependent: :destroy`), as before. Invitations they sent, join requests they decided, join codes they created and allowlist entries they claimed keep the record and lose the user reference.
 
 ### Organizations that must be kept
@@ -1642,7 +1642,7 @@ plan.organizations_to_destroy  # => []
   ```
 
 - Every other destroy of a retained organization raises `Organizations::Organization::CannotDestroyRetainedOrganization` before any row goes: an admin screen, a console, a cascade. The engine's controllers answer it like a refused form: HTML goes back with the message as an alert, JSON gets a 422 with `{ "error": message }`. `delete` and `delete_all` skip callbacks, so they skip this check too.
-- The rule gets the organization read again under its row lock, and the lock holds until the destroy commits. A stale copy, or a cached association, cannot let a retained organization go. A record added after the preview still keeps the organization.
+- The rule gets the organization read again under its row lock, and the lock holds until the destroy commits. The rule runs with the query cache off. A stale copy, a cached association or a cached query cannot let a retained organization go. A record added after the preview still keeps the organization.
 - Whatever creates the retained records must lock the organization row (`organization.lock!` in the same transaction), or insert them with a foreign key to the organization that restricts deletion. Then a concurrent destroy waits for the record and sees it, or the database refuses the delete.
 - An organization that blocks (shared, or with other members) stays a blocker. Under `:prevent` nothing is listed as retained, because nothing would be deleted.
 

@@ -631,7 +631,9 @@ module Organizations
     def retain_organization?(organization)
       return false unless @retain_organization
 
-      @retain_organization.call(organization) ? true : false
+      # Not from the query cache: a request can have cached "no retained
+      # records" before another connection committed one.
+      ActiveRecord::Base.uncached { @retain_organization.call(organization) } ? true : false
     end
 
     # @api private

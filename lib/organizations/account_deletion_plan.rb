@@ -59,8 +59,10 @@ module Organizations
       @blockers = []
       @organizations_to_destroy = []
       @organizations_to_retain = []
-      classify(owned_organizations(lock: lock))
-      @memberships_to_remove = remaining_memberships
+      # Under locks, read the database. The query cache can hold an answer
+      # from earlier in the request, from before another connection
+      # committed (a new member, a retained record).
+      lock ? ActiveRecord::Base.uncached { build(lock) } : build(lock)
     end
 
     # @return [Boolean] true when no owned organization blocks the deletion.
@@ -83,6 +85,11 @@ module Organizations
     end
 
     private
+
+    def build(lock)
+      classify(owned_organizations(lock: lock))
+      @memberships_to_remove = remaining_memberships
+    end
 
     # Organizations the user owns, plus any organization still linked to them
     # as personal owner (a raw write can leave a link without the membership).

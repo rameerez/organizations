@@ -12,6 +12,8 @@
 ### Changed
 
 - `AccountDeletionPlan#to_h` has an `organizations_to_retain` key. It is an empty list when nothing is retained.
+- The account-deletion guard locks every organization the user belongs to, in id order, before any membership goes. Before, it locked only the organizations the user owned. A member's account deletion and a destroy of their organization could deadlock on PostgreSQL: one deleted the membership and waited for the organization row, the other held that row and waited for the membership.
+- The account-deletion guard reads its plan with the query cache off. Before, a plan built earlier in the same request (a confirmation screen's preview) could answer from the cache, and miss a member that another connection had added.
 
 ### Upgrading
 
