@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-24
+
+**Hand a personal organization over, and keep organizations that hold records with a retention period.** An invoicing app on the fleet built both by hand and runs them in production. This release moves them into the gem, with their tests. Both are opt-in, and no migration is needed.
+
+### Added
+
+- **Hand a personal organization over.** The need: the owner confirms that a member takes over their personal workspace, which then becomes shared, and a refused handover must leave nothing half done. `org.transfer_ownership_to!(admin, convert_to_shared: true)` makes a personal organization shared and transfers it in one step, in its own savepoint. A refused transfer leaves it personal, also when the caller rescues the error inside its own transaction, and the record in memory is read again. The transfer locks the new owner's row before the organization row, as the deletion guard does. A transfer to the personal owner itself is still refused. `config.convert_personal_organizations_on_transfer = true` makes the conversion the default, also for the engine's transfer action. The default (`false`) keeps the refusal of 0.7.0.
+- **Keep organizations that hold records with a retention period.** The need: an organization that holds records the law makes you keep, such as issued invoices or the books, must never be destroyed when its owner deletes their account. `config.retain_organization = ->(organization) { ... }` (default `nil`) names those organizations. `user.account_deletion_plan.organizations_to_retain` lists them apart from `organizations_to_destroy`. They do not block, so `allowed?` is unchanged. `user.destroy` returns false while the user owns one, with a message that names it, and the app closes the account instead. Any other destroy of a retained organization raises `Organizations::Organization::CannotDestroyRetainedOrganization` before any row goes. The destroy reads the organization again under its row lock, and the rule gets that copy, so a stale record cannot destroy it. Whatever creates the retained records must lock the organization row, or insert them with a foreign key that restricts deletion. The engine's controllers answer the error with a redirect back and the message (HTML), or a 422 (JSON).
+
+### Changed
+
+- `AccountDeletionPlan#to_h` has an `organizations_to_retain` key. It is an empty list when nothing is retained.
+- `user.destroy` takes its locks before its first write. It locks the user row, then the row of every organization in which it writes, in id order: its memberships, the invitations it sent and their grants, the memberships it invited, its join requests, the requests it decided, its join codes, the allowlist entries it claimed, the domains it verified and the grants it gave. Before, it locked only the owned organizations, after it deleted the grants of its sent invitations. **The callback order changes:** a new first `before_destroy` callback, `lock_rows_for_deletion`, takes the locks. It runs before `drop_grants_of_sent_invitations` and the guard, which keep their order and their names.
+- Every organization destroy locks its row before its `dependent: :destroy` cascades, with or without `retain_organization`. With the account deletion above, both paths take the organization row first. Before, a member's account deletion and a destroy of their organization could deadlock on PostgreSQL.
+- The account-deletion guard reads its plan with the query cache off. Before, a plan built earlier in the same request (a confirmation screen's preview) could answer from the cache, and miss a member that another connection had added.
+
+### Upgrading
+
+No migration is needed, and nothing changes until you set one of the two options. An app that prepends its own `transfer_ownership_to!` to convert personal organizations can remove it and set `config.convert_personal_organizations_on_transfer = true`. An app that refuses the destroy of such organizations in its own `before_destroy` can remove it and set `config.retain_organization`.
+
 ## [0.7.1] - 2026-10-19
 
 **A user whose invitation was accepted can now be deleted.** A patch release with one fix and one README correction. No migration is needed.

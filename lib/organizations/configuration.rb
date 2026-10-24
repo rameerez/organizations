@@ -93,6 +93,27 @@ module Organizations
     # as before. Needs the personal_owner_id column (rails g organizations:upgrade).
     attr_accessor :record_personal_organizations
 
+    # The default of transfer_ownership_to!(new_owner, convert_to_shared:).
+    # false (default): a personal organization raises
+    # CannotTransferPersonalOrganization. true: the transfer makes it shared
+    # first, in the same step. Turn it on when your transfer screen tells the
+    # owner that the workspace becomes shared. The engine's transfer action
+    # uses this default.
+    attr_accessor :convert_personal_organizations_on_transfer
+
+    # Organizations that must be kept because they hold records with a
+    # retention period (issued invoices, the books). A callable that receives
+    # the organization and returns true to keep it. nil (default) keeps
+    # nothing. Deleting the user never destroys a kept organization:
+    # user.account_deletion_plan lists it in organizations_to_retain,
+    # user.destroy refuses while the user owns one, and any destroy of it
+    # raises Organization::CannotDestroyRetainedOrganization. Your app closes
+    # it instead. The callable gets the organization read again under its
+    # row lock, so whatever creates the retained records must lock that row
+    # too, or insert them with a foreign key to it that restricts deletion.
+    #   config.retain_organization = ->(organization) { organization.invoices.exists? }
+    attr_accessor :retain_organization
+
     # What happens when a user who owns organizations is deleted:
     #   :prevent (default)              - any owned organization blocks the deletion
     #   :destroy_personal_organization  - the user's personal organization is
@@ -339,6 +360,8 @@ module Organizations
       @always_create_personal_organization_for_each_user = false
       @default_organization_name = "Personal"
       @record_personal_organizations = false
+      @convert_personal_organizations_on_transfer = false
+      @retain_organization = nil
       @vocabulary = nil
       @full_resource_access_role = :admin
       @grant_capabilities = nil
@@ -602,6 +625,18 @@ module Organizations
     end
 
     # @api private
+    # Whether config.retain_organization keeps this organization
+    # @param organization [Organizations::Organization]
+    # @return [Boolean]
+    def retain_organization?(organization)
+      return false unless @retain_organization
+
+      # Not from the query cache: a request can have cached "no retained
+      # records" before another connection committed one.
+      ActiveRecord::Base.uncached { @retain_organization.call(organization) } ? true : false
+    end
+
+    # @api private
     # Resolve the default organization name for a user
     # @param user [Object] The user object
     # @return [String] The organization name
@@ -682,6 +717,11 @@ module Organizations
         raise ConfigurationError, "record_personal_organizations must be true or false"
       end
 
+      unless [true, false].include?(@convert_personal_organizations_on_transfer)
+        raise ConfigurationError, "convert_personal_organizations_on_transfer must be true or false"
+      end
+
+      validate_callable_option!(@retain_organization, "retain_organization")
       return if ACCOUNT_DELETION_POLICIES.include?(@account_deletion_policy)
 
       raise ConfigurationError, "account_deletion_policy must be one of: #{ACCOUNT_DELETION_POLICIES.join(', ')}"

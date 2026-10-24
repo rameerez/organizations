@@ -10,6 +10,7 @@ module Organizations
   #   plan.allowed?                  # => false
   #   plan.blockers                  # => [#<Blocker organization=…, reason=:owns_organization_with_members>]
   #   plan.organizations_to_destroy  # personal organizations deleted with the account
+  #   plan.organizations_to_retain   # organizations that config.retain_organization keeps
   #   plan.memberships_to_remove     # the user's other memberships, removed with the account
   #
   # Blocker reasons:
@@ -17,6 +18,14 @@ module Organizations
   #   :owns_organization                  - the user is the only member; delete the organization first
   #   :personal_organization_with_members - the personal organization has other members
   #   :personal_organization              - the policy is :prevent
+  #
+  # Retained organizations (config.retain_organization) are the ones that
+  # the policy would delete with the account, but that hold records the app
+  # must keep. They do not block: allowed? stays about ownership. But
+  # user.destroy refuses while there is one, because it would leave the
+  # organization without its owner. The app closes the account instead: it
+  # keeps those organizations, destroys organizations_to_destroy and
+  # memberships_to_remove, and anonymizes the user.
   #
   # Database effects only. Subscriptions, external services and retained
   # records belong to the host's account-closure workflow: a rollback cannot
@@ -31,7 +40,7 @@ module Organizations
       personal_organization
     ].freeze
 
-    attr_reader :user, :policy, :blockers, :organizations_to_destroy, :memberships_to_remove
+    attr_reader :user, :policy, :blockers, :organizations_to_destroy, :organizations_to_retain, :memberships_to_remove
 
     # @param user [User]
     # @param policy [Symbol] one of Configuration::ACCOUNT_DELETION_POLICIES
@@ -49,11 +58,15 @@ module Organizations
       @policy = policy
       @blockers = []
       @organizations_to_destroy = []
-      classify(owned_organizations(lock: lock))
-      @memberships_to_remove = remaining_memberships
+      @organizations_to_retain = []
+      # Under locks, read the database. The query cache can hold an answer
+      # from earlier in the request, from before another connection
+      # committed (a new member, a retained record).
+      lock ? ActiveRecord::Base.uncached { build(lock) } : build(lock)
     end
 
-    # @return [Boolean] true when the user can be deleted
+    # @return [Boolean] true when no owned organization blocks the deletion.
+    #   With organizations_to_retain, the account closes instead.
     def allowed?
       blockers.empty?
     end
@@ -66,11 +79,17 @@ module Organizations
         policy: policy,
         blockers: blockers.map { |b| { organization_id: b.organization.id, reason: b.reason } },
         organizations_to_destroy: organizations_to_destroy.map(&:id),
+        organizations_to_retain: organizations_to_retain.map(&:id),
         memberships_to_remove: memberships_to_remove.map(&:id)
       }
     end
 
     private
+
+    def build(lock)
+      classify(owned_organizations(lock: lock))
+      @memberships_to_remove = remaining_memberships
+    end
 
     # Organizations the user owns, plus any organization still linked to them
     # as personal owner (a raw write can leave a link without the membership).
@@ -83,16 +102,23 @@ module Organizations
     end
 
     def classify(organizations)
-      @shared_ids = Membership.where(organization_id: organizations.map(&:id)).where.not(user_id: user.id)
-        .distinct.pluck(:organization_id).to_set
+      @shared_ids = shared_organization_ids(organizations)
       organizations.each do |organization|
         reason = blocker_reason(organization)
         if reason
           blockers << Blocker.new(organization: organization, reason: reason)
+        elsif Organizations.configuration.retain_organization?(organization)
+          organizations_to_retain << organization
         else
           organizations_to_destroy << organization
         end
       end
+    end
+
+    # The owned organizations that have a member other than this user
+    def shared_organization_ids(organizations)
+      Membership.where(organization_id: organizations.map(&:id)).where.not(user_id: user.id)
+        .distinct.pluck(:organization_id).to_set
     end
 
     def blocker_reason(organization)
