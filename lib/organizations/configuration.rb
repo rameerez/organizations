@@ -108,7 +108,9 @@ module Organizations
     # user.account_deletion_plan lists it in organizations_to_retain,
     # user.destroy refuses while the user owns one, and any destroy of it
     # raises Organization::CannotDestroyRetainedOrganization. Your app closes
-    # it instead.
+    # it instead. The callable gets the organization read again under its
+    # row lock, so whatever creates the retained records must lock that row
+    # too, or insert them with a foreign key to it that restricts deletion.
     #   config.retain_organization = ->(organization) { organization.invoices.exists? }
     attr_accessor :retain_organization
 

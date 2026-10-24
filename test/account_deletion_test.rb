@@ -419,6 +419,63 @@ class AccountDeletionTest < Organizations::Test
     assert Organizations::Invitation.exists?(invitation.id)
   end
 
+  test "a stale copy cannot destroy an organization that became retained" do
+    Organizations.configure { |c| c.retain_organization = ->(organization) { organization.metadata["retain"] == true } }
+    org, owner = create_org_with_owner!
+    stale = Organizations::Organization.find(org.id)
+    Organizations::Organization.find(org.id).update!(metadata: { "retain" => true })
+
+    assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { stale.destroy! }
+    assert Organizations::Organization.exists?(org.id)
+    assert_equal owner, org.reload.owner
+  end
+
+  test "a cached association that is now wrong cannot let a retained organization go" do
+    Organizations.configure { |c| c.retain_organization = ->(organization) { organization.invitations.any? } }
+    org, owner = create_org_with_owner!
+    stale = Organizations::Organization.find(org.id)
+    stale.invitations.load # cached: no invitations
+    invitation = Organizations::Organization.find(org.id).send_invite_to!("someone@example.com", invited_by: owner)
+
+    assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { stale.destroy! }
+    assert Organizations::Organization.exists?(org.id)
+    assert Organizations::Invitation.exists?(invitation.id)
+  end
+
+  test "the destroy locks the organization row before it asks the rule" do
+    locked = []
+    seen = nil
+    Organizations.configure { |c| c.retain_organization = ->(_organization) { (seen = locked.dup) && false } }
+    org, = create_org_with_owner!
+    relation_class = ActiveRecord::Relation
+    original = relation_class.instance_method(:lock)
+    relation_class.define_method(:lock) do |*args|
+      locked << model.table_name
+      original.bind_call(self, *args)
+    end
+
+    org.destroy!
+
+    assert_includes seen, "organizations_organizations"
+  ensure
+    relation_class.define_method(:lock, original)
+  end
+
+  test "a retained record created during the destroy keeps the organization" do
+    skip "Row locks across connections need PostgreSQL (ORGS_TEST_DATABASE_URL)" unless postgresql?
+
+    retain_organizations_with_documents
+    org, = create_org_with_owner!
+    stale = Organizations::Organization.find(org.id)
+
+    while_a_writer_adds_a_document(org) do
+      assert_raises(Organizations::Organization::CannotDestroyRetainedOrganization) { stale.destroy! }
+    end
+
+    assert Organizations::Organization.exists?(org.id)
+    assert Document.exists?(organization_id: org.id)
+  end
+
   test "an organization without retained records is destroyed as before" do
     retain_organizations_with_documents
     org, = create_org_with_owner!
@@ -447,6 +504,31 @@ class AccountDeletionTest < Organizations::Test
 
   def use_policy(policy)
     Organizations.configure { |c| c.account_deletion_policy = policy }
+  end
+
+  # The app's writer, in another connection: it locks the organization row,
+  # creates the retained record, and commits a moment later. The block runs
+  # while the writer holds the lock.
+  def while_a_writer_adds_a_document(org)
+    locked = Queue.new
+    writer = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Organizations::Organization.transaction do
+          Organizations::Organization.lock.find(org.id)
+          Document.create!(organization_id: org.id)
+          locked << true
+          sleep 0.5 # the block starts now and waits for this lock
+        end
+      end
+    end
+    locked.pop
+    yield
+  ensure
+    writer&.join
+  end
+
+  def postgresql?
+    ActiveRecord::Base.connection.adapter_name.downcase.include?("postg")
   end
 
   # The fictional rule of these tests: an organization that holds documents

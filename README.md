@@ -1641,8 +1641,9 @@ plan.organizations_to_destroy  # => []
   end
   ```
 
-- Every other destroy of a retained organization raises `Organizations::Organization::CannotDestroyRetainedOrganization` before any row goes: an admin screen, a console, a cascade. `delete` and `delete_all` skip callbacks, so they skip this check too.
-- The deletion guard asks the rule again under its locks. A record added after the preview still keeps the organization.
+- Every other destroy of a retained organization raises `Organizations::Organization::CannotDestroyRetainedOrganization` before any row goes: an admin screen, a console, a cascade. The engine's controllers answer it like a refused form: HTML goes back with the message as an alert, JSON gets a 422 with `{ "error": message }`. `delete` and `delete_all` skip callbacks, so they skip this check too.
+- The rule gets the organization read again under its row lock, and the lock holds until the destroy commits. A stale copy, or a cached association, cannot let a retained organization go. A record added after the preview still keeps the organization.
+- Whatever creates the retained records must lock the organization row (`organization.lock!` in the same transaction), or insert them with a foreign key to the organization that restricts deletion. Then a concurrent destroy waits for the record and sees it, or the database refuses the delete.
 - An organization that blocks (shared, or with other members) stays a blocker. Under `:prevent` nothing is listed as retained, because nothing would be deleted.
 
 ## User Onboarding Patterns

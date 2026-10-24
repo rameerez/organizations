@@ -27,6 +27,10 @@ module Organizations
     # Ensure user is authenticated for all actions
     before_action :authenticate_organizations_user!
 
+    # A retained organization (config.retain_organization) refuses every
+    # destroy. Answer that like a refused form, not with an error page.
+    rescue_from Organizations::Organization::CannotDestroyRetainedOrganization, with: :respond_organization_retained
+
     # Expose current_user to views (ControllerHelpers exposes org-related helpers)
     helper_method :current_user
 
@@ -66,6 +70,15 @@ module Organizations
 
     # Alias for compatibility
     alias_method :current_organizations_user, :current_user
+
+    # Nothing changed: the destroy rolled back, and the current organization
+    # stays in the session.
+    def respond_organization_retained(error)
+      respond_to do |format|
+        format.html { redirect_back fallback_location: main_app.root_path, alert: error.message }
+        format.json { render json: { error: error.message }, status: 422 }
+      end
+    end
 
     def organizations_authenticated_layout
       configured_layout = Organizations.configuration.authenticated_controller_layout

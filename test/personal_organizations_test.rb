@@ -312,6 +312,21 @@ class PersonalOrganizationsTest < Organizations::Test
     assert_equal owner, org.owner
   end
 
+  test "a handover refused before the conversion keeps unsaved changes" do
+    owner = create_user!
+    admin = create_user!
+    org = owner.create_personal_organization!
+    org.add_member!(admin, role: :admin)
+    org.name = "Pending edit"
+
+    # lock! refuses a record with unsaved changes, before any conversion.
+    assert_raises(RuntimeError) { org.transfer_ownership_to!(admin, convert_to_shared: true) }
+
+    assert_equal "Pending edit", org.name
+    assert_predicate org, :name_changed?
+    assert_predicate org.reload, :personal?
+  end
+
   test "a handover to the personal owner itself changes nothing" do
     owner = create_user!
     org = owner.create_personal_organization!
