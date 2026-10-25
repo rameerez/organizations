@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-25
+
+**The current organization, outside controllers.** One addition, opt-in to read. No migration is needed.
+
+### Added
+
+- **`Organizations::Current`**, an `ActiveSupport::CurrentAttributes` with one attribute, `organization`. The controller helpers set it whenever `current_organization` resolves or changes (a fallback, `switch_to_organization!`, `current_organization =`, a cleared session), so models and mailers in the same request can read it. Rails resets it before every request and every job. Session-based resolution is unchanged.
+- **`Organizations.with_organization(organization) { ... }`** for jobs, scripts and consoles. It sets the organization for the block, returns the block's value, and puts back the previous one afterwards, also when the block raises, so blocks nest.
+- The README documents the one seam for a host's tenant context (for example a PostgreSQL setting that row-level security policies read): prepend a module that overrides `Organizations::Current#organization=`, which every change goes through, and add a `resets` callback. Asked for by ReplyBrain, whose reused gems must be scoped per request and per job.
+
 ## [0.8.1] - 2026-10-25
 
 **The joins take the lock order of the destroys.** A patch release with one fix. No migration is needed.

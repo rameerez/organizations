@@ -243,10 +243,12 @@ module Organizations
 
     def setup
       Organizations.reset_configuration!
+      Organizations::Current.reset # Rails resets it per request and job; plain tests do it here
       clean_database
     end
 
     def teardown
+      Organizations::Current.reset
       clean_database
     end
 

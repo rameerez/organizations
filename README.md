@@ -2033,6 +2033,41 @@ Organizations.configure do |config|
 end
 ```
 
+### The current organization outside controllers
+
+Once `current_organization` resolves in a request, the same organization is in `Organizations::Current.organization`, readable from models, mailers and anything else that runs in that request. It follows switches, and Rails resets it when the request ends. Resolve it early, with `before_action :require_organization!` or a `current_organization` call, so the rest of the request sees it.
+
+Jobs, scripts and consoles have no controller, so they say which organization they act for:
+
+```ruby
+class SendInvoiceJob < ApplicationJob
+  def perform(invoice)
+    Organizations.with_organization(invoice.organization) do
+      InvoiceMailer.paid(invoice).deliver_now
+    end
+  end
+end
+```
+
+The block puts back whatever was current before, even when it raises, so blocks nest. Rails resets `Organizations::Current` before every job too.
+
+Every change goes through one writer, `Organizations::Current.organization=`, and every reset through its `resets` callbacks. Those two points are where to hook your own tenant context, such as the PostgreSQL setting your row-level security policies read (a `SET LOCAL` in the transaction they run in):
+
+```ruby
+# config/initializers/organizations.rb
+module TenantContext
+  def organization=(organization)
+    super
+    Tenant.enter(organization) # your code: remember it, set the database setting...
+  end
+end
+
+Organizations::Current.prepend(TenantContext)
+Organizations::Current.resets { Tenant.leave }
+```
+
+Session-based resolution is unchanged: the session still decides which organization is current, and `Organizations::Current` only publishes it.
+
 ### Integrates with acts_as_tenant
 
 For automatic query scoping, include the integration concern:

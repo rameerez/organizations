@@ -112,6 +112,7 @@ module Organizations
   autoload :ActsAsTenantIntegration, "organizations/acts_as_tenant_integration"
   autoload :TestHelpers, "organizations/test_helpers"
   autoload :CurrentUserResolution, "organizations/current_user_resolution"
+  autoload :Current, "organizations/current"
   autoload :InvitationAcceptanceResult, "organizations/invitation_acceptance_result"
   autoload :InvitationAcceptanceFailure, "organizations/invitation_acceptance_failure"
   autoload :EmailNormalizer, "organizations/email_normalizer"
@@ -211,6 +212,21 @@ module Organizations
     rescue StandardError
       @configuration = snapshot
       raise
+    end
+
+    # Runs the block with `organization` as the current organization, then
+    # puts back whatever was current before, even if the block raises. For
+    # jobs, scripts and consoles, where no controller resolves one.
+    #
+    # @example
+    #   Organizations.with_organization(invoice.organization) do
+    #     InvoiceMailer.paid(invoice).deliver_now
+    #   end
+    #
+    # @param organization [Organizations::Organization, nil]
+    # @return the block's value
+    def with_organization(organization, &)
+      Current.set(organization: organization, &)
     end
 
     # Reset configuration to defaults
