@@ -72,6 +72,7 @@ en:
       # — Invitations —
       invitation_expired: "This invitation has expired"
       invitation_already_accepted: "This invitation has already been accepted"
+      invitation_changed: "This invitation changed while it was being accepted. Try again."
       invitation_cannot_resend_accepted: "Cannot resend an accepted invitation"
       invitation_email_mismatch: "This invitation was sent to a different email address"
       invitation_accept_as_owner: "Cannot accept invitation as owner. Invite as admin, then use transfer_ownership_to! after joining."

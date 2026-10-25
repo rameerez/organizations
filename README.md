@@ -2707,7 +2707,7 @@ These constraints prevent duplicate data at the database level:
 
 The gem uses `SELECT ... FOR UPDATE` (row-level locks) to prevent race conditions.
 
-The gem takes its row locks in one order: the user rows that a write names (in id order), then the organization row, then the rows of the organization. A user's deletion, an organization's destroy, an invitation acceptance or revoke, a join request approval, the check of an emailed code and a join code redemption all keep it. So they wait for each other, and do not deadlock on PostgreSQL. Keep the same order in your own code that writes in an organization.
+The gem takes its row locks in one order: the user rows that a write names (in id order), then the organization row, then the rows of the organization. A user's deletion locks its user row `FOR UPDATE`. The joins take a key share guard on their user rows (`FOR KEY SHARE` on PostgreSQL): only a deletion of those users waits for it, and ordinary updates and foreign key checks pass. A user's deletion, an organization's destroy, an invitation acceptance or revoke, a join request approval, the check of an emailed code and a join code redemption all keep this order. So they wait for each other, and do not deadlock on PostgreSQL. Inside your own transaction, the order holds only when your earlier locks in that transaction keep it too. Keep the same order in your own code that writes in an organization.
 
 **Invitation acceptance:**
 ```ruby
@@ -2715,9 +2715,10 @@ The gem takes its row locks in one order: the user rows that a write names (in i
 invitation.accept!
 
 # Internally:
-# 1. Lock the user rows of the accepting user and the inviter
+# 1. Take the key share guard on the accepting user and the inviter
 # 2. Lock organization row
-# 3. Lock invitation row
+# 3. Lock invitation row (when it now names another inviter, release the
+#    locks and start again with the current one, up to three times)
 # 4. Check accepted_at is nil
 # 5. Create membership
 # 6. Set accepted_at

@@ -6,14 +6,15 @@
 
 ### Fixed
 
-- **A join could deadlock with a deletion on PostgreSQL.** 0.8.0 made every destroy lock the user row, then the organization rows, then their child rows. Several joins locked their own row first, and the organization row (or a user row) only later, when they wrote. So a join and a deletion could each hold a row that the other waited for. PostgreSQL then aborted one of them with `ActiveRecord::Deadlocked`. These paths now lock the user rows that their writes name (in id order), then the organization row, then their own row:
+- **A join could deadlock with a deletion on PostgreSQL.** 0.8.0 made every destroy lock the user row, then the organization rows, then their child rows. Several joins locked their own row first, and the organization row (or a user row) only later, when they wrote. So a join and a deletion could each hold a row that the other waited for. PostgreSQL then aborted one of them with `ActiveRecord::Deadlocked`. These paths now take a guard on the user rows that their writes name (in id order), then lock the organization row, then their own row:
   - `Invitation#accept!` (the accepting user and the inviter). Before, an acceptance deadlocked with the inviter's account deletion or with a destroy of the organization.
   - `Invitation#revoke!` (no user row). Before, the revoke of an invitation with grants deadlocked with a destroy of its organization or with the inviter's account deletion.
   - `JoinRequest#approve!` and the automatic approval after a verified email (the requester and the decider). Before, an approval deadlocked with the requester's account deletion.
-  - `JoinRequest#verify_email_code!` (no user row). Before, the check of an emailed code deadlocked with a destroy of the organization, which deletes the domain before the request.
+  - `JoinRequest#verify_email_code!` (the requester). Before, the check of an emailed code deadlocked with a destroy of the organization, which deletes the domain before the request. The requester's guard comes first, so the automatic approval inside a host transaction asks for no user row while it holds the organization row.
   - `JoinCode#redeem!` (the redeeming user). Before, a redemption deadlocked with the account deletion of the code's creator or with a destroy of the organization.
-  - `reject!`, `withdraw!` and `resend!` lock one row and write no row of another table that a deletion locks first, so they keep their lock.
-  - The user rows are locked `FOR UPDATE`, as the deletion locks them. An update of those users in another connection waits until the join commits.
+- **The user guard is a key share lock** (`FOR KEY SHARE` on PostgreSQL, a shared lock on MySQL, nothing on SQLite). It conflicts with the deletion's `FOR UPDATE`, and with nothing else: an update of the user and the foreign key checks of other writers pass. So `reject!` (which names its decider), `withdraw!`, `resend!` and a grant on a pending invitation (which names its granter) keep their single row lock and do not wait for the guards.
+- **An acceptance from a stale copy locks the current inviter.** A reissue of an expired invitation (`send_invite_to!`) names the new inviter. A loaded copy can still name the old one. The acceptance reads the row again under its lock. When the row names other ids than the ones locked, the acceptance releases its locks (a savepoint) and tries again with the current ids, up to three times. Then it raises `Invitation::InvitationChanged`, an `InvitationError`. Before, the acceptance could insert a membership that named an unlocked inviter, and deadlock with an ownership transfer to that inviter.
+- Inside a host transaction, the order holds only when the locks that the host took earlier in that transaction keep it too.
 - README: "Row-level locking" states the one lock order. The steps of the ownership transfer now start with the new owner's row, as the code has done since 0.7.0.
 
 ## [0.8.0] - 2026-10-24
