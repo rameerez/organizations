@@ -126,6 +126,7 @@ module Organizations
   autoload :GrantAccess, "organizations/grant_access"
   autoload :Grantable, "organizations/grantable"
   autoload :AccountDeletionPlan, "organizations/account_deletion_plan"
+  autoload :RowLocks, "organizations/row_locks"
 
   # Alias for README compatibility: `include Organizations::Controller`
   Controller = ControllerHelpers

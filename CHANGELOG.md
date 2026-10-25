@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-25
+
+**The joins take the lock order of the destroys.** A patch release with one fix. No migration is needed.
+
+### Fixed
+
+- **A join could deadlock with a deletion on PostgreSQL.** 0.8.0 made every destroy lock the user row, then the organization rows, then their child rows. Several joins locked their own row first, and the organization row (or a user row) only later, when they wrote. So a join and a deletion could each hold a row that the other waited for. PostgreSQL then aborted one of them with `ActiveRecord::Deadlocked`. These paths now lock the user rows that their writes name (in id order), then the organization row, then their own row:
+  - `Invitation#accept!` (the accepting user and the inviter). Before, an acceptance deadlocked with the inviter's account deletion or with a destroy of the organization.
+  - `Invitation#revoke!` (no user row). Before, the revoke of an invitation with grants deadlocked with a destroy of its organization or with the inviter's account deletion.
+  - `JoinRequest#approve!` and the automatic approval after a verified email (the requester and the decider). Before, an approval deadlocked with the requester's account deletion.
+  - `JoinRequest#verify_email_code!` (no user row). Before, the check of an emailed code deadlocked with a destroy of the organization, which deletes the domain before the request.
+  - `JoinCode#redeem!` (the redeeming user). Before, a redemption deadlocked with the account deletion of the code's creator or with a destroy of the organization.
+  - `reject!`, `withdraw!` and `resend!` lock one row and write no row of another table that a deletion locks first, so they keep their lock.
+  - The user rows are locked `FOR UPDATE`, as the deletion locks them. An update of those users in another connection waits until the join commits.
+- README: "Row-level locking" states the one lock order. The steps of the ownership transfer now start with the new owner's row, as the code has done since 0.7.0.
+
 ## [0.8.0] - 2026-10-24
 
 **Hand a personal organization over, and keep organizations that hold records with a retention period.** An invoicing app on the fleet built both by hand and runs them in production. This release moves them into the gem, with their tests. Both are opt-in, and no migration is needed.

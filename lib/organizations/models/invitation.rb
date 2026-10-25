@@ -149,6 +149,12 @@ module Organizations
       membership = nil
 
       ActiveRecord::Base.transaction do
+        # The gem's lock order (RowLocks): the users that the membership
+        # names, then the organization row, then the invitation row. A
+        # deletion of the inviter or of the organization takes the same
+        # order, so it waits for this acceptance, or this one for it.
+        RowLocks.lock_users!(accepting_user.id, invited_by_id)
+        RowLocks.lock_organization!(organization_id)
         # Lock the invitation row to prevent race conditions
         lock!
 
@@ -231,6 +237,10 @@ module Organizations
     # @raise [Organizations::NotAuthorized] if the role ranks above revoked_by's own
     def revoke!(revoked_by: nil)
       ActiveRecord::Base.transaction do
+        # The organization row first (RowLocks), as an organization destroy
+        # and the inviter's deletion lock it before this invitation and its
+        # grants.
+        RowLocks.lock_organization!(organization_id)
         lock!
         authorize_management!(revoked_by)
         destroy!

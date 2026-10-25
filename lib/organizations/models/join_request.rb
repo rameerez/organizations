@@ -180,6 +180,10 @@ module Organizations
       failure = nil
 
       ActiveRecord::Base.transaction do
+        # The organization row first (RowLocks): an organization destroy
+        # deletes the domains and allowlist entries before this request, and
+        # the check below locks one of them after this request.
+        RowLocks.lock_organization!(organization_id)
         lock!
         ensure_open!
         ensure_active_challenge!
@@ -324,6 +328,12 @@ module Organizations
       reused_existing = false
 
       ActiveRecord::Base.transaction do
+        # The gem's lock order (RowLocks): the requester and the decider,
+        # then the organization row, then this request. The requester's
+        # deletion locks the requester, then the organization, and deletes
+        # this request.
+        RowLocks.lock_users!(user_id, decided_by&.id)
+        RowLocks.lock_organization!(organization_id)
         lock!
 
         return approved_membership! if approved? # idempotent re-approval
