@@ -10,6 +10,7 @@ module Organizations
       invitation_expired
       email_mismatch
       already_accepted_without_membership
+      invitation_changed
     ].freeze
 
     attr_reader :reason, :invitation

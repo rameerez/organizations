@@ -54,6 +54,7 @@ es:
 
       invitation_expired: "Esta invitación ha caducado"
       invitation_already_accepted: "Esta invitación ya ha sido aceptada"
+      invitation_changed: "Esta invitación cambió mientras se aceptaba. Inténtalo de nuevo."
       invitation_cannot_resend_accepted: "No se puede reenviar una invitación ya aceptada"
       invitation_email_mismatch: "Esta invitación se envió a otra dirección de email"
       invitation_accept_as_owner: "No se puede aceptar una invitación como propietario. Invita como administrador y transfiere la propiedad después."

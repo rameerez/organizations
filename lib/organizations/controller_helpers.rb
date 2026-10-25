@@ -290,6 +290,14 @@ module Organizations
           return_failure: return_failure,
           invitation: invitation
         )
+      rescue Organizations::Invitation::InvitationChanged
+        # A reissue changed the invitation at each try to lock it. Nothing
+        # was written, and the person can try again: keep the session token.
+        return invitation_acceptance_failure(
+          :invitation_changed,
+          return_failure: return_failure,
+          invitation: invitation
+        )
       rescue Organizations::InvitationAlreadyAccepted
         # Check if user is actually a member
         membership = Organizations::Membership.find_by(

@@ -180,7 +180,7 @@ module Organizations
       failure = nil
 
       ActiveRecord::Base.transaction do
-        lock!
+        lock_rows_for_verification!
         ensure_open!
         ensure_active_challenge!
         # The domain or roster entry may have been removed, revoked or
@@ -319,11 +319,30 @@ module Organizations
 
     private
 
+    # The gem's lock order (RowLocks): the requester, then the organization
+    # row, then this request. An organization destroy deletes the domains
+    # and allowlist entries before this request, and the check locks one of
+    # them after this request. The automatic approval takes the requester's
+    # guard again: inside a host transaction, this one already holds it, so
+    # the approval does not ask for a user row while it holds the
+    # organization row.
+    def lock_rows_for_verification!
+      RowLocks.lock_users!(user_id)
+      RowLocks.lock_organization!(organization_id)
+      lock!
+    end
+
     def perform_approval!(decided_by:, recheck_instruments:)
       membership = nil
       reused_existing = false
 
       ActiveRecord::Base.transaction do
+        # The gem's lock order (RowLocks): the requester and the decider,
+        # then the organization row, then this request. The requester's
+        # deletion locks the requester, then the organization, and deletes
+        # this request.
+        RowLocks.lock_users!(user_id, decided_by&.id)
+        RowLocks.lock_organization!(organization_id)
         lock!
 
         return approved_membership! if approved? # idempotent re-approval

@@ -152,10 +152,7 @@ module Organizations
       outcome = nil
 
       ActiveRecord::Base.transaction do
-        # Lock the code row: uses_count accounting and the max_uses cap must
-        # be race-safe (two concurrent redemptions of a max_uses: 1 code must
-        # yield exactly one success).
-        lock!
+        lock_rows_for_redemption!(user)
         ensure_redeemable!
 
         # Already a member — idempotent no-op that does NOT consume a use.
@@ -187,6 +184,18 @@ module Organizations
     end
 
     private
+
+    # The gem's lock order (RowLocks): the redeeming user, then the
+    # organization row, then the code row. The deletion of the code's
+    # creator and an organization destroy take the organization row before
+    # the code row. The code row lock makes the uses_count accounting and
+    # the max_uses cap race-safe (two concurrent redemptions of a max_uses: 1
+    # code must yield exactly one success).
+    def lock_rows_for_redemption!(user)
+      RowLocks.lock_users!(user.id)
+      RowLocks.lock_organization!(organization_id)
+      lock!
+    end
 
     def ensure_redeemable!
       raise JoinCodeInvalid, Organizations.t(:"errors.join_code_invalid") if revoked? || expired?

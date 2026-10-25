@@ -722,6 +722,10 @@ invitation.grant!(record, capabilities: %i[read])
 # Actions
 invitation.accept!              # Accept (auto-infers Current.user)
 invitation.accept!(user)        # Accept with explicit user
+# accept! raises Organizations::InvitationExpired, Organizations::InvitationAlreadyAccepted,
+# Invitation::EmailMismatch, Invitation::CannotAcceptAsOwner, or Invitation::InvitationChanged:
+# a reissue named another inviter at each of three tries to lock the rows. Nothing is
+# written then, and the person can try again (organizations.errors.invitation_changed).
 invitation.resend!(resent_by: current_user)   # Send invitation email again
 invitation.revoke!(revoked_by: current_user)  # Delete it, so the link stops working
 ```
@@ -1325,6 +1329,8 @@ else
 end
 ```
 
+The reasons: `:missing_user`, `:missing_token`, `:invitation_not_found`, `:invitation_expired`, `:email_mismatch`, `:already_accepted_without_membership` and `:invitation_changed`. `:invitation_changed` means that a reissue changed the invitation during the acceptance (`Invitation::InvitationChanged`). Nothing was written, and the session keeps the token, so the person can try again. The engine's accept action answers it with the localized message (`organizations.errors.invitation_changed`): HTML goes back to the invitation page, JSON gets a 409 with `{ "error": message }`.
+
 Configure redirects in your initializer:
 
 ```ruby
@@ -1604,7 +1610,7 @@ What the gem guarantees:
 
 - It checks the complete owned set before it deletes anything. One blocker blocks the whole deletion.
 - The organization deletion and the user deletion are one transaction, with its own savepoint, also inside a transaction of yours. A host `before_destroy` veto on the organization, or any later failure, rolls back everything, and the veto message is on `user.errors`.
-- Before its first write, `user.destroy` locks the user row, then the row of every organization in which it writes (memberships, sent invitations and their grants, join requests and the other records it nullifies), in id order. An organization's destroy also locks its row before its cascades, so the two cannot deadlock. A concurrent join or organization creation for that user, a join, transfer or destroy in one of those organizations, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it. The guard reads the database under its locks, not the query cache.
+- Before its first write, `user.destroy` locks the user row, then the row of every organization in which it writes (memberships, sent invitations and their grants, join requests and the other records it nullifies), in id order. An organization's destroy also locks its row before its cascades, so the two cannot deadlock. The joins take the same order (see "Row-level locking"). A concurrent join or organization creation for that user, a join, transfer or destroy in one of those organizations, and an ownership transfer to that user (`transfer_ownership_to!` locks the new owner's row) wait for the deletion, or finish first and are seen by it. The guard reads the database under its locks, not the query cache.
 - The user's other memberships are deleted (`dependent: :destroy`), as before. Invitations they sent, join requests they decided, join codes they created and allowlist entries they claimed keep the record and lose the user reference.
 
 ### Organizations that must be kept
@@ -2705,7 +2711,9 @@ These constraints prevent duplicate data at the database level:
 
 ### Row-level locking
 
-The gem uses `SELECT ... FOR UPDATE` (row-level locks) to prevent race conditions:
+The gem uses `SELECT ... FOR UPDATE` (row-level locks) to prevent race conditions.
+
+The gem takes its row locks in one order: the user rows that a write names (in id order), then the organization row, then the rows of the organization. A user's deletion locks its user row `FOR UPDATE`. The joins take a key share guard on their user rows (`FOR KEY SHARE` on PostgreSQL): only a deletion of those users waits for it, and ordinary updates and foreign key checks pass. A user's deletion, an organization's destroy, an invitation acceptance or revoke, a join request approval, the check of an emailed code and a join code redemption all keep this order. So they wait for each other, and do not deadlock on PostgreSQL. Inside your own transaction, the order holds only when your earlier locks in that transaction keep it too. Keep the same order in your own code that writes in an organization.
 
 **Invitation acceptance:**
 ```ruby
@@ -2713,11 +2721,14 @@ The gem uses `SELECT ... FOR UPDATE` (row-level locks) to prevent race condition
 invitation.accept!
 
 # Internally:
-# 1. Lock invitation row
-# 2. Check accepted_at is nil
-# 3. Create membership
-# 4. Set accepted_at
-# 5. Release lock
+# 1. Take the key share guard on the accepting user and the inviter
+# 2. Lock organization row
+# 3. Lock invitation row (when it now names another inviter, release the
+#    locks and start again with the current one, up to three times)
+# 4. Check accepted_at is nil
+# 5. Create membership
+# 6. Set accepted_at
+# 7. Release locks
 # Second request sees accepted_at is set, returns existing membership
 ```
 
@@ -2726,13 +2737,14 @@ invitation.accept!
 org.transfer_ownership_to!(new_owner)
 
 # Internally:
-# 1. Lock organization row
-# 2. Lock old owner's membership
-# 3. Lock new owner's membership
-# 4. Verify new owner is a member
-# 5. Demote old owner to admin
-# 6. Promote new owner to owner
-# 7. Release locks
+# 1. Lock the new owner's user row
+# 2. Lock organization row
+# 3. Lock old owner's membership
+# 4. Lock new owner's membership
+# 5. Verify new owner is a member
+# 6. Demote old owner to admin
+# 7. Promote new owner to owner
+# 8. Release locks
 ```
 
 **Last admin/owner protection:**

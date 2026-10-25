@@ -124,6 +124,12 @@ module Organizations
     # Error raised when trying to accept an invitation with owner role
     class CannotAcceptAsOwner < Organizations::InvitationError; end
 
+    # The invitation named another inviter at each of ACCEPT_LOCK_ATTEMPTS
+    # tries to lock its rows (it was reissued meanwhile).
+    class InvitationChanged < Organizations::InvitationError; end
+
+    ACCEPT_LOCK_ATTEMPTS = 3
+
     # Accept the invitation and create membership
     # Uses row-level locking to prevent race conditions
     # @param user [User, nil] The user accepting (uses Current.user if not provided)
@@ -149,8 +155,7 @@ module Organizations
       membership = nil
 
       ActiveRecord::Base.transaction do
-        # Lock the invitation row to prevent race conditions
-        lock!
+        lock_rows_for_acceptance!(accepting_user)
 
         # Re-check status after acquiring lock
         if accepted?
@@ -231,6 +236,10 @@ module Organizations
     # @raise [Organizations::NotAuthorized] if the role ranks above revoked_by's own
     def revoke!(revoked_by: nil)
       ActiveRecord::Base.transaction do
+        # The organization row first (RowLocks), as an organization destroy
+        # and the inviter's deletion lock it before this invitation and its
+        # grants.
+        RowLocks.lock_organization!(organization_id)
         lock!
         authorize_management!(revoked_by)
         destroy!
@@ -256,6 +265,31 @@ module Organizations
     end
 
     private
+
+    # The gem's lock order (RowLocks): the users that the membership names
+    # (the accepting user and the inviter), then the organization row, then
+    # the invitation row. A deletion of the inviter or of the organization
+    # takes the same order, so it waits for this acceptance, or this one for
+    # it. This copy can name a stale inviter: a reissue of the expired row
+    # (send_invite_to!) names the new one. The row lock reads the row again.
+    # When it names other ids than the ones locked, the savepoint rolls back,
+    # which releases its locks, and the next attempt locks the current ids.
+    def lock_rows_for_acceptance!(accepting_user)
+      ACCEPT_LOCK_ATTEMPTS.times do
+        locked = [invited_by_id, organization_id]
+        held = ActiveRecord::Base.transaction(requires_new: true) do
+          RowLocks.lock_users!(accepting_user.id, invited_by_id)
+          RowLocks.lock_organization!(organization_id)
+          lock!
+          raise ActiveRecord::Rollback unless [invited_by_id, organization_id] == locked
+
+          true
+        end
+        return if held
+      end
+
+      raise InvitationChanged, Organizations.t(:"errors.invitation_changed", organization: organization)
+    end
 
     # The invitation's grants become the membership's (a grant on the same
     # resource takes the invitation's capabilities). The inviter was

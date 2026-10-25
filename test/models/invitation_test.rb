@@ -764,5 +764,38 @@ module Organizations
         assert_includes Organizations::Invitation.expired, invitation
       end
     end
+
+    # =========================================================================
+    # Acceptance of a copy that names a stale inviter (0.8.1)
+    # =========================================================================
+
+    test "an acceptance from a stale copy locks and names the current inviter" do
+      other_inviter = create_user!
+      invitation = create_test_invitation(email: "invitee@example.com")
+      stale = Organizations::Invitation.find(invitation.id)
+      invitation.update!(invited_by: other_inviter) # a reissue names the new inviter
+
+      membership = stale.accept!(@invitee)
+
+      assert_equal other_inviter.id, membership.invited_by_id
+      assert_equal other_inviter.id, stale.invited_by_id
+    end
+
+    test "an acceptance whose invitation names another inviter at every attempt raises and writes nothing" do
+      other_inviter = create_user!
+      invitation = create_test_invitation(email: "invitee@example.com")
+      ids = [@owner.id, other_inviter.id]
+      # Each row lock reads a row that names the other inviter than the one
+      # just locked, as a reissue in another connection at each attempt would.
+      invitation.define_singleton_method(:lock!) do |*args|
+        self.class.where(id: id).update_all(invited_by_id: (ids - [invited_by_id]).first)
+        super(*args)
+      end
+
+      assert_raises(Organizations::Invitation::InvitationChanged) { invitation.accept!(@invitee) }
+      refute Organizations::Membership.exists?(user_id: @invitee.id)
+      assert_equal @owner.id, Organizations::Invitation.find(invitation.id).invited_by_id
+      refute_predicate Organizations::Invitation.find(invitation.id), :accepted?
+    end
   end
 end
