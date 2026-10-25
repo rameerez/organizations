@@ -722,6 +722,10 @@ invitation.grant!(record, capabilities: %i[read])
 # Actions
 invitation.accept!              # Accept (auto-infers Current.user)
 invitation.accept!(user)        # Accept with explicit user
+# accept! raises Organizations::InvitationExpired, Organizations::InvitationAlreadyAccepted,
+# Invitation::EmailMismatch, Invitation::CannotAcceptAsOwner, or Invitation::InvitationChanged:
+# a reissue named another inviter at each of three tries to lock the rows. Nothing is
+# written then, and the person can try again (organizations.errors.invitation_changed).
 invitation.resend!(resent_by: current_user)   # Send invitation email again
 invitation.revoke!(revoked_by: current_user)  # Delete it, so the link stops working
 ```
@@ -1324,6 +1328,8 @@ else
   result.failure_reason # => :missing_token, :email_mismatch, :invitation_expired, etc.
 end
 ```
+
+The reasons: `:missing_user`, `:missing_token`, `:invitation_not_found`, `:invitation_expired`, `:email_mismatch`, `:already_accepted_without_membership` and `:invitation_changed`. `:invitation_changed` means that a reissue changed the invitation during the acceptance (`Invitation::InvitationChanged`). Nothing was written, and the session keeps the token, so the person can try again. The engine's accept action answers it with the localized message (`organizations.errors.invitation_changed`): HTML goes back to the invitation page, JSON gets a 409 with `{ "error": message }`.
 
 Configure redirects in your initializer:
 

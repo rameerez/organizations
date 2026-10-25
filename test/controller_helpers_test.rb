@@ -1490,6 +1490,32 @@ module Organizations
       end
     end
 
+    test "accept_pending_organization_invitation! returns invitation_changed and keeps the token" do
+      org, owner = create_org_with_owner!
+      user = create_user!(email: "test@example.com")
+      invitation = org.send_invite_to!("test@example.com", invited_by: owner)
+      @controller.session[:organizations_pending_invitation_token] = invitation.token
+      @controller.test_current_user = user
+
+      # A reissue changed the invitation at each try to lock it.
+      original_accept = Organizations::Invitation.instance_method(:accept!)
+      Organizations::Invitation.define_method(:accept!) do |*_args, **_kwargs|
+        raise Organizations::Invitation::InvitationChanged, "Changed during accept"
+      end
+
+      begin
+        assert_nil @controller.accept_pending_organization_invitation!(user)
+
+        result = @controller.accept_pending_organization_invitation!(user, return_failure: true)
+
+        assert_predicate result, :invitation_changed?
+        assert_equal invitation, result.invitation
+        assert_equal invitation.token, @controller.session[:organizations_pending_invitation_token]
+      ensure
+        Organizations::Invitation.define_method(:accept!, original_accept)
+      end
+    end
+
     test "accept_pending_organization_invitation! returns nil for email mismatch and keeps token" do
       org, owner = create_org_with_owner!
       wrong_user = create_user!(email: "wrong@example.com")

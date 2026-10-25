@@ -66,18 +66,13 @@ module Organizations
 
     def respond_invitation_acceptance_failure(failure)
       case failure.failure_reason
-      when :email_mismatch
-        return respond_invitation_email_mismatch
-      when :invitation_expired
-        return respond_invitation_expired
+      when :email_mismatch then respond_invitation_email_mismatch
+      when :invitation_expired then respond_invitation_expired
+      when :invitation_changed then respond_invitation_changed(failure.invitation || @invitation)
+      else
+        respond_invitation_error(html_path: main_app.root_path, alert: "Unable to accept this invitation.",
+                                 json_error: "Acceptance failed", status: 422)
       end
-
-      respond_invitation_error(
-        html_path: main_app.root_path,
-        alert: "Unable to accept this invitation.",
-        json_error: "Acceptance failed",
-        status: 422
-      )
     end
 
     def respond_invitation_email_mismatch
@@ -96,6 +91,14 @@ module Organizations
         json_error: "Invitation expired",
         status: :gone
       )
+    end
+
+    # A reissue changed the invitation during the acceptance, and nothing was
+    # written. Send the person back to it (its current link) to try again.
+    def respond_invitation_changed(invitation)
+      message = Organizations.t(:"errors.invitation_changed", organization: invitation.organization)
+      respond_invitation_error(html_path: invitation_path(invitation.token), alert: message, json_error: message,
+                               status: 409)
     end
 
     def respond_invitation_acceptance_success(result)
