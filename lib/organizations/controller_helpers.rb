@@ -38,7 +38,7 @@ module Organizations
     # Returns the current organization from session
     # Validates membership - if user was removed, auto-switches to next available org
     # Falls back to most recently joined org if no session set
-    # Memoized within the request
+    # Memoized within the request, and published as Organizations::Current.organization
     # @return [Organizations::Organization, nil]
     def current_organization
       return @_current_organization if defined?(@_current_organization)
@@ -58,7 +58,7 @@ module Organizations
       if org && user.is_member_of?(org)
         # Valid membership - use this org
         user._current_organization_id = org.id
-        @_current_organization = org
+        self.resolved_current_organization = org
       else
         # User was removed from this org OR no session set
         # Auto-switch to next available org (most recently joined)
@@ -68,9 +68,9 @@ module Organizations
         if fallback_org
           session[session_key] = fallback_org.id
           user._current_organization_id = fallback_org.id
-          @_current_organization = fallback_org
+          self.resolved_current_organization = fallback_org
         else
-          @_current_organization = nil
+          self.resolved_current_organization = nil
         end
       end
     end
@@ -459,7 +459,7 @@ module Organizations
 
       if org
         session[session_key] = org.id
-        @_current_organization = org
+        self.resolved_current_organization = org
         forget_current_membership!
 
         # Update user's context
@@ -578,11 +578,19 @@ module Organizations
     def clear_organization_session!
       session_key = Organizations.configuration.session_key
       session.delete(session_key)
-      @_current_organization = nil
+      self.resolved_current_organization = nil
       forget_current_membership!
 
       user = organizations_current_user
       user&.clear_organization_cache!
+    end
+
+    # Memoizes the organization for this request and publishes it to
+    # Organizations::Current, so models and the host's tenant hook see the
+    # one the helpers resolved.
+    def resolved_current_organization=(organization)
+      @_current_organization = organization
+      Organizations::Current.organization = organization
     end
 
     # Drop the memoized membership so the next current_membership call reads

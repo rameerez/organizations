@@ -140,6 +140,44 @@ module Organizations
       assert_nil @controller.current_organization
     end
 
+    test "current_organization publishes the organization to Organizations::Current" do
+      org, owner = create_org_with_owner!
+      @controller.test_current_user = owner
+      @controller.session[:current_organization_id] = org.id
+
+      assert_nil Organizations::Current.organization, "nothing is current before the helper resolves"
+      @controller.current_organization
+
+      assert_equal org, Organizations::Current.organization
+    end
+
+    test "Organizations::Current follows a fallback, a switch and a clear" do
+      org1, owner = create_org_with_owner!(name: "Org 1")
+      org2 = Organizations::Organization.create!(name: "Org 2")
+      Organizations::Membership.create!(user: owner, organization: org2, role: "member")
+      @controller.test_current_user = owner
+
+      @controller.session[:current_organization_id] = 999_999
+      fallback = @controller.current_organization
+      assert_equal fallback, Organizations::Current.organization
+
+      other = ([org1, org2] - [fallback]).sole
+      @controller.switch_to_organization!(other)
+      assert_equal other, Organizations::Current.organization
+
+      @controller.current_organization = nil
+      assert_nil Organizations::Current.organization
+    end
+
+    test "Organizations::Current is nil when the user has no organization" do
+      Organizations.configuration.always_create_personal_organization_for_each_user = false
+      Organizations::Current.organization = Organizations::Organization.create!(name: "Leftover")
+      @controller.test_current_user = create_user!
+
+      assert_nil @controller.current_organization
+      assert_nil Organizations::Current.organization, "a resolved nil replaces whatever was there"
+    end
+
     test "current_organization is memoized within request" do
       org, owner = create_org_with_owner!
       @controller.test_current_user = owner
