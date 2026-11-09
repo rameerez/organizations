@@ -488,15 +488,23 @@ module Organizations
             attributes = name_or_attributes.is_a?(Hash) ? name_or_attributes : { name: name_or_attributes }
             Organizations::Organization.ensure_personal_owner_is_owner!(attributes, self)
 
-            # Check max organizations limit
             settings = self.class.organization_settings
             max = settings[:max_organizations]
-            if max && owned_organizations.count >= max
-              raise OrganizationLimitReached, Organizations.t(:"errors.organization_limit_reached", max: max)
-            end
 
             org = nil
             ActiveRecord::Base.transaction do
+              # The limit is counted under a lock on this user's row, so two
+              # concurrent creates cannot both count below it and both insert.
+              # A user row first keeps the gem's lock order (RowLocks).
+              if max
+                self.class.unscoped.where(self.class.primary_key => id).lock.pick(self.class.primary_key)
+                # Uncached: a count read earlier in the request must not
+                # stand in for the one taken under the lock.
+                if ActiveRecord::Base.uncached { owned_organizations.count } >= max
+                  raise OrganizationLimitReached, Organizations.t(:"errors.organization_limit_reached", max: max)
+                end
+              end
+
               org = Organizations::Organization.create!(attributes)
 
               Organizations::Membership.create!(

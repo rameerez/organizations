@@ -1,4 +1,8 @@
-## [Unreleased]
+## [0.9.1] - Unreleased
+
+### Fixed
+
+- `max_organizations` holds under concurrency. `create_organization!` counted the user's owned organizations before its transaction, so two creates at the same moment could both count below the limit and both insert, and a host that sells organization slots gave away an extra one. When the limit is set, the count now runs inside the transaction under a lock on the user's row (the gem's lock order: the user row first), so the second create waits and then raises `OrganizationLimitReached`. That count skips the query cache, so a count read earlier in the same request cannot stand in for it. Without a limit nothing changes and nothing is locked.
 
 ## [0.9.0] - 2026-10-25
 
