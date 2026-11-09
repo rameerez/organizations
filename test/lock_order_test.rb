@@ -303,3 +303,38 @@ class JoinLockOrderTest < Organizations::Test
     assert_equal 1, join_code.uses_count
   end
 end
+
+class OrganizationLimitLockTest < Organizations::Test
+  include LockOrderTestHelpers
+
+  setup do
+    @previous_settings = User.organization_settings
+    User.organization_settings = { max_organizations: 1, create_personal_org: false, require_organization: false }.freeze
+  end
+
+  teardown { User.organization_settings = @previous_settings }
+
+  test "two concurrent creates cannot both pass max_organizations" do
+    user = create_user!
+    # The first create has counted under the user row lock. It inserts only
+    # after the second create waits for that lock.
+    first = lambda do |ready|
+      creator = User.find(user.id)
+      pause = holding(ready)
+      creator.define_singleton_method(:owned_organizations) { pause.call || super() }
+      creator.create_organization!("First")
+    end
+
+    assert_raises(Organizations::Models::Concerns::HasOrganizations::OrganizationLimitReached) do
+      concurrently(first) do
+        # The request's query cache already holds a count of zero.
+        ActiveRecord::Base.cache do
+          second = User.find(user.id)
+          second.owned_organizations.count
+          second.create_organization!("Second")
+        end
+      end
+    end
+    assert_equal 1, user.owned_organizations.count
+  end
+end
