@@ -309,7 +309,9 @@ class OrganizationLimitLockTest < Organizations::Test
 
   setup do
     @previous_settings = User.organization_settings
-    User.organization_settings = { max_organizations: 1, create_personal_org: false, require_organization: false }.freeze
+    User.organization_settings = {
+      max_organizations: 1, create_personal_org: false, require_organization: false
+    }.freeze
   end
 
   teardown { User.organization_settings = @previous_settings }

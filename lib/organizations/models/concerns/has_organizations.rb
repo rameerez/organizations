@@ -493,18 +493,7 @@ module Organizations
 
             org = nil
             ActiveRecord::Base.transaction do
-              # The limit is counted under a lock on this user's row, so two
-              # concurrent creates cannot both count below it and both insert.
-              # A user row first keeps the gem's lock order (RowLocks).
-              if max
-                self.class.unscoped.where(self.class.primary_key => id).lock.pick(self.class.primary_key)
-                # Uncached: a count read earlier in the request must not
-                # stand in for the one taken under the lock.
-                if ActiveRecord::Base.uncached { owned_organizations.count } >= max
-                  raise OrganizationLimitReached, Organizations.t(:"errors.organization_limit_reached", max: max)
-                end
-              end
-
+              ensure_below_organization_limit!(max) if max
               org = Organizations::Organization.create!(attributes)
 
               Organizations::Membership.create!(
@@ -764,6 +753,18 @@ module Organizations
           end
 
           private
+
+          # The limit is counted under a lock on this user's row, so two
+          # concurrent creates cannot both count below it and both insert.
+          # A user row first keeps the gem's lock order (RowLocks). Uncached:
+          # a count read earlier in the request must not stand in for the one
+          # taken under the lock.
+          def ensure_below_organization_limit!(max)
+            self.class.unscoped.where(self.class.primary_key => id).lock.pick(self.class.primary_key)
+            return if ActiveRecord::Base.uncached { owned_organizations.count } < max
+
+            raise OrganizationLimitReached, Organizations.t(:"errors.organization_limit_reached", max: max)
+          end
 
           def create_personal_organization_if_configured
             # Check condition inside callback (not via `if:` option) to ensure
